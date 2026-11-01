@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "7.1";
+  const LOADER_VERSION = "7.2";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -388,7 +388,13 @@ const SkinLoader = (() => {
 
     const bitmaps = {};
     const fonts = {};
+    const colors = {};
     for (const { path, doc } of docs) {
+      for (const c of elList(doc, "color")) {
+        const id = c.getAttribute("id");
+        const v = c.getAttribute("value");
+        if (id && v && !colors[id]) colors[id] = v;
+      }
       for (const b of elList(doc, "bitmap")) {
         const id = b.getAttribute("id");
         const f = b.getAttribute("file");
@@ -1194,7 +1200,10 @@ const SkinLoader = (() => {
               left: gridEl ? gridEl.getAttribute("left") : null,
               middle: gridEl ? gridEl.getAttribute("middle") : null,
               right: gridEl ? gridEl.getAttribute("right") : null,
-              label: txtEl ? (txtEl.getAttribute("default") || tab.label) : tab.label
+              label: txtEl ? (txtEl.getAttribute("default") || tab.label) : tab.label,
+              font: txtEl ? txtEl.getAttribute("font") : null,
+              color: txtEl ? txtEl.getAttribute("color") : null,
+              fontsize: txtEl ? (parseInt(txtEl.getAttribute("fontsize") || "12", 10) || 12) : 12
             };
           }
           tabs.push(tab);
@@ -1393,7 +1402,7 @@ const SkinLoader = (() => {
     const skin = {
       skin: { ...info, source_files: docs.map(d => d.path), source_zip: file.name || "" },
       layout, buttons, layers, texts, sliders,
-      display, seek, volume, spectrum, fonts,
+      display, seek, volume, spectrum, fonts, colors,
       frame: mainOut.frame, vis: mainOut.vis, eq, playlist,
       ml, video, avs, albumart, notifier, about, drawer, remote, stick, colorPresets,
       hiddenIds: mainOut.hiddenIds || [], groupRects,
