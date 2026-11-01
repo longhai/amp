@@ -8,6 +8,29 @@ function playlistListRect(pl){
   return { x: 6, y: top, w: pl.w - 12, h: Math.max(40, bottomY - 6 - top) };
 }
 /* cửa sổ Playlist + tay kéo đổi cỡ */
+async function buildClassicPlFrame(win, res){
+  const piece = async (id, css, repeat) => {
+    const src = await resolveImg(res, id, id);
+    if (!src) return;
+    const d = document.createElement("div");
+    d.dataset.nopin = "1";
+    d.style.position = "absolute";
+    d.style.backgroundImage = "url(" + JSON.stringify(src) + ")";
+    d.style.backgroundRepeat = repeat || "no-repeat";
+    d.style.imageRendering = "pixelated";
+    for (const k of ["left", "right", "top", "bottom", "width", "height"]) if (css[k] != null) d.style[k] = css[k];
+    win.appendChild(d);
+  };
+  await piece("PLEDIT.topLeft", { left: "0px", top: "0px", width: "25px", height: "20px" });
+  await piece("PLEDIT.topTitle", { left: "25px", top: "0px", width: "100px", height: "20px" });
+  await piece("PLEDIT.topTile", { left: "125px", right: "25px", top: "0px", height: "20px" }, "repeat-x");
+  await piece("PLEDIT.topRight", { right: "0px", top: "0px", width: "25px", height: "20px" });
+  await piece("PLEDIT.leftTile", { left: "0px", top: "20px", bottom: "38px", width: "12px" }, "repeat-y");
+  await piece("PLEDIT.rightTile", { right: "0px", top: "20px", bottom: "38px", width: "20px" }, "repeat-y");
+  await piece("PLEDIT.bottomLeft", { left: "0px", bottom: "0px", width: "125px", height: "38px" });
+  await piece("PLEDIT.bottomTile", { left: "125px", right: "150px", bottom: "0px", height: "38px" }, "repeat-x");
+  await piece("PLEDIT.bottomRight", { right: "0px", bottom: "0px", width: "150px", height: "38px" });
+}
 async function buildPlaylistWindow(skin, res){
   const win = document.createElement("div");
   win.className = "win"; win.id = "plwin";
@@ -17,7 +40,11 @@ async function buildPlaylistWindow(skin, res){
     win.dataset.w = sz.w; win.dataset.h = sz.h;
     win.style.width = sz.w + "px"; win.style.height = sz.h + "px";
     win.style.backgroundColor = "#a8adb5";
-    if (pl.backgroundFile) {
+    if (pl.frame === "classic") {
+      win.classList.add("plclassic");
+      win.style.backgroundColor = (pl.colors && pl.colors.bg) || "#000";
+      await buildClassicPlFrame(win, res);
+    } else if (pl.backgroundFile) {
       const bg = await resolveImg(res, pl.background, pl.backgroundFile);
       if (bg) {
         win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
@@ -33,14 +60,16 @@ async function buildPlaylistWindow(skin, res){
       const src = await resolveImg(res, bg.image, bg.imageFile);
       if (src) win.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h));
     }
-    const ptitle = document.createElement("div");
-    ptitle.className = "wtext";
-    ptitle.style.left = "8px"; ptitle.style.top = "3px";
-    ptitle.style.width = "120px"; ptitle.style.height = "14px";
-    ptitle.style.color = "#fff"; ptitle.style.textShadow = "0 1px 2px rgba(0,0,0,.8)";
-    ptitle.style.fontSize = "12px"; ptitle.style.lineHeight = "14px";
-    ptitle.textContent = "Playlist";
-    win.appendChild(ptitle);
+    if (pl.frame !== "classic") {
+      const ptitle = document.createElement("div");
+      ptitle.className = "wtext";
+      ptitle.style.left = "8px"; ptitle.style.top = "3px";
+      ptitle.style.width = "120px"; ptitle.style.height = "14px";
+      ptitle.style.color = "#fff"; ptitle.style.textShadow = "0 1px 2px rgba(0,0,0,.8)";
+      ptitle.style.fontSize = "12px"; ptitle.style.lineHeight = "14px";
+      ptitle.textContent = "Playlist";
+      win.appendChild(ptitle);
+    }
     for (const lay of pl.layers) {
       if (!lay.imageFile) continue;
       const src = await resolveImg(res, lay.image, lay.imageFile);
@@ -66,7 +95,18 @@ async function buildPlaylistWindow(skin, res){
       el.dataset.display = t.display || "";
       win.appendChild(el);
     }
-    for (const b of pl.buttons) await buildButton(b, win, res, onPLButton);
+    if (pl.frame === "classic") {
+      for (const b of pl.buttons) {
+        const d = document.createElement("div");
+        d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
+        d.style.left = b.x + "px"; d.style.top = b.y + "px";
+        d.style.width = (b.w || 10) + "px"; d.style.height = (b.h || 10) + "px";
+        d.addEventListener("click", () => onPLButton(b));
+        win.appendChild(d); b._el = d;
+      }
+    } else {
+      for (const b of pl.buttons) await buildButton(b, win, res, onPLButton);
+    }
     win._pin = buildPinRecord(win, pl.w, pl.h, rect);
     if (sz.h < win._pin.minH) { sz.h = win._pin.minH; win.dataset.h = sz.h; win.style.height = sz.h + "px"; }
     applyWinLayout(win, sz.w, sz.h);

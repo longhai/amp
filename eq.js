@@ -307,7 +307,11 @@ async function buildEQWindow(skin, res){
       if (eq.background && lay.image === eq.background) continue;
       if (!lay.imageFile) continue;
       const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+      if (src) {
+        const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
+        if (/label/i.test((lay.image || "") + " " + (lay.imageFile || ""))) { im.style.zIndex = "6"; im.style.pointerEvents = "none"; }
+        win.appendChild(im);
+      }
     }
     if (eq.preamp) await buildEQSlider(eq.preamp, -1, win, res, eq);
     for (let i = 0; i < eq.bands.length; i++) await buildEQSlider(eq.bands[i], i, win, res, eq);

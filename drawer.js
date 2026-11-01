@@ -43,6 +43,72 @@ function applySavedColorTheme(){
   if (saved) applyColorTheme(saved);
 }
 window.applySavedColorTheme = applySavedColorTheme;
+function skinColorToCss(id, fallback){
+  const colors = (SKIN && SKIN.colors) || {};
+  const v = colors[id];
+  if (!v) return fallback;
+  const m = String(v).split(",").map(s => parseInt(s.trim(), 10));
+  if (m.length >= 3 && m.every(n => isFinite(n))) return "rgb(" + m[0] + "," + m[1] + "," + m[2] + ")";
+  return v;
+}
+function skinTabLabelInfo(t, st){
+  const label = (st && st.label) || t.label;
+  const font = SKIN.fonts && SKIN.fonts[(st && st.font) || "player.smallfont"];
+  if (font && font.tag === "bitmapfont" && font.charwidth) return { label, width: label.length * font.charwidth, font, bitmap: true };
+  const cv = document.createElement("canvas");
+  const cx = cv.getContext("2d");
+  cx.font = "12px sans-serif";
+  return { label, width: Math.ceil(cx.measureText(label).width), font: null, bitmap: false };
+}
+async function buildSkinTab(t, res){
+  const on = t.on, off = t.off;
+  if (!on || !off || !on.left || !on.middle || !on.right || !off.left || !off.middle || !off.right) return null;
+  const urls = {};
+  for (const st of ["on", "off"]) for (const part of ["left", "middle", "right"]) {
+    const u = await resolveImg(res, t[st][part], null);
+    if (!u) return null;
+    urls[st + "." + part] = u;
+  }
+  const info = skinTabLabelInfo(t, on);
+  const tabW = 11 + info.width + 2 + 15;
+  const el = document.createElement("div");
+  el.style.cssText = "position:relative;width:" + tabW + "px;height:19px;cursor:pointer;flex:0 0 auto;";
+  el._skinTab = t; el._tabUrls = urls;
+  const mkSlice = (part, pos, size) => {
+    const d = document.createElement("div");
+    d.dataset.part = part;
+    d.style.cssText = "position:absolute;top:0;height:19px;background-repeat:" + (part === "middle" ? "repeat-x" : "no-repeat") + ";background-size:" + size + ";" + pos;
+    return d;
+  };
+  el.appendChild(mkSlice("left", "left:0;width:15px;", "15px 19px"));
+  el.appendChild(mkSlice("middle", "left:15px;right:15px;", "10px 19px"));
+  el.appendChild(mkSlice("right", "right:0;width:15px;", "15px 19px"));
+  let painted = false;
+  if (info.bitmap && typeof bitmapFontImage === "function" && typeof paintBitmapText === "function") {
+    const img = await bitmapFontImage(info.font);
+    if (img) {
+      const cv = document.createElement("canvas");
+      cv.style.cssText = "position:absolute;left:11px;top:5px;z-index:2;pointer-events:none;image-rendering:pixelated;";
+      paintBitmapText(cv, img, info.font, info.label);
+      el.appendChild(cv);
+      painted = true;
+    }
+  }
+  if (!painted) {
+    const s = document.createElement("span");
+    s.textContent = info.label;
+    s.style.cssText = "position:absolute;left:11px;top:3px;z-index:2;pointer-events:none;font-size:12px;line-height:12px;white-space:nowrap;color:" + skinColorToCss((on && on.color) || "drawer.color.text.dark", "#333") + ";";
+    el.appendChild(s);
+  }
+  return el;
+}
+function paintSkinTab(el, isOn){
+  const st = isOn ? "on" : "off";
+  for (const d of el.querySelectorAll("[data-part]")) {
+    const u = el._tabUrls && el._tabUrls[st + "." + d.dataset.part];
+    if (u) d.style.backgroundImage = "url(" + JSON.stringify(u) + ")";
+  }
+}
 async function renderDrawerTab(win){
   const d = SKIN.drawer;
   const content = win._drawerContent;
@@ -55,8 +121,8 @@ async function renderDrawerTab(win){
     const el = win._drawerTabs[t.name];
     if (!el) continue;
     const on = t === tab;
-    el.style.opacity = on ? "1" : "0.55";
-    el.style.fontWeight = on ? "bold" : "normal";
+    if (el._skinTab) paintSkinTab(el, on);
+    else { el.style.opacity = on ? "1" : "0.55"; el.style.fontWeight = on ? "bold" : "normal"; }
   }
   if (drawerTab === "eq") {
     content.style.display = "none";
@@ -172,7 +238,7 @@ async function buildDrawerWindow(skin, res){
   const inner = document.createElement("div");
   inner.className = "drawerinner";
   inner.style.width = sz.w + "px"; inner.style.height = sz.h + "px";
-  inner.style.transform = "translateY(100%)";
+  inner.style.transform = "translateY(-100%)";
   inner.style.position = "relative";
   wrap.appendChild(inner);
   wrap._inner = inner;
@@ -197,20 +263,27 @@ async function buildDrawerWindow(skin, res){
   }
   for (const b of d.buttons) await buildButton(b, inner, res, onDrawerButton);
   const tabsEl = document.createElement("div");
-  tabsEl.style.cssText = "position:absolute;left:8px;bottom:5px;display:flex;gap:6px;z-index:3;";
+  tabsEl.style.cssText = "position:absolute;left:10px;bottom:5px;display:flex;gap:2px;align-items:flex-end;z-index:3;";
   inner.appendChild(tabsEl);
   wrap._drawerTabs = {};
   for (const t of d.tabs) {
-    const el = document.createElement("div");
-    el.textContent = t.label;
-    el.style.cssText = "color:#ddd;font-size:12px;padding:2px 8px;cursor:pointer;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
-    el.addEventListener("click", () => { drawerTab = t.name; renderDrawerTab(wrap).catch(e => setStatus("không mở được tab: " + e.message, true)); });
+    let el = await buildSkinTab(t, res);
+    if (!el) {
+      el = document.createElement("div");
+      el.textContent = t.label;
+      el.style.cssText = "color:#ddd;font-size:12px;padding:2px 8px;cursor:pointer;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
+    }
+    el.addEventListener("click", () => {
+      drawerTab = t.name;
+      if (typeof drawerTabSync === "function") drawerTabSync();
+      renderDrawerTab(wrap).catch(e => setStatus("không mở được tab: " + e.message, true));
+    });
     tabsEl.appendChild(el);
     wrap._drawerTabs[t.name] = el;
   }
   const eqLink = document.createElement("div");
   eqLink.textContent = "EQ đầy đủ ›";
-  eqLink.style.cssText = "color:#9cf;font-size:12px;padding:2px 8px;cursor:pointer;margin-left:auto;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
+  eqLink.style.cssText = "color:#9cf;font-size:12px;padding:2px 6px;cursor:pointer;margin-left:auto;white-space:nowrap;flex:0 0 auto;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
   eqLink.addEventListener("click", async () => { await toggleWindow("eq"); });
   tabsEl.appendChild(eqLink);
   wrap._drawerEqLink = eqLink;

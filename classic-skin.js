@@ -108,7 +108,16 @@
     "PLEDIT.misc": ["pledit", 154, 111, 22, 18],
     "PLEDIT.misc.down": ["pledit", 177, 111, 22, 18],
     "PLEDIT.list": ["pledit", 204, 111, 22, 18],
-    "PLEDIT.list.down": ["pledit", 227, 111, 22, 18]
+    "PLEDIT.list.down": ["pledit", 227, 111, 22, 18],
+    "PLEDIT.topLeft": ["pledit", 0, 0, 25, 20],
+    "PLEDIT.topTitle": ["pledit", 26, 0, 100, 20],
+    "PLEDIT.topTile": ["pledit", 127, 0, 25, 20],
+    "PLEDIT.topRight": ["pledit", 153, 0, 25, 20],
+    "PLEDIT.leftTile": ["pledit", 0, 42, 12, 29],
+    "PLEDIT.rightTile": ["pledit", 31, 42, 20, 29],
+    "PLEDIT.bottomTile": ["pledit", 179, 0, 25, 38],
+    "PLEDIT.bottomLeft": ["pledit", 0, 72, 125, 38],
+    "PLEDIT.bottomRight": ["pledit", 126, 72, 150, 38]
   };
   const CLASSIC_TEXT_CHARSET =
     "abcdefghijklmnopqrstuvwxyz\"@   " +
@@ -262,16 +271,16 @@
     } : null;
     const playlist = has("PLEDIT.bg") ? {
       w: 280, h: 186, native: true,
-      background: "PLEDIT.bg", backgroundFile: "PLEDIT.bg",
+      frame: "classic",
       backgrounds: [], layers: [],
       listRect: { x: 12, y: 20, w: 248, h: 128 },
       buttons: [
-        withDown(B("PlAdd", "PLEDIT.add", "PE_ADD", null, 14, 156, 22, 18), "PLEDIT.add.down"),
-        withDown(B("PlRem", "PLEDIT.rem", "PE_REM", null, 43, 156, 22, 18), "PLEDIT.rem.down"),
-        withDown(B("PlSel", "PLEDIT.sel", "PE_SEL", null, 72, 156, 22, 18), "PLEDIT.sel.down"),
-        withDown(B("PlMisc", "PLEDIT.misc", "PE_MISC", null, 101, 156, 22, 18), "PLEDIT.misc.down"),
-        withDown(B("PlList", "PLEDIT.list", "PE_LIST", null, 236, 156, 22, 18), "PLEDIT.list.down")
-      ].filter(b => has(b.image)),
+        B("PlAdd", null, "PE_ADD", null, 14, 156, 22, 18),
+        B("PlRem", null, "PE_REM", null, 43, 156, 22, 18),
+        B("PlSel", null, "PE_SEL", null, 72, 156, 22, 18),
+        B("PlMisc", null, "PE_MISC", null, 101, 156, 22, 18),
+        B("PlList", null, "PE_LIST", null, 236, 156, 22, 18)
+      ],
       texts: []
     } : null;
     return {

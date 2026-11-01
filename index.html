@@ -11,7 +11,7 @@
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=7.1"></script>
+<script defer src="skin-loader.js?v=7.2"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -42,6 +42,7 @@
     image-rendering:auto;-webkit-user-drag:none;user-select:none;}
   .win .btn{position:absolute;padding:0;border:0;background:transparent;
     cursor:pointer;touch-action:manipulation;}
+  .win.plclassic .btn:active{background:rgba(0,0,0,.30);}
   .win .btn img{position:static;width:100%;height:100%;}
   #ticker{position:absolute;overflow:hidden;white-space:nowrap;
     color:#b9b9b9;font-size:12px;line-height:15px;text-align:center;}
@@ -124,6 +125,8 @@
   #notifier .nt{position:absolute;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#222;}
   .drawerwrap{overflow:hidden;}
   .drawerwrap .drawerinner{transition:transform .25s ease;}
+  #scaler{z-index:2;}
+  #drawerwin{z-index:1;}
   /* --- controls below the skin (not part of the skin) --- */
   #panel{margin:8px auto 20px;max-width:640px;padding:0 10px;
     font-size:13px;color:#999;}
@@ -138,7 +141,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v7.1 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
+<h1><b id="skinname">WinampModern566</b> — Amp v7.2 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
 <div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <div id="panel">
@@ -181,7 +184,7 @@ let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "7.1";
+const EXPECTED_LOADER_VERSION = "7.2";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -493,7 +496,7 @@ let eqJsPromise = null, plJsPromise = null;
 let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
 let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
 function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=6"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.1"); return videoJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.2"); return videoJsPromise; }
 function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=6"); return avsJsPromise; }
 function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=6"); return aaJsPromise; }
 function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=6"); return aboutJsPromise; }
@@ -577,16 +580,16 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.1");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.2");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.1");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.2");
   return plJsPromise;
 }
 let classicJsPromise = null;
 function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.1");
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.2");
   return classicJsPromise;
 }
 async function detectSkinKind(file){
@@ -645,6 +648,7 @@ function buildPinRecord(win, nativeW, nativeH, rect){
   const els = [];
   for (const c of win.children) {
     if (c.classList.contains("resize-grip")) continue;
+    if (c.dataset.nopin === "1") continue;
     if (c.classList.contains("aaname")) continue;
     if (c === win._plList || c === win._flexBox) continue;
     const top = parseFloat(c.style.top || "");
@@ -752,7 +756,13 @@ async function toggleWindow(kind){
   }
   const now = !winVisible(kind);
   if (kind === "pl") { plVisible = now; try { localStorage.setItem("amp-pl-visible-v5", now ? "1" : "0"); } catch (e) {} }
-  else if (kind === "eq") { eqVisible = now; try { localStorage.setItem("amp-eq-visible-v5", now ? "1" : "0"); } catch (e) {} }
+  else if (kind === "eq") {
+    eqVisible = now; try { localStorage.setItem("amp-eq-visible-v5", now ? "1" : "0"); } catch (e) {} 
+    if (now && drawerOpen && typeof drawerTab !== "undefined" && drawerTab === "eq") {
+      drawerEqSaved = false;
+      toggleDrawer();
+    }
+  }
   else setWinVisible(kind, now);
   if (kind === "avs" && !now && window.__avsClosed) window.__avsClosed();
   if (kind === "avs" && now && window.__avsOpened) window.__avsOpened();
@@ -760,22 +770,70 @@ async function toggleWindow(kind){
   if (kind === "albumart" && now && window.updateAlbumArt) window.updateAlbumArt();
   applyWindowVisibility();
 }
+let drawerEqSaved = false, drawerEqWasOpen = null;
+function drawerEqHide(){
+  if (typeof drawerTab === "undefined" || drawerTab !== "eq" || drawerEqSaved) return;
+  drawerEqSaved = true; drawerEqWasOpen = eqVisible;
+  if (winVisible("eq")) { eqVisible = false; applyWindowVisibility(); }
+}
+function drawerEqRestore(){
+  if (!drawerEqSaved) return;
+  drawerEqSaved = false;
+  eqVisible = drawerEqWasOpen;
+  applyWindowVisibility();
+}
+function drawerTabSync(){
+  if (typeof drawerTab === "undefined") return;
+  if (drawerTab === "eq") drawerEqHide(); else drawerEqRestore();
+}
 async function toggleDrawer(){
   if (!SKIN || !SKIN.drawer) { setStatus("Skin này không có ngăn kéo Config", true); return; }
   if (!drawerWin) {
     try { await ensureDrawerWindow(); } catch (e) { setStatus("không mở được ngăn kéo Config: " + e.message, true); return; }
     if (!drawerWin) { setStatus("Skin này không có ngăn kéo Config", true); return; }
   }
-  drawerOpen = !drawerOpen;
-  setWinVisible("drawer", drawerOpen);
-  if (drawerWin) {
-    drawerWin.style.display = drawerOpen ? "" : "none";
-    if (drawerOpen && drawerWin._inner) {
-      drawerWin._inner.style.transform = "translateY(100%)";
-      requestAnimationFrame(() => { if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(0)"; });
+  if (drawerWin._closing) {
+    clearTimeout(drawerWin._closeTimer);
+    drawerWin._closing = false;
+    if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(0)";
+    return;
+  }
+  if (!drawerOpen) {
+    if (drawerWin._closeTimer) { clearTimeout(drawerWin._closeTimer); drawerWin._closeTimer = null; }
+    drawerWin._closing = false;
+    drawerOpen = true;
+    setWinVisible("drawer", true);
+    drawerEqHide();
+    drawerWin.style.display = "";
+    if (drawerWin._inner) {
+      drawerWin._inner.style.transform = "translateY(-100%)";
+      requestAnimationFrame(() => { if (drawerWin._inner && drawerOpen) drawerWin._inner.style.transform = "translateY(0)"; });
+    }
+    applyWindowVisibility();
+  } else {
+    drawerWin._closing = true;
+    if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(-100%)";
+    const finish = () => {
+      if (!drawerWin._closing) return;
+      drawerWin._closing = false;
+      drawerWin._closeTimer = null;
+      drawerOpen = false;
+      setWinVisible("drawer", false);
+      drawerWin.style.display = "none";
+      drawerEqRestore();
+      applyWindowVisibility();
+    };
+    drawerWin._closeTimer = setTimeout(finish, 300);
+    if (drawerWin._inner) {
+      const onEnd = e => {
+        if (e.propertyName !== "transform") return;
+        drawerWin._inner.removeEventListener("transitionend", onEnd);
+        clearTimeout(drawerWin._closeTimer);
+        finish();
+      };
+      drawerWin._inner.addEventListener("transitionend", onEnd);
     }
   }
-  applyWindowVisibility();
 }
 async function cycleRemoteStick(){
   if (!SKIN || (!SKIN.remote && !SKIN.stick)) { setStatus("Skin này không có Remote/Stick", true); return; }
