@@ -26,7 +26,7 @@ const SkinLoader = (() => {
      it in the <h1> and the status line, so a screenshot proves which
      loader is actually running. Bump together with the ?v= query in
      index.html whenever this file changes. */
-  const LOADER_VERSION = "4.1";
+  const LOADER_VERSION = "5";
 
   /* ---------- JSZip: CDN only (v4 has no vendored copy) ---------- */
   function loadScript(src) {
@@ -83,7 +83,18 @@ const SkinLoader = (() => {
   function cleanXml(text) {
     let t = text.replace(/<\?xml[^?]*\?>/gi, "").replace(/<!DOCTYPE[^>]*>/gi, "");
     t = t.replace(/\s+xmlns(?::[A-Za-z_][\w.-]*)?="[^"]*"/g, "");
-    t = t.replace(/<(\/?)(?:[A-Za-z_][\w.-]*:)+([A-Za-z_][\w.-]*)/g, "<$1$2");
+    // Closing tags: just strip the prefix. Opening tags: strip the
+    // prefix but keep the FULL tag name in data-xuitag — the XUI tag
+    // (e.g. Wasabi:MainFrame:NoStatus) is how a frame/title-bar element
+    // finds its groupdef, and the cleaned tag alone ("NoStatus") is
+    // shared by MainFrame/PlaylistFrame/MediaLibraryFrame/VISFrame.
+    // (v5 bug: the old strip made every frame element "NoStatus", so
+    // isFrameEl never matched, the content was walked one level deeper
+    // than planned and the nested display/playbuttons groups hit the
+    // depth limit — WinampModern566 lost its Play button and its frame.)
+    t = t.replace(/<\/((?:[A-Za-z_][\w.-]*:)+)([A-Za-z_][\w.-]*)/g, "</$2");
+    t = t.replace(/<((?:[A-Za-z_][\w.-]*:)+)([A-Za-z_][\w.-]*)/g,
+      (m, prefixes, last) => "<" + last + ' data-xuitag="' + prefixes + last + '"');
     t = t.replace(/(\s)(?:[A-Za-z_][\w.-]*:)+([A-Za-z_][\w.-]*)=/g, "$1$2=");
     t = t.replace(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g, "&amp;");
     return t;
@@ -199,9 +210,14 @@ const SkinLoader = (() => {
     info.abstraction_layer_version = skinDoc.documentElement.getAttribute("version") || "";
 
     // --- follow <include> recursively ---
-    const docs = [{ path: "skin.xml", doc: skinDoc }];
+    // Each doc records its include edges: a <container>'s <layout> usually
+    // lives in a separate included file (pledit-normal.xml), not in the
+    // container's own file, so EQ/Playlist must search the container's
+    // reachable docs, not just its own element subtree.
+    const docs = [{ path: "skin.xml", doc: skinDoc, includes: [] }];
+    const docByPath = new Map([["skin.xml", docs[0]]]);
     const seen = new Set(["skin.xml"]);
-    const queue = [{ path: "skin.xml", doc: skinDoc }];
+    const queue = [docs[0]];
     while (queue.length) {
       const cur = queue.shift();
       for (const inc of elList(cur.doc, "include")) {
@@ -211,18 +227,50 @@ const SkinLoader = (() => {
           continue; // @COLORTHEMESPATH@ etc. live outside the skin
         }
         const p = normPath(dirOf(cur.path), ref);
+        if (!cur.includes.includes(p)) cur.includes.push(p);
         if (seen.has(p.toLowerCase())) continue;
         seen.add(p.toLowerCase());
         const text = await readText(zip, pathMap, p);
         if (text === null) { report.notes.push("include không có trong file: " + p); continue; }
         try {
           const d = parseXmlText(text, p);
-          docs.push({ path: p, doc: d });
-          queue.push({ path: p, doc: d });
+          const entry = { path: p, doc: d, includes: [] };
+          docs.push(entry);
+          queue.push(entry);
+          docByPath.set(p.toLowerCase(), entry);
         } catch (e) {
           report.notes.push("không đọc được XML " + p + ": " + e.message);
         }
       }
+    }
+    // All <layout> elements in a doc and everything it includes
+    // (transitively). A container's layout is found this way.
+    function layoutsForDoc(docPath) {
+      const out = [];
+      const seenPaths = new Set();
+      const q = [docPath];
+      while (q.length) {
+        const p = q.shift();
+        const key = p.toLowerCase();
+        if (seenPaths.has(key)) continue;
+        seenPaths.add(key);
+        const entry = docByPath.get(key);
+        if (!entry) continue;
+        for (const l of elList(entry.doc, "layout")) out.push(l);
+        for (const inc of entry.includes) q.push(inc);
+      }
+      return out;
+    }
+    // Find a <container> by id (case-insensitive) and return it with the
+    // path of the doc that declares it, so its layouts can be found.
+    function findContainer(idTest) {
+      for (const { path, doc } of docs) {
+        for (const c of elList(doc, "container")) {
+          if (idTest((c.getAttribute("id") || "").toLowerCase()))
+            return { container: c, docPath: path };
+        }
+      }
+      return null;
     }
 
     // --- bitmap id -> file (+ optional sprite crop) ---
@@ -255,7 +303,14 @@ const SkinLoader = (() => {
       for (const tag of ["bitmapfont", "truetypefont"]) {
         for (const b of elList(doc, tag)) {
           const id = b.getAttribute("id");
-          if (id && !fonts[id]) fonts[id] = { tag, file: b.getAttribute("file") || "", charwidth: b.getAttribute("charwidth") || "", charheight: b.getAttribute("charheight") || "" };
+          // A bitmapfont's `file` is a BITMAP id (e.g. "bitmapfont.player.
+          // BIGNUM"), not a zip path — the renderer resolves it through
+          // `bitmaps` to get the glyph sheet. hspacing/vspacing set the
+          // advance between glyph cells (BIGNUM: charwidth 13, hspacing
+          // -1 → cells are 12px apart, digits in cols 0-9, ":" in col 13).
+          if (id && !fonts[id]) fonts[id] = { tag, file: b.getAttribute("file") || "",
+            charwidth: intAttr(b, "charwidth", 0), charheight: intAttr(b, "charheight", 0),
+            hspacing: intAttr(b, "hspacing", 0), vspacing: intAttr(b, "vspacing", 0) };
         }
       }
     }
@@ -266,10 +321,19 @@ const SkinLoader = (() => {
     // --- groupdefs ---
     const groupdefs = {};
     const groupdefEls = {};
+    // xuitag -> groupdef id: a <Wasabi:MainFrame:NoStatus> element is
+    // implemented by the groupdef whose xuitag matches its tag name
+    // (e.g. "wasabi.mainframe.nostatusbar" implements the main window's
+    // frame chrome: title bar + menu bar). Used by the frame walker.
+    const xuitagMap = {};
     for (const { doc } of docs) {
       for (const gd of elList(doc, "groupdef")) {
         const id = gd.getAttribute("id");
-        if (id && !groupdefs[id]) { groupdefs[id] = elChildren(gd); groupdefEls[id] = gd; }
+        if (id && !groupdefs[id]) {
+          groupdefs[id] = elChildren(gd); groupdefEls[id] = gd;
+          const xu = gd.getAttribute("xuitag");
+          if (xu && !xuitagMap[xu]) xuitagMap[xu] = id;
+        }
       }
     }
     // Wasabi relative coordinates: relatx/relaty="1" means the value is
@@ -287,12 +351,48 @@ const SkinLoader = (() => {
       const v = intAttr(el, attr, 0);
       return el.getAttribute("relat" + attr) === "1" ? parent + v : v;
     }
-    function groupSize(gid, parentW, parentH) {
+    function groupSize(gid, parentW, parentH, instEl) {
+      // A <group> instance's own w/h (when present) set the group's size:
+      // the titlebar streak groups are instantiated with w=95 / w=-155,
+      // and their children (the decorative lines) resolve against THAT,
+      // not against the whole titlebar. Without this the streak's centre
+      // line paints across the "WINAMP" title text. The groupdef's w/h
+      // are only the default, used when the instance sets none.
+      if (instEl && instEl.getAttribute("w") !== null) {
+        const w = relSize(instEl, "w", parentW);
+        const h = instEl.getAttribute("h") !== null ? relSize(instEl, "h", parentH)
+          : (groupdefEls[gid] && groupdefEls[gid].getAttribute("h") !== null
+            ? relSize(groupdefEls[gid], "h", parentH) : parentH);
+        return [w, h];
+      }
       const gd = groupdefEls[gid];
       if (!gd) return [parentW, parentH];
       const w = gd.getAttribute("w") !== null ? relSize(gd, "w", parentW) : parentW;
       const h = gd.getAttribute("h") !== null ? relSize(gd, "h", parentH) : parentH;
       return [w, h];
+    }
+    // Sizes: a negative or zero w/h is NOT a size (Wasabi uses w="-47"
+    // with relath to mean "parent height minus 47", and the AVS window's
+    // middle layer ends up with h=-47). v4 kept -47, and the renderer
+    // set style.height="-47px" — invalid, ignored — so the 10x10 black
+    // square image rendered at 346x346 (width only, aspect kept) and
+    // covered the whole display. Treat <=0 as "unknown" so the bitmap
+    // size fills it in, and the renderer never emits a negative size.
+    function posSize(v) { return (typeof v === "number" && v > 0) ? v : null; }
+    // A group is hidden when the INSTANCE says visible="0", or when the
+    // groupdef itself does and the instance does not override it with
+    // visible="1". v4 only checked the instance, so the AVS/video window
+    // (groupdef visible="0", instance with no visible attr) was rendered
+    // anyway — its black background covered the display. (v5)
+    function groupVisible(gid, instEl) {
+      if (instEl) {
+        const v = instEl.getAttribute("visible");
+        if (v === "1") return true;
+        if (v === "0") return false;
+      }
+      const gd = groupdefEls[gid];
+      if (gd && gd.getAttribute("visible") === "0") return false;
+      return true;
     }
 
     // --- asset resolver (blob URLs; canvas crop for sprite sheets) ---
@@ -366,26 +466,47 @@ const SkinLoader = (() => {
     }
 
     // --- walk a layout (BLAKK style) ---
-    const buttons = [], layers = [], texts = [], sliders = [];
-    const unresolved = [];
+    // One walk output per window: the main window uses `mainOut` (whose
+    // arrays are also the bare `buttons`/`layers`/... names the rest of
+    // this function already uses); the EQ and Playlist windows get their
+    // own outputs from the same walker (see extractEQ/extractPlaylist).
+    function newOut() {
+      return { buttons: [], layers: [], texts: [], sliders: [],
+        vis: [], listRects: [], backgrounds: [], unresolved: [], frame: null };
+    }
+    const mainOut = newOut();
+    const buttons = mainOut.buttons, layers = mainOut.layers,
+          texts = mainOut.texts, sliders = mainOut.sliders,
+          unresolved = mainOut.unresolved;
+    // Attribute lookup that tolerates the skins' casing habits: WM566's
+    // config drawer writes Image="..." (capital I), BLAKK's EQ preset
+    // button writes downimage="..." (all lower). XML attribute names are
+    // case-sensitive, so the exact name misses half the skins.
+    function attrCI(el, ...names) {
+      for (const n of names) {
+        const v = el.getAttribute(n);
+        if (v !== null && v !== undefined) return v;
+      }
+      return null;
+    }
     // Wasabi <button>/<layer> elements sometimes carry their own w/h
     // (Copperdeck: a 13x39 layer that uses the 289x135 winbck.main sprite
     // as its image). The explicit size wins — the bitmap size is only a
     // fallback. The old code always overwrote with the bitmap size, so that
     // 13x39 layer painted a 289x135 grey rectangle over the skin.
-    function addButton(el, x, y, kind, pw, ph) {
-      const image = el.getAttribute("image");
-      const hover = el.getAttribute("hoverImage");
-      const down = el.getAttribute("downImage");
-      const active = el.getAttribute("activeImage");
+    function addButton(out, el, x, y, kind, pw, ph) {
+      const image = attrCI(el, "image", "Image");
+      const hover = attrCI(el, "hoverImage", "hoverimage", "HoverImage");
+      const down = attrCI(el, "downImage", "downimage", "DownImage");
+      const active = attrCI(el, "activeImage", "activeimage", "ActiveImage");
       // Wasabi actions are case-insensitive in Winamp (Nebular writes
       // action="Play", "next", "Pause"); canonicalise to upper case so
       // validation and the renderer can compare with "PLAY"/"NEXT"/...
       const act = el.getAttribute("action");
-      buttons.push({
+      out.buttons.push({
         id: el.getAttribute("id"), kind, action: act ? act.toUpperCase() : null,
         param: el.getAttribute("param"),
-        x, y, w: relSize(el, "w", pw) || null, h: relSize(el, "h", ph) || null,
+        x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         image, imageFile: resolveImageRef(image),
         hoverImage: hover, hoverFile: hover ? resolveImageRef(hover) : null,
         downImage: down, downFile: down ? resolveImageRef(down) : null,
@@ -394,13 +515,61 @@ const SkinLoader = (() => {
         _imageId: image, _hoverId: hover, _downId: down, _activeId: active
       });
     }
-    function addLayer(el, x, y, pw, ph) {
-      const image = el.getAttribute("image");
-      layers.push({
+    function addLayer(out, el, x, y, pw, ph) {
+      const image = attrCI(el, "image", "Image");
+      out.layers.push({
         id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
-        x, y, w: relSize(el, "w", pw) || null, h: relSize(el, "h", ph) || null,
+        x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
         _imageId: image
+      });
+    }
+    function addText(out, el, x, y, pw, ph, sendParams) {
+      // Ticker/timer often live inside a groupdef (Nebular: Songticker
+      // and timer are in boombox-lcd-group), not as direct layout kids.
+      // Copperdeck writes the song ticker as <SongTicker> (capital S),
+      // not <text>: treat it as the songname ticker.
+      const isSongTicker = el.tagName.toLowerCase() === "songticker";
+      const id = el.getAttribute("id");
+      // <sendparams target="window.titlebar.title" default="WINAMP"/>
+      // overrides the element's own default (":componentname").
+      let def = el.getAttribute("default");
+      if (sendParams && id && sendParams[id] && sendParams[id].default !== undefined)
+        def = sendParams[id].default;
+      out.texts.push({
+        id, display: el.getAttribute("display") || (isSongTicker ? "songname" : null),
+        x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
+        font: el.getAttribute("font"), color: el.getAttribute("color"),
+        fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
+        ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null),
+        showlen: el.getAttribute("showlen"), default: def
+      });
+    }
+    function addSlider(out, el, x, y, pw, ph) {
+      const thumb = attrCI(el, "thumb", "Thumb");
+      const hoverThumb = attrCI(el, "hoverthumb", "hoverThumb", "HoverThumb");
+      const downThumb = attrCI(el, "downthumb", "downThumb", "DownThumb");
+      const act = el.getAttribute("action");
+      out.sliders.push({
+        id: el.getAttribute("id"), action: act ? act.toUpperCase() : null,
+        param: el.getAttribute("param"),
+        x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
+        // Orientation: an explicit orientation attr wins; otherwise a
+        // slider wider than tall is horizontal (Volume/Seeker) and a
+        // taller one is vertical (EQ bands). The old default "vertical"
+        // made the 254x13 seekbar render as a vertical strip.
+        // "v"/"h" are the short forms some skins use (Copperdeck).
+        orientation: (() => { const o = (el.getAttribute("orientation") || "").toLowerCase();
+          if (o === "v" || o === "vertical") return "vertical";
+          if (o === "h" || o === "horizontal") return "horizontal";
+          const w = posSize(relSize(el, "w", pw)), h = posSize(relSize(el, "h", ph));
+          return (w && h) ? (w >= h ? "horizontal" : "vertical") : "vertical"; })(),
+        orientationExplicit: !!el.getAttribute("orientation"),
+        thumb, thumbFile: thumb ? resolveImageRef(thumb) : null,
+        hoverThumb, hoverThumbFile: hoverThumb ? resolveImageRef(hoverThumb) : null,
+        downThumb, downThumbFile: downThumb ? resolveImageRef(downThumb) : null,
+        tooltip: el.getAttribute("tooltip") || el.getAttribute("Tooltip") || null,
+        thumbW: null, thumbH: null
       });
     }
     // Positions inside a groupdef are relative to the group origin;
@@ -417,58 +586,217 @@ const SkinLoader = (() => {
     // Elements with visible="0" are hidden in Winamp (alternate vis modes,
     // inactive states). The old code rendered them anyway.
     function isVisible(el) { return el.getAttribute("visible") !== "0"; }
-    function walkGroupChildren(items, ox, oy, depth, parentW, parentH) {
+    // Fill w/h of buttons/layers from PNG bytes (or sprite crop) — but
+    // only where the element did not already carry its own w/h. Shared by
+    // the main window, the frame, and the EQ/Playlist windows.
+    async function fillSizes(out) {
+      for (const b of out.buttons) {
+        if (b.w && b.h) continue;
+        const [w, h] = await bitmapSize(b._imageId);
+        if (!b.w) b.w = w; if (!b.h) b.h = h;
+      }
+      for (const l of out.layers) {
+        if (l.w && l.h) continue;
+        const [w, h] = await bitmapSize(l._imageId);
+        if (!l.w) l.w = w; if (!l.h) l.h = h;
+      }
+      for (const s of out.sliders) {
+        if (s.thumb && !s.thumbW) {
+          const [w, h] = await bitmapSize(s.thumb);
+          s.thumbW = w; s.thumbH = h;
+        }
+        if (!s.orientationExplicit && s.w && s.h)
+          s.orientation = s.w >= s.h ? "horizontal" : "vertical";
+      }
+    }
+    // One element, however it is reached (layout child or group child).
+    // `sendParams` is the layout-level <sendparams> map (target id ->
+    // {default, ...}); it flows down through nested groups so the title
+    // bar text picks up default="WINAMP".
+    function dispatchEl(el, ax, ay, depth, parentW, parentH, out, sendParams) {
+      if (!isVisible(el)) return;
+      // Tag names are case-sensitive in the XML DOM, but skins mix cases
+      // (NStatesButton, ProgressGrid): match on the lower-cased tag.
+      const tag = (el.tagName || "").toLowerCase();
+      const content = el.getAttribute("content");
+      if (content && groupdefs[content]) {
+        // MainFrame content="..." (Winamp 5 base skin): the layout's real
+        // content lives in that groupdef, not in the layout itself.
+        if (!groupVisible(content, el)) return;
+        if (depth < 5) {
+          const [gw, gh] = groupSize(content, parentW, parentH, el);
+          walkGroupChildren(resolveGroup(content, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+        } else out.unresolved.push("nested group quá sâu: " + content);
+        return;
+      }
+      // XUI component (Wasabi:TitleBar, ...): implemented by the groupdef
+      // whose xuitag matches the element's full tag (data-xuitag — the
+      // cleaned tagName alone, e.g. "NoStatus", is ambiguous).
+      const xuTag = el.getAttribute("data-xuitag");
+      if (xuTag && xuitagMap[xuTag]) {
+        const gid = xuitagMap[xuTag];
+        if (!groupVisible(gid, el)) return;
+        if (depth < 5) {
+          const [gw, gh] = groupSize(gid, parentW, parentH, el);
+          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+        } else out.unresolved.push("nested XUI quá sâu: " + tag);
+        return;
+      }
+      if (tag === "button") addButton(out, el, ax, ay, "button", parentW, parentH);
+      else if (tag === "togglebutton") addButton(out, el, ax, ay, "togglebutton", parentW, parentH);
+      else if (tag === "nstatesbutton") addButton(out, el, ax, ay, "nstatesbutton", parentW, parentH);
+      else if (tag === "layer") addLayer(out, el, ax, ay, parentW, parentH);
+      else if (tag === "text" || tag === "songticker")
+        addText(out, el, ax, ay, parentW, parentH, sendParams);
+      else if (tag === "slider") addSlider(out, el, ax, ay, parentW, parentH);
+      else if (tag === "vis") {
+        out.vis.push({ id: el.getAttribute("id"), x: ax, y: ay,
+          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)) });
+      }
+      else if (tag === "windowholder" || tag === "component") {
+        // The playlist list area (BLAKK: windowholder; WM566/DDTank/
+        // Copperdeck: component). The renderer puts the HTML list here.
+        out.listRects.push({ id: el.getAttribute("id"), x: ax, y: ay,
+          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)) });
+      }
+      else if (tag === "group") {
+        const gid = el.getAttribute("id");
+        if (el.getAttribute("move") === "1") {
+          // Slide-out panel (config drawer): hidden until a MAKI script
+          // moves it — rendering it at its rest position would paint it
+          // over the player. Same rule as Copperdeck's drawer.
+          out.unresolved.push("bỏ qua nhóm trượt (move=1): " + gid + " — cần MAKI để mở");
+          return;
+        }
+        if (!groupVisible(gid, el)) return;
+        const gd = groupdefEls[gid];
+        if (gd && gd.getAttribute("background")) {
+          const [gw0, gh0] = groupSize(gid, parentW, parentH, el);
+          out.backgrounds.push({ image: gd.getAttribute("background"),
+            imageFile: resolveImageRef(gd.getAttribute("background")),
+            x: ax, y: ay, w: gw0, h: gh0 });
+        }
+        if (depth < 5) {
+          const [gw, gh] = groupSize(gid, parentW, parentH, el);
+          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+        } else out.unresolved.push("nested group quá sâu: " + gid);
+      }
+      else if (tag === "sendparams" || tag === "script" ||
+               tag === "hideobject" || tag === "mousetrap") {
+        // Not visual: sendparams are applied through the map, scripts and
+        // mousetraps need MAKI. Not unresolved noise.
+        return;
+      }
+      else {
+        out.unresolved.push(el.tagName + " id=" + el.getAttribute("id") + " chưa xử lý");
+      }
+    }
+    function walkGroupChildren(items, ox, oy, depth, parentW, parentH, out, sendParams) {
       for (const { el, x, y } of items) {
-        if (!isVisible(el)) continue;
-        const ax = x + ox, ay = y + oy;
-        const content = el.getAttribute("content");
-        if (content && groupdefs[content]) {
-          // MainFrame content="..." (Winamp 5 base skin): the layout's real
-          // content lives in that groupdef, not in the layout itself.
-          if (depth < 3) {
-            const [gw, gh] = groupSize(content, parentW, parentH);
-            walkGroupChildren(resolveGroup(content, gw, gh), ax, ay, depth + 1, gw, gh);
-          } else unresolved.push("nested group quá sâu: " + content);
-          continue;
-        }
-        if (el.tagName === "button") addButton(el, ax, ay, "button", parentW, parentH);
-        else if (el.tagName === "togglebutton") addButton(el, ax, ay, "togglebutton", parentW, parentH);
-        else if (el.tagName === "layer") addLayer(el, ax, ay, parentW, parentH);
-        else if (el.tagName === "text" || el.tagName.toLowerCase() === "songticker") {
-          // Ticker/timer often live inside a groupdef (Nebular: Songticker
-          // and timer are in boombox-lcd-group), not as direct layout kids.
-          // Copperdeck writes the song ticker as <SongTicker> (capital S),
-          // not <text>: treat it as the songname ticker.
-          const isSongTicker = el.tagName.toLowerCase() === "songticker";
-          texts.push({
-            id: el.getAttribute("id"), display: el.getAttribute("display") || (isSongTicker ? "songname" : null),
-            x: ax, y: ay, w: relSize(el, "w", parentW), h: relSize(el, "h", parentH),
-            font: el.getAttribute("font"), color: el.getAttribute("color"),
-            fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
-            ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: el.getAttribute("showlen")
-          });
-        }
-        else if (el.tagName === "slider") {
-          sliders.push({ id: el.getAttribute("id"), action: el.getAttribute("action"),
-            x: ax, y: ay, w: el.getAttribute("w"), h: el.getAttribute("h"), group: "(group)", note: "slider inside groupdef" });
-        } else if (el.tagName === "group") {
-          const gid = el.getAttribute("id");
-          if (el.getAttribute("move") === "1") {
-            // Slide-out panel (config drawer): hidden until a MAKI script
-            // moves it — rendering it at its rest position would paint it
-            // over the player. Same rule as Copperdeck's drawer.
-            unresolved.push("bỏ qua nhóm trượt (move=1): " + gid + " — cần MAKI để mở");
-            continue;
-          }
-          if (depth < 3) {
-            const [gw, gh] = groupSize(gid, parentW, parentH);
-            walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh);
-          }
-          else unresolved.push("nested group quá sâu: " + gid);
-        } else {
-          unresolved.push(el.tagName + " id=" + el.getAttribute("id") + " trong group chưa xử lý");
+        dispatchEl(el, x + ox, y + oy, depth, parentW, parentH, out, sendParams || {});
+      }
+    }
+    // <sendparams target="a;b" default="..." visible="..."/> at layout
+    // level, keyed by target id.
+    function collectSendParams(layEl) {
+      const map = {};
+      for (const el of elChildren(layEl)) {
+        if ((el.tagName || "").toLowerCase() !== "sendparams") continue;
+        const def = el.getAttribute("default");
+        const vis = el.getAttribute("visible");
+        for (const t of (el.getAttribute("target") || "").split(";")) {
+          const id = t.trim(); if (!id) continue;
+          map[id] = map[id] || {};
+          if (def !== null) map[id].default = def;
+          if (vis !== null) map[id].visible = vis;
         }
       }
+      return map;
+    }
+    function isFrameEl(el) {
+      const xu = el.getAttribute("data-xuitag") || el.tagName;
+      return /Frame/.test(xu) && !!el.getAttribute("content") && !!xuitagMap[xu];
+    }
+    // Walk a MainFrame/PlaylistFrame's chrome (title bar + menu bar) into
+    // out.frame, and return how far down the frame's content must shift
+    // (the title bar height: the menubar's y). The layout's own window
+    // buttons (Minimize/Winshade/Close at y=4) are NOT shifted — they sit
+    // in the title bar itself.
+    function walkFrame(frameEl, layoutW, layoutH, out, sendParams) {
+      const frameGid = xuitagMap[frameEl.getAttribute("data-xuitag") || frameEl.tagName];
+      if (!frameGid || !groupdefs[frameGid]) return 0;
+      const fOut = newOut();
+      out.frame = fOut;
+      let offsetY = 0;
+      for (const el of groupdefs[frameGid]) {
+        if ((el.tagName || "").toLowerCase() === "group" && /menubar/i.test(el.getAttribute("id") || "")) {
+          offsetY = relPos(el, "y", layoutH); break;
+        }
+      }
+      if (!offsetY) offsetY = 18; // title bar height, no menubar in frame
+      fOut.menubarY = offsetY;
+      walkGroupChildren(resolveGroup(frameGid, layoutW, layoutH), 0, 0, 0, layoutW, layoutH, fOut, sendParams);
+      // The layout hides the frame's own Close buttons (hideobject) and
+      // provides its own at the same spot — drop the frame's copies.
+      fOut.buttons = fOut.buttons.filter(b => b.id !== "Close" && b.id !== "Close.inactive");
+      return offsetY;
+    }
+    // The menu bar's labels (File/Play/Options/View/Help) are laid out by
+    // a MAKI script (menualign): the walker stacks all five at (0,0).
+    // Spread them left-to-right in the menu.group's own order. Runs AFTER
+    // fillSizes, because it needs the label widths.
+    function layoutMenuLabels(fOut) {
+      if (!fOut || fOut.menubarY === undefined) return;
+      const order = [];
+      for (const gid of ["menugroup.file", "menugroup.play", "menugroup.options", "menugroup.view", "menugroup.help"]) {
+        for (const el of groupdefs[gid] || []) {
+          if ((el.tagName || "").toLowerCase() === "layer") {
+            const img = attrCI(el, "image", "Image");
+            if (img) order.push(img);
+          }
+        }
+      }
+      if (!order.length) return;
+      let cursor = 1; // menu.group x=1 inside the menubar
+      for (const img of order) {
+        const lay = fOut.layers.find(l => l.image === img);
+        if (!lay) continue;
+        lay.x = cursor; lay.y = fOut.menubarY;
+        cursor += (lay.w || 0) + 8;
+      }
+    }
+    // Walk one <layout> element's children into `out`. opts.handleFrame
+    // (default true): render the MainFrame chrome and shift its content
+    // below the title bar. Sub-windows (EQ/Playlist) pass false: their
+    // layout coordinates already place the content below the title area,
+    // and their frame chrome is not rendered in v5.
+    function walkLayoutChildren(layEl, layoutW, layoutH, out, opts) {
+      opts = opts || {};
+      const sendParams = collectSendParams(layEl);
+      let frameOffsetY = 0;
+      let frameEl = null;
+      if (opts.handleFrame !== false) {
+        for (const child of elChildren(layEl)) {
+          if (isFrameEl(child)) { frameEl = child; break; }
+        }
+        if (frameEl) frameOffsetY = walkFrame(frameEl, layoutW, layoutH, out, sendParams);
+      }
+      for (const child of elChildren(layEl)) {
+        if (!isVisible(child)) continue;
+        if (child === frameEl) {
+          const content = child.getAttribute("content");
+          if (content && groupdefs[content] && groupVisible(content, child)) {
+            const [gw, gh] = groupSize(content, layoutW, layoutH, child);
+            walkGroupChildren(resolveGroup(content, gw, gh),
+              relPos(child, "x", layoutW), relPos(child, "y", layoutH) + frameOffsetY,
+              0, gw, gh, out, sendParams);
+          }
+          continue;
+        }
+        dispatchEl(child, relPos(child, "x", layoutW), relPos(child, "y", layoutH),
+          0, layoutW, layoutH, out, sendParams);
+      }
+      return frameOffsetY;
     }
 
     // Layout size: some skins (Nebular) give no w/h at all — only
@@ -497,7 +825,7 @@ const SkinLoader = (() => {
       const seen = new Set();
       const checkEls = (els) => {
         for (const el of els) {
-          if ((el.tagName === "button" || el.tagName === "togglebutton") &&
+          if (((el.tagName || "").toLowerCase() === "button" || (el.tagName || "").toLowerCase() === "togglebutton") &&
               (el.getAttribute("action") || "").toUpperCase() === "PLAY" &&
               resolveImageRef(el.getAttribute("image"))) return true;
           const content = el.getAttribute("content");
@@ -547,6 +875,7 @@ const SkinLoader = (() => {
       }
     }
 
+    let eq = null, playlist = null;
     if (layoutEl) {
       let bg = layoutEl.getAttribute("background");
       // If the plain background bitmap is missing from the zip, fall back
@@ -565,57 +894,16 @@ const SkinLoader = (() => {
         const s = await pngSize(zip, pathMap, resolveImageRef(bg));
         if (s) layout.backgroundSize = s;
       }
-      for (const child of elChildren(layoutEl)) {
-        if (!isVisible(child)) continue;
-        const content = child.getAttribute("content");
-        if (content && groupdefs[content]) {
-          const [gw, gh] = groupSize(content, layout.w, layout.h);
-          walkGroupChildren(resolveGroup(content, gw, gh),
-            relPos(child, "x", layout.w), relPos(child, "y", layout.h), 0, gw, gh);
-          continue;
-        }
-        if (child.tagName === "group") {
-          const gid = child.getAttribute("id");
-          if (child.getAttribute("move") === "1") {
-            unresolved.push("bỏ qua nhóm trượt (move=1): " + gid + " — cần MAKI để mở");
-            continue;
-          }
-          const [gw, gh] = groupSize(gid, layout.w, layout.h);
-          walkGroupChildren(resolveGroup(gid, gw, gh),
-            relPos(child, "x", layout.w), relPos(child, "y", layout.h), 0, gw, gh);
-        } else if (child.tagName === "button" || child.tagName === "togglebutton") {
-          addButton(child, relPos(child, "x", layout.w), relPos(child, "y", layout.h), child.tagName, layout.w, layout.h);
-        } else if (child.tagName === "layer") {
-          addLayer(child, relPos(child, "x", layout.w), relPos(child, "y", layout.h), layout.w, layout.h);
-        } else if (child.tagName === "text" || child.tagName.toLowerCase() === "songticker") {
-          const isSongTicker = child.tagName.toLowerCase() === "songticker";
-          texts.push({
-            id: child.getAttribute("id"), display: child.getAttribute("display") || (isSongTicker ? "songname" : null),
-            x: relPos(child, "x", layout.w), y: relPos(child, "y", layout.h),
-            w: relSize(child, "w", layout.w), h: relSize(child, "h", layout.h),
-            font: child.getAttribute("font"), color: child.getAttribute("color"),
-            fontsize: child.getAttribute("fontsize"), align: child.getAttribute("align"),
-            ticker: child.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: child.getAttribute("showlen")
-          });
-        } else if (child.tagName === "slider") {
-          sliders.push({ id: child.getAttribute("id"), action: child.getAttribute("action"),
-            x: relPos(child, "x", layout.w), y: relPos(child, "y", layout.h),
-            w: child.getAttribute("w"), h: child.getAttribute("h") });
-        } else {
-          unresolved.push("layout child <" + child.tagName + "> id=" + child.getAttribute("id") + " chưa xử lý");
-        }
-      }
+      // Walk the layout (frame chrome + content) into mainOut.
+      walkLayoutChildren(layoutEl, layout.w, layout.h, mainOut, { handleFrame: true });
       // Fill w/h of buttons/layers from PNG bytes (or sprite crop) — but
       // only where the element did not already carry its own w/h (see above).
-      for (const b of buttons) {
-        if (b.w && b.h) continue;
-        const [w, h] = await bitmapSize(b._imageId);
-        if (!b.w) b.w = w; if (!b.h) b.h = h;
-      }
-      for (const l of layers) {
-        if (l.w && l.h) continue;
-        const [w, h] = await bitmapSize(l._imageId);
-        if (!l.w) l.w = w; if (!l.h) l.h = h;
+      await fillSizes(mainOut);
+      if (mainOut.frame) {
+        await fillSizes(mainOut.frame);
+        // The menu bar labels need their widths before they can be
+        // spread left-to-right (see layoutMenuLabels).
+        layoutMenuLabels(mainOut.frame);
       }
       // Play/Pause sharing one spot (DDTank: both at 156,217, a MAKI
       // script swaps them in Winamp). Rendered as two stacked divs the
@@ -740,6 +1028,11 @@ const SkinLoader = (() => {
                 for (const l of layers) { l.x -= ox; l.y -= oy; }
                 for (const t of texts) { t.x -= ox; t.y -= oy; }
                 for (const s of sliders) { if (typeof s.x === "number") s.x -= ox; if (typeof s.y === "number") s.y -= oy; }
+                if (mainOut.frame) {
+                  for (const b of mainOut.frame.buttons) { b.x -= ox; b.y -= oy; }
+                  for (const l of mainOut.frame.layers) { l.x -= ox; l.y -= oy; }
+                  for (const t of mainOut.frame.texts) { t.x -= ox; t.y -= oy; }
+                }
                 layout.bgCrop = { x: ox, y: oy, fullW: layout.w, fullH: layout.h };
                 layout.w = bw; layout.h = bh;
                 report.crop.applied = true;
@@ -756,6 +1049,134 @@ const SkinLoader = (() => {
         report.crop.error = e.message || String(e);
         report.cropError = report.crop.error;
         report.notes.push("không tính được vùng mờ của ảnh nền: " + report.crop.error);
+      }
+      // --- EQ + Playlist windows (v5) ---
+      // The equalizer is found either as a container (BLAKK/Nebular/
+      // DDTank/Copperdeck: <container id="eq"> with a "normal" layout)
+      // or as a groupdef that holds EQ_BAND sliders (WM566: the EQ lives
+      // in the config drawer's player.normal.drawer.eq.content groupdef,
+      // 318x89). The config drawer itself is a move=1 group the main
+      // walk skips, so the EQ is pulled out directly instead of through
+      // the drawer. A skin with neither gets a plain fallback window
+      // from the renderer (eq/playlist stay null here).
+      async function extractEQ() {
+        let layEl = null, defaultVisible = false, containerId = null;
+        const found = findContainer(id => id === "eq" || id === "equalizer");
+        if (found) {
+          containerId = found.container.getAttribute("id");
+          defaultVisible = found.container.getAttribute("default_visible") === "1";
+          const lays = layoutsForDoc(found.docPath);
+          layEl = lays.find(l => (l.getAttribute("id") || "") === "normal") || lays[0] || null;
+        }
+        const out = newOut();
+        let w = 0, h = 0, bg = null, bgFile = null, source = null;
+        if (layEl) {
+          const sz = await layoutSize(layEl);
+          w = sz.w; h = sz.h;
+          bg = layEl.getAttribute("background") || layEl.getAttribute("alphabackground");
+          if (bg && !resolveImageRef(bg)) bg = null;
+          bgFile = bg ? resolveImageRef(bg) : null;
+          walkLayoutChildren(layEl, w, h, out, { handleFrame: false });
+          source = "container:" + containerId;
+        } else {
+          let gid = null;
+          for (const id of Object.keys(groupdefs)) {
+            const hasEq = groupdefs[id].some(el =>
+              (el.tagName || "").toLowerCase() === "slider" &&
+              ((el.getAttribute("action") || "").toUpperCase() === "EQ_BAND" ||
+               (el.getAttribute("action") || "").toUpperCase() === "EQ_PREAMP"));
+            if (hasEq) { gid = id; break; }
+          }
+          if (!gid) return null;
+          const [gw, gh] = groupSize(gid, 0, 0);
+          w = gw > 0 ? gw : intAttr(groupdefEls[gid], "w", 0);
+          h = gh > 0 ? gh : intAttr(groupdefEls[gid], "h", 0);
+          if (!w || !h) return null;
+          walkGroupChildren(resolveGroup(gid, w, h), 0, 0, 0, w, h, out, {});
+          source = "groupdef:" + gid;
+        }
+        await fillSizes(out);
+        const eqSliders = out.sliders.filter(s => s.action === "EQ_BAND" || s.action === "EQ_PREAMP");
+        const preamp = eqSliders.find(s => s.action === "EQ_PREAMP" || s.param === "preamp") || null;
+        const bands = eqSliders
+          .filter(s => s.action === "EQ_BAND" && /^\d+$/.test(s.param || ""))
+          .sort((a, b) => parseInt(a.param, 10) - parseInt(b.param, 10))
+          // Some skins put two slider elements on one band (Copperdeck:
+          // eq1.fnt + eq1.act at the same spot) — keep the first of each.
+          .filter((s, i, arr) => arr.findIndex(t => t.param === s.param) === i);
+        if (!bands.length && !preamp) return null;
+        report.notes.push("EQ: " + source + " " + w + "x" + h + " — " + bands.length + " dải + preamp");
+        return { w, h, background: bg, backgroundFile: bgFile, defaultVisible,
+          layers: out.layers, buttons: out.buttons, sliders: out.sliders,
+          texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
+          preamp, bands, native: true, source };
+      }
+      async function extractPlaylist() {
+        let layEl = null, defaultVisible = true, containerId = null;
+        const found = findContainer(id => id === "pledit" || id === "playlist" || id === "playlisteditor");
+        if (found) {
+          containerId = found.container.getAttribute("id");
+          defaultVisible = found.container.getAttribute("default_visible") !== "0";
+          const lays = layoutsForDoc(found.docPath);
+          layEl = lays.find(l => (l.getAttribute("id") || "") === "normal") || lays[0] || null;
+        }
+        if (!layEl) return null;
+        const sz = await layoutSize(layEl);
+        const out = newOut();
+        let bg = layEl.getAttribute("background") || layEl.getAttribute("alphabackground");
+        if (bg && !resolveImageRef(bg)) bg = null;
+        walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: false });
+        await fillSizes(out);
+        const listRect = out.listRects[0] || null;
+        report.notes.push("Playlist: container:" + containerId + " " + sz.w + "x" + sz.h +
+          (listRect ? (" — list " + listRect.w + "x" + listRect.h + " tại (" + listRect.x + "," + listRect.y + ")")
+                    : " — KHÔNG thấy vùng list, dùng fallback"));
+        return { w: sz.w, h: sz.h, background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
+          defaultVisible, layers: out.layers, buttons: out.buttons, sliders: out.sliders,
+          texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
+          listRect, native: true, source: "container:" + containerId };
+      }
+      // Bitmapfont glyph row: the glyph sheet's ink lives in one row band
+      // (BIGNUM numfont.png: 3 bands of 20px, ink only in band 1). Detect
+      // it so the timer renderer crops the right digit cells.
+      async function detectFontRow(font) {
+        if (!font || font.tag !== "bitmapfont") return;
+        const entry = bitmaps[font.file];
+        if (!entry) return;
+        try {
+          const imgUrl = await fileURL(entry.file);
+          if (!imgUrl) return;
+          const dims = await new Promise(resolve => {
+            const im = new Image();
+            im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight, im });
+            im.onerror = () => resolve(null);
+            im.src = imgUrl;
+          });
+          if (!dims) return;
+          font.imageURL = imgUrl;
+          font.imageW = dims.w; font.imageH = dims.h;
+          const ch = font.charheight || 0;
+          if (!ch || dims.h < ch) { font.glyphRow = 0; return; }
+          const cv = document.createElement("canvas");
+          cv.width = dims.w; cv.height = dims.h;
+          const cx = cv.getContext("2d", { willReadFrequently: true });
+          cx.drawImage(dims.im, 0, 0);
+          const data = cx.getImageData(0, 0, dims.w, dims.h).data;
+          let bestRow = 0, bestInk = -1;
+          for (let r = 0; r * ch < dims.h; r++) {
+            let ink = 0;
+            for (let y = r * ch; y < Math.min((r + 1) * ch, dims.h); y++)
+              for (let x = 0; x < dims.w; x++)
+                if (data[(y * dims.w + x) * 4 + 3] > 30) ink++;
+            if (ink > bestInk) { bestInk = ink; bestRow = r; }
+          }
+          font.glyphRow = bestRow;
+        } catch (e) { font.glyphRow = 0; }
+      }
+      eq = await extractEQ();
+      playlist = await extractPlaylist();
+      for (const f of Object.values(fonts)) {
+        if (f.tag === "bitmapfont") { try { await detectFontRow(f); } catch (e) { /* fallback: monospace timer */ } }
       }
     } else {
       // --- ClassicPro fallback (AyonPlayer): no <layout> in the skin ---
@@ -904,11 +1325,19 @@ const SkinLoader = (() => {
       skin: { ...info, source_files: docs.map(d => d.path), source_zip: file.name || "" },
       layout, buttons, layers, texts, sliders,
       display, seek, volume, spectrum, fonts,
+      frame: mainOut.frame, vis: mainOut.vis, eq, playlist,
       unresolved: unresolved.concat(report.missing, report.notes)
     };
     // Strip internal helpers before returning.
-    for (const b of buttons) { delete b._imageId; delete b._hoverId; delete b._downId; delete b._activeId; }
-    for (const l of layers) { delete l._imageId; }
+    function stripOut(out) {
+      if (!out) return;
+      for (const b of out.buttons) { delete b._imageId; delete b._hoverId; delete b._downId; delete b._activeId; }
+      for (const l of out.layers) { delete l._imageId; }
+    }
+    stripOut(mainOut);
+    stripOut(mainOut.frame);
+    stripOut(eq);
+    stripOut(playlist);
     return { skin, resolve, report: { ...report, unresolved: skin.unresolved } };
   }
 

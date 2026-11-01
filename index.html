@@ -7,11 +7,11 @@
      Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
      200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
 <meta name="referrer" content="no-referrer">
-<title>Amp — v4.1 (nạp skin .wal/.zip, thư viện qua CDN)</title>
+<title>Amp — v5 (Playlist + EQ · skin mặc định WinampModern566)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="skin-loader.js?v=4.1"></script>
+<script src="skin-loader.js?v=5"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -19,28 +19,69 @@
   h1{font-size:13px;color:#888;margin:10px 0 2px;font-weight:normal;}
   h1 b{color:#bbb;}
   #skinsub{font-size:11px;color:#666;}
-  /* --- the skin stage: coordinate space = layout size from the skin, scaled by CSS transform --- */
+  /* --- the skin stage: one scaled stack (main + EQ + Playlist) ---
+     Each window is a .win div at its native size, positioned absolutely
+     inside #stage at its scaled offset and scaled by the same CSS
+     transform — so all three windows grow/shrink together in fit mode
+     and keep native sizes in 1x mode. overflow:hidden: the skin window
+     clips to its own box, like Winamp's shaped window. */
   #viewport{position:relative;margin:10px auto 0;}
   #viewport.dragover{outline:2px dashed #6a0;outline-offset:4px;}
-  #scaler{position:absolute;left:0;top:0;width:436px;height:160px;
-    transform-origin:top left;background:#000 no-repeat 0 0;overflow:hidden;}
-  /* overflow:hidden: the skin window clips to its own box, like Winamp's
-     shaped window — a layer that sticks out (e.g. a sprite reused at the
-     wrong size) must not widen the page or paint over the panel below. */
-  #scaler img{position:absolute;display:block;border:0;padding:0;
+  #stage{position:relative;margin:0 auto;}
+  .win{position:absolute;left:0;top:0;transform-origin:top left;
+    background:#000 no-repeat 0 0;overflow:hidden;}
+  .win img{position:absolute;display:block;border:0;padding:0;
     image-rendering:auto;-webkit-user-drag:none;user-select:none;}
-  #scaler .btn{position:absolute;padding:0;border:0;background:transparent;
-    cursor:pointer;}
-  #scaler .btn img{position:static;width:100%;height:100%;}
+  .win .btn{position:absolute;padding:0;border:0;background:transparent;
+    cursor:pointer;touch-action:manipulation;}
+  .win .btn img{position:static;width:100%;height:100%;}
   #ticker{position:absolute;overflow:hidden;white-space:nowrap;
     color:#b9b9b9;font-size:12px;line-height:15px;text-align:center;}
   #ticker span{display:inline-block;padding-left:0;will-change:transform;}
   #timer{position:absolute;color:#d2d2d2;font:700 11px/15px monospace;
     text-align:center;overflow:hidden;white-space:nowrap;}
+  #timer canvas{position:absolute;left:0;top:0;}
   .bar{position:absolute;cursor:pointer;}
   .bar img{position:absolute;left:0;top:0;}
   .bar .fill{position:absolute;left:0;top:0;overflow:hidden;height:100%;}
   .bar .fill img{position:absolute;left:0;top:0;}
+  .wtext{position:absolute;overflow:hidden;white-space:nowrap;
+    color:#ccc;font-size:11px;line-height:13px;}
+  .vis{position:absolute;}
+  /* EQ slider: a track div with a draggable thumb image. The track is the
+     skin's own slider rect; the fill is a clipped copy of the skin's
+     "full" bar image (or a plain coloured bar when the skin has none). */
+  .eqsl{position:absolute;cursor:pointer;touch-action:none;}
+  .eqsl .fill{position:absolute;left:0;bottom:0;overflow:hidden;width:100%;}
+  .eqsl .fill img{position:absolute;left:0;bottom:0;}
+  .eqsl .thumb{position:absolute;cursor:grab;touch-action:none;}
+  .eqsl .thumb img{position:static;width:100%;height:100%;}
+  .eqsl.plain .track{background:#222;border:1px solid #444;}
+  .eqsl.plain .fill{background:rgba(120,180,90,.55);}
+  .eqsl.plain .thumb{background:#888;border:1px solid #bbb;border-radius:2px;}
+  /* Playlist list: an HTML list over the skin's list rect (or a plain
+     dark window when the skin has no playlist layout). */
+  .eqlist{position:absolute;overflow-y:auto;overflow-x:hidden;
+    background:rgba(0,0,0,.55);color:#ddd;font-size:12px;line-height:18px;
+    text-align:left;scrollbar-width:thin;}
+  .eqlist .row{padding:0 6px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;cursor:pointer;}
+  .eqlist .row.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
+  .eqlist .row .num{color:#888;margin-right:6px;}
+  .eqlist .row.cur .num{color:#cde;}
+  .plfallback{background:#181818;border:1px solid #333;}
+  .plfallback .title{position:absolute;left:0;right:0;top:0;height:20px;
+    background:#222;color:#ccc;font-size:12px;line-height:20px;
+    text-align:left;padding-left:8px;}
+  .plfallback .x{position:absolute;right:4px;top:2px;background:none;
+    border:0;color:#ccc;font-size:14px;cursor:pointer;}
+  /* Preset popup (EQ window). */
+  .preset-menu{position:absolute;z-index:5;background:#1a1a1a;
+    border:1px solid #555;min-width:130px;text-align:left;
+    box-shadow:0 4px 14px rgba(0,0,0,.6);}
+  .preset-menu button{display:block;width:100%;background:none;border:0;
+    color:#ddd;font-size:13px;padding:7px 10px;text-align:left;cursor:pointer;}
+  .preset-menu button:hover{background:#2c4a1e;}
   /* --- controls below the skin (not part of the skin) --- */
   #panel{margin:8px auto 20px;max-width:640px;padding:0 10px;
     font-size:13px;color:#999;}
@@ -55,17 +96,18 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">BLAKK</b> — Amp v4.1 · main window only · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định nạp trực tiếp từ blakk.zip, đổi skin bằng file .wal/.zip</span></h1>
-<div id="viewport"><div id="scaler"></div></div>
+<h1><b id="skinname">WinampModern566</b> — Amp v5 · Playlist + EQ · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip</span></h1>
+<div id="viewport"><div id="stage"></div></div>
 
 <div id="panel">
   <select id="chan" title="Chọn kênh"></select><br>
   <button id="btn-fit">Vừa màn hình</button>
   <button id="btn-1x">Cỡ gốc 1x</button>
-  <button id="btn-list">Danh sách kênh</button>
+  <button id="btn-list">Playlist (PL)</button>
+  <button id="btn-eq">EQ</button>
   <button id="btn-skin" class="skinbtn">Nạp skin (.wal/.zip)</button><br>
   <span style="font-size:12px;color:#666">Kéo thả file .wal/.zip vào player cũng được — nếu skin không đọc được thì giữ skin cũ.</span>
-  <div id="status">Đang nạp blakk.zip + radio.m3u…</div>
+  <div id="status">Đang nạp winampmodern566.wal + radio.m3u…</div>
   <input type="file" id="filepick" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden>
   <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 </div>
@@ -74,31 +116,31 @@
 
 <script>
 "use strict";
-/* v4: same renderer + playback as v3, but there are NO vendored libraries
-   any more — JSZip and hls.js both come from CDN (see the <script> tags
-   above). The default BLAKK skin is loaded from blakk.zip in this folder
-   through the SAME SkinLoader.loadSkinFile() path as a user-picked
-   .wal/.zip — one code path for every skin.
-   Nothing here is hand-measured: x/y/w/h come from the skin XML. */
+/* v5: Playlist + EQ windows, WinampModern566 as the default skin, atomic
+   skin swap, the silver MainFrame chrome, a live spectrum vis, a running
+   bitmap timer, and Pointer-Events buttons (no more sticky hover on touch).
+   Same loader path for the default skin and a picked skin; same rule as
+   before: nothing is hand-measured — x/y/w/h come from the skin XML.
+   The renderer builds a new skin into a DETACHED container first and only
+   swaps it into the visible #stage once it is complete (see buildSkinInto
+   / applySkinFile): a photo taken mid-load can no longer catch the player
+   half-drawn, and a failed load leaves the old skin completely untouched. */
 const $ = s => document.querySelector(s);
-const scaler = $("#scaler"), viewport = $("#viewport"), statusEl = $("#status");
-const au = $("#au");
+const stage = $("#stage"), viewport = $("#viewport"), statusEl = $("#status");
+let au = $("#au");
 let SKIN = null, channels = [], idx = 0, mode = "radio";
 let hls = null, failCount = 0, failTimer = null, playing = false;
 let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
 let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
+let fileBlobURL = null; // the local file's blob URL (kept across EQ bypass swaps)
+let plItems = []; // [{kind:'radio', ch:i, name, url} | {kind:'file', name, blobURL}]
+let plVisible = null, eqVisible = null; // null = use the skin's default_visible
+let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
+</script>
 
-/* ---------- loader version stamp (v4.1) ----------
-   The version comes from skin-loader.js itself (SkinLoader.VERSION), never
-   from this file — so a screenshot proves which loader is really running.
-   index.html and skin-loader.js are separate files: GitHub Pages + the
-   browser cache can serve a NEW index.html with an OLD loader (that is
-   what happened with v4 on the user's phone: header said "Amp v4" but
-   Copperdeck rendered 645x135, the v3 behaviour). If the versions do not
-   match, the page warns in the status line instead of silently rendering
-   with mixed code. The ?v=4.1 query on the <script> tag makes the browser
-   fetch a fresh copy whenever the loader changes. */
-const EXPECTED_LOADER_VERSION = "4.1";
+<script>
+/* ---------- loader version stamp (v5) ---------- */
+const EXPECTED_LOADER_VERSION = "5";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -109,23 +151,14 @@ function showLoaderVersion(){
   el.style.color = (v && v === EXPECTED_LOADER_VERSION) ? "" : "#e88";
   return v;
 }
-function loaderMismatch(){
-  // Unknown version (v3 and older have no SkinLoader.VERSION) counts as a
-  // mismatch too — that is the exact stale-loader case from the user's
-  // phone: v4 page + v3 loader rendered Copperdeck at 645x135 with an
-  // empty ticker, and the old check let it pass silently.
-  return loaderVersion() !== EXPECTED_LOADER_VERSION;
-}
+function loaderMismatch(){ return loaderVersion() !== EXPECTED_LOADER_VERSION; }
 function loaderLabel(){
   const v = loaderVersion();
   return v ? ("v" + v) : "không rõ phiên bản";
 }
 showLoaderVersion();
 
-/* ---------- asset resolver: always from a loaded skin (blob URLs) ----------
-   There is no built-in assets/ folder in the slim build: the default skin
-   comes from blakk.zip via SkinLoader, exactly like a picked skin. The
-   stub below only guards code that runs before any skin has loaded. */
+/* ---------- asset resolver ---------- */
 const stubResolver = {
   hasCrop: () => false,
   bitmapURL: async () => null,
@@ -138,41 +171,250 @@ function setStatus(msg, isErr){
 }
 function fmt(t){ if(!isFinite(t)) return "--:--";
   t=Math.max(0,Math.floor(t)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); }
-function setTimer(t){ const e = $("#timer"); if(e) e.textContent = t; }
 
-/* ---------- scaling: follow the image, not a fixed template ---------- */
-function applyScale(){
-  const W = SKIN ? SKIN.layout.w : 436, H = SKIN ? SKIN.layout.h : 160;
-  let s;
-  if(scaleMode === "1x"){ s = 1; }
-  else {
-    const availH = Math.max(120, window.innerHeight - 130); // room for panel below
-    s = Math.min(window.innerWidth*0.98/W, availH/H, 3);
+/* ---------- EQ state + Web Audio graph (true bypass) ----------
+   EQ bands: standard Winamp 60/170/310/600/1000/3000/6000/12000/14000/
+   16000 Hz, peaking filters Q=1.0, preamp -12..+12 dB (centre 0).
+   EQ ON  -> audio goes through the chain (MediaElementSource -> preamp
+             GainNode -> 10 peaking BiquadFilters -> AnalyserNode ->
+             destination). The chain is measurably quieter than direct
+             playback, exactly like the Webamp fork.
+   EQ OFF -> TRUE BYPASS: the AudioContext is closed and the audio element
+             is swapped for a fresh one wired straight to the output — no
+             AudioContext anywhere in the path, so the sound is loud again.
+   The context is created lazily, only on the first EQ-ON (it needs a user
+   gesture to start). State persists in localStorage "amp-eq-v5". */
+const EQ_FREQS = [60,170,310,600,1000,3000,6000,12000,14000,16000];
+const EQ_PRESETS = {
+  "Flat":        { preamp: 0, bands: [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+  "Rock":        { preamp: 0, bands: [ 4, 3,-1,-2,-1, 1, 3, 4, 5, 5] },
+  "Pop":         { preamp: 0, bands: [ 2, 3, 3, 2,-1,-1, 1, 2, 3, 4] },
+  "Classical":   { preamp: 0, bands: [ 3, 2, 0,-1,-1, 0, 2, 3, 4, 5] },
+  "Full Bass":   { preamp: 0, bands: [ 6, 5, 4, 2, 0,-1,-2,-3,-3,-4] },
+  "Full Treble": { preamp: 0, bands: [-4,-3,-2,-1, 0, 2, 4, 5, 6, 6] }
+};
+let eqState = { on: false, preamp: 0, bands: [0,0,0,0,0,0,0,0,0,0] };
+try {
+  const saved = JSON.parse(localStorage.getItem("amp-eq-v5") || "null");
+  if (saved && Array.isArray(saved.bands) && saved.bands.length === 10) {
+    eqState.on = !!saved.on;
+    eqState.preamp = Math.max(-12, Math.min(12, +saved.preamp || 0));
+    eqState.bands = saved.bands.map(v => Math.max(-12, Math.min(12, +v || 0)));
   }
-  scaler.style.transform = "scale("+s+")";
-  scaler.style.width = W+"px"; scaler.style.height = H+"px";
-  viewport.style.width = (W*s)+"px";
-  viewport.style.height = (H*s)+"px";
-  $("#btn-fit").classList.toggle("on", scaleMode==="fit");
-  $("#btn-1x").classList.toggle("on", scaleMode==="1x");
+} catch (e) { /* corrupted saved EQ: keep defaults */ }
+function saveEQState(){
+  try { localStorage.setItem("amp-eq-v5", JSON.stringify(eqState)); } catch (e) {}
+}
+let audioCtx = null, eqNodes = null; // {src, preamp, filters[], analyser}
+function eqStateHook(){
+  window.__eqState = { on: eqState.on, bypass: !eqState.on,
+    ctxState: audioCtx ? audioCtx.state : null,
+    hasAnalyser: !!(eqNodes && eqNodes.analyser),
+    preamp: eqState.preamp, bands: eqState.bands.slice() };
+}
+eqStateHook();
+function applyEQGains(){
+  if (!eqNodes) return;
+  eqNodes.preamp.gain.value = eqState.preamp;
+  eqNodes.filters.forEach((f, i) => { f.gain.value = eqState.bands[i]; });
+}
+async function enableEQ(){
+  // Route the CURRENT audio element through the EQ chain.
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch (e) {} }
+  } else if (audioCtx.state === "suspended") {
+    try { await audioCtx.resume(); } catch (e) {}
+  }
+  if (eqNodes && eqNodes.el === au) { applyEQGains(); eqStateHook(); return; }
+  const src = audioCtx.createMediaElementSource(au);
+  const preamp = audioCtx.createGain();
+  const filters = EQ_FREQS.map(f => {
+    const b = audioCtx.createBiquadFilter();
+    b.type = "peaking"; b.frequency.value = f; b.Q.value = 1.0; b.gain.value = 0;
+    return b;
+  });
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.7;
+  let node = src;
+  node.connect(preamp); node = preamp;
+  for (const f of filters) { node.connect(f); node = f; }
+  node.connect(analyser); analyser.connect(audioCtx.destination);
+  eqNodes = { el: au, src, preamp, filters, analyser };
+  applyEQGains();
+  eqStateHook();
+}
+async function disableEQ(){
+  // True bypass: close the context and swap in a FRESH audio element
+  // wired straight to the output. The old element (and its
+  // MediaElementSource) is discarded, so no AudioContext stays in the
+  // path. Playback state, position and volume are preserved.
+  if (eqNodes) { try { eqNodes.src.disconnect(); } catch (e) {} eqNodes = null; }
+  if (audioCtx) { try { await audioCtx.close(); } catch (e) {} audioCtx = null; }
+  await swapAudioElement();
+  eqStateHook();
+}
+async function setEQOn(on){
+  on = !!on;
+  if (on === eqState.on && (on ? !!eqNodes : !audioCtx)) { eqStateHook(); return; }
+  eqState.on = on; saveEQState();
+  if (on) await enableEQ(); else await disableEQ();
+  updateEQToggleVisual();
+  eqStateHook();
+}
+/* Swap the <audio> element for a fresh one (bypass) and re-attach the
+   media + all listeners, preserving playing state / position / volume. */
+async function swapAudioElement(){
+  const wasPlaying = playing, wasTime = au.currentTime || 0, wasVol = au.volume;
+  const old = au, oldHls = hls;
+  if (oldHls) { try { oldHls.destroy(); } catch (e) {} hls = null; }
+  try { old.pause(); } catch (e) {}
+  const el = document.createElement("audio");
+  el.id = "au"; el.preload = "none"; el.volume = wasVol;
+  old.replaceWith(el);
+  au = el;
+  bindAudio(au);
+  if (mode === "file" && fileBlobURL) {
+    au.src = fileBlobURL;
+    try { au.currentTime = wasTime; } catch (e) {}
+  } else if (mode === "radio" && channels[idx]) {
+    const url = channels[idx].url;
+    if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
+      hls = new Hls({ maxBufferLength: 30 });
+      hls.loadSource(url); hls.attachMedia(au);
+      hls.on(Hls.Events.ERROR, (ev, data) => {
+        if (data && data.fatal) handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
+      });
+    } else {
+      au.src = url;
+    }
+  }
+  if (wasPlaying) { try { await au.play(); } catch (e) {} }
+  // The seek/volume fills follow the new element.
+  setFill("seek", (mode === "file" && isFinite(au.duration) && au.duration > 0) ? au.currentTime / au.duration : 0);
+  setFill("vol", wasVol);
+}
+
+/* ---------- running timer (elapsed clock, m:ss) ----------
+   The skin's timer text element (display="time") shows ELAPSED playback
+   time, counting up once per second, for local files AND live radio.
+   It resets to 0:00 on channel/track change or Stop. For live radio there
+   is no total duration, so only the elapsed time is shown — the word
+   "LIVE" never overwrites the clock (the ticker already says "Trực
+   tiếp"). The skin's bitmap digit font is used when it provides one
+   (player.BIGNUM), falling back to monospace text. */
+let playStartAt = 0, elapsedBase = 0;
+function elapsedSecs(){
+  return elapsedBase + (playStartAt ? (performance.now() - playStartAt) / 1000 : 0);
+}
+function resetTimer(){ elapsedBase = 0; playStartAt = 0; updateTimerDisplay(); } // the "playing" event sets playStartAt when sound actually starts
+function onPlayStart(){ if (!playStartAt) playStartAt = performance.now(); updateTimerDisplay(); }
+function onPlayPause(){ if (playStartAt) { elapsedBase = elapsedSecs(); playStartAt = 0; } updateTimerDisplay(); }
+function updateTimerDisplay(){
+  const t = fmt(elapsedSecs());
+  window.__timer = { text: t, elapsed: elapsedSecs() };
+  const timEl = $("#timer");
+  if (!timEl) return;
+  if (timerFontImg && timerFont) {
+    const cv = timEl.querySelector("canvas");
+    if (cv) drawTimerBitmap(cv, t);
+  } else {
+    timEl.textContent = t;
+  }
+}
+function drawTimerBitmap(cv, text){
+  const ctx = cv.getContext("2d");
+  const f = timerFont, img = timerFontImg;
+  const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
+  const row = f.glyphRow || 0;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const totalW = text.length * step - (f.hspacing || 0);
+  const align = (cv.dataset.align || "left");
+  let x = align === "center" ? Math.max(0, (cv.width - totalW) / 2) : 0;
+  const y = Math.max(0, (cv.height - ch) / 2);
+  for (const chr of text) {
+    let col = -1;
+    if (chr >= "0" && chr <= "9") col = chr.charCodeAt(0) - 48;
+    else if (chr === ":") col = 13;
+    if (col >= 0) ctx.drawImage(img, col * step, row * ch, cw, ch, x, y, cw, ch);
+    x += step;
+  }
+}
+setInterval(updateTimerDisplay, 250);
+</script>
+
+<script>
+/* ---------- scaling: the stage holds main + EQ + Playlist stacked ---------- */
+let mainWin = null, eqWin = null, plWin = null;
+function winVisible(kind){
+  if (kind === "eq") {
+    if (eqVisible !== null) return eqVisible;
+    return !!(SKIN && SKIN.eq && SKIN.eq.defaultVisible);
+  }
+  if (kind === "pl") {
+    if (plVisible !== null) return plVisible;
+    return !!(SKIN && SKIN.playlist && SKIN.playlist.defaultVisible);
+  }
+  return true;
+}
+function applyScale(){
+  if (!SKIN || !mainWin) return;
+  const wins = [{ el: mainWin, w: SKIN.layout.w, h: SKIN.layout.h }];
+  if (eqWin && winVisible("eq")) wins.push({ el: eqWin, w: +eqWin.dataset.w, h: +eqWin.dataset.h });
+  if (plWin && winVisible("pl")) wins.push({ el: plWin, w: +plWin.dataset.w, h: +plWin.dataset.h });
+  const maxW = Math.max(...wins.map(w => w.w));
+  const totalH = wins.reduce((a, w) => a + w.h, 0);
+  let s;
+  if (scaleMode === "1x") s = 1;
+  else {
+    const availH = Math.max(120, window.innerHeight - 130);
+    s = Math.min(window.innerWidth * 0.98 / maxW, availH / totalH, 3);
+  }
+  stage.style.width = (maxW * s) + "px";
+  stage.style.height = (totalH * s) + "px";
+  let y = 0;
+  for (const w of wins) {
+    w.el.style.display = "";
+    w.el.style.transform = "scale(" + s + ")";
+    w.el.style.left = "0px";
+    w.el.style.top = (y * s) + "px";
+    y += w.h;
+  }
+  if (eqWin && !winVisible("eq")) eqWin.style.display = "none";
+  if (plWin && !winVisible("pl")) plWin.style.display = "none";
+  $("#btn-fit").classList.toggle("on", scaleMode === "fit");
+  $("#btn-1x").classList.toggle("on", scaleMode === "1x");
+  $("#btn-list").classList.toggle("on", !!(plWin && winVisible("pl")));
+  $("#btn-eq").classList.toggle("on", !!(eqWin && winVisible("eq")));
 }
 function setScaleMode(m){
   scaleMode = m; localStorage.setItem("webamp-modern-scale", m); applyScale();
 }
-$("#btn-fit").onclick = ()=>setScaleMode("fit");
-$("#btn-1x").onclick = ()=>setScaleMode("1x");
-scaler.addEventListener("dblclick", ()=>setScaleMode(scaleMode==="fit"?"1x":"fit"));
+$("#btn-fit").onclick = () => setScaleMode("fit");
+$("#btn-1x").onclick = () => setScaleMode("1x");
 window.addEventListener("resize", applyScale);
+function applyWindowVisibility(){ applyScale(); }
+function toggleWindow(kind){
+  if (kind === "pl") { plVisible = !winVisible("pl"); try { localStorage.setItem("amp-pl-visible-v5", plVisible ? "1" : "0"); } catch (e) {} }
+  else { eqVisible = !winVisible("eq"); try { localStorage.setItem("amp-eq-visible-v5", eqVisible ? "1" : "0"); } catch (e) {} }
+  applyWindowVisibility();
+}
+try {
+  const pv = localStorage.getItem("amp-pl-visible-v5");
+  if (pv !== null) plVisible = pv === "1";
+  const ev = localStorage.getItem("amp-eq-visible-v5");
+  if (ev !== null) eqVisible = ev === "1";
+} catch (e) {}
+$("#btn-list").onclick = () => toggleWindow("pl");
+$("#btn-eq").onclick = () => toggleWindow("eq");
 
-/* ---------- build the skin from a skin object + resolver ---------- */
-async function resolveImg(imageId, imageFile){
-  // Sprite-sheet bitmaps (ClassicPro style) must be cropped by id;
-  // whole-file bitmaps resolve by zip path.
-  if(imageId && resolver.hasCrop(imageId)){
-    const u = await resolver.bitmapURL(imageId);
-    if(u) return u;
+/* ---------- asset resolution (per skin, via its own resolver) ---------- */
+async function resolveImg(res, imageId, imageFile){
+  if (imageId && res.hasCrop(imageId)) {
+    const u = await res.bitmapURL(imageId);
+    if (u) return u;
   }
-  if(imageFile) return await resolver.fileURL(imageFile);
+  if (imageFile) return await res.fileURL(imageFile);
   return null;
 }
 function imgElSrc(src, x, y, w, h){
@@ -180,174 +422,711 @@ function imgElSrc(src, x, y, w, h){
   im.src = src; im.draggable = false; im.alt = "";
   // A skin image that fails to load must vanish, never show a broken-image
   // icon + alt text over the skin (the D-Reliction bug).
-  im.onerror = ()=>{ im.style.display = "none"; };
-  im.style.left = x+"px"; im.style.top = y+"px";
-  if(w) im.style.width = w+"px"; if(h) im.style.height = h+"px";
+  im.onerror = () => { im.style.display = "none"; };
+  im.style.left = x + "px"; im.style.top = y + "px";
+  if (w) im.style.width = w + "px"; if (h) im.style.height = h + "px";
   return im;
 }
-async function buildSkin(){
-  scaler.innerHTML = "";
-  const L = SKIN.layout;
-  // background (resolved through the same resolver as everything else)
-  const bgSrc = L.backgroundFile ? await resolveImg(L.background, L.backgroundFile) : null;
-  if(bgSrc){
-    scaler.style.backgroundImage = "url("+JSON.stringify(bgSrc)+")";
-    if(L.bgCrop){
-      // Layout was cropped to the background's opaque box (Copperdeck):
-      // show the full background image shifted so the opaque part aligns.
-      scaler.style.backgroundSize = L.bgCrop.fullW+"px "+L.bgCrop.fullH+"px";
-      scaler.style.backgroundPosition = (-L.bgCrop.x)+"px "+(-L.bgCrop.y)+"px";
+
+/* ---------- buttons: Pointer Events only (the sticky-button fix) ----------
+   v4.1 used mouseenter/mouseleave/mousedown/mouseup/touchstart/touchend.
+   On Android Chrome a tap's synthetic mouse events re-applied hover/down
+   and mouseleave never fired until the user tapped elsewhere, so a
+   transport button stayed stuck on its pressed/hover image (the user's
+   20:02 photo: Next stuck as a dark hollow ring). Pointer Events replace
+   all of that: the hover image is applied ONLY when e.pointerType is
+   "mouse", and pointerup/pointercancel/pointerleave ALWAYS restore the
+   base image, whatever the pointer type. */
+function wireButtonPointer(d, im, b){
+  const base = () => {
+    if (b._stateBase) return b._stateBase();
+    if (b.mergedPause && playing && b._pauseSrc) return b._pauseSrc;
+    return b._src;
+  };
+  b._base = base;
+  const show = f => { if (f) im.src = f; };
+  d.addEventListener("pointerover", e => { if (e.pointerType === "mouse") show(b._hoverSrc || base()); });
+  d.addEventListener("pointerout", () => show(base()));
+  d.addEventListener("pointerdown", () => show(b._downSrc || b._hoverSrc || base()));
+  d.addEventListener("pointerup", () => show(base()));
+  d.addEventListener("pointercancel", () => show(base()));
+  d.addEventListener("pointerleave", () => show(base()));
+}
+async function buildButton(b, container, res, onClick){
+  const d = document.createElement("div");
+  d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
+  d.style.left = b.x + "px"; d.style.top = b.y + "px";
+  d.style.width = (b.w || 10) + "px"; d.style.height = (b.h || 10) + "px";
+  b._src = await resolveImg(res, b.image, b.imageFile);
+  b._hoverSrc = b.hoverImage ? await resolveImg(res, b.hoverImage, b.hoverFile) : null;
+  b._downSrc = b.downImage ? await resolveImg(res, b.downImage, b.downFile) : null;
+  b._pauseSrc = b.pauseImage ? await resolveImg(res, b.pauseImage, b.pauseFile) : null;
+  if (!b._src) return null; // no image: hide entirely, never a broken <img>
+  const im = document.createElement("img");
+  im.src = b._src; im.draggable = false; im.alt = "";
+  im.onerror = () => { d.style.display = "none"; };
+  d.appendChild(im);
+  wireButtonPointer(d, im, b);
+  d.addEventListener("click", () => onClick(b));
+  container.appendChild(d);
+  b._el = d; b._img = im;
+  return d;
+}
+function updatePlayState(){
+  if (!SKIN) return;
+  const play = SKIN.buttons.find(b => b.action === "PLAY");
+  if (play && play._img) play._img.src = play._base ? play._base() : play._src;
+}
+
+/* ---------- main window: layers, frame, texts, strip, sliders, vis ---------- */
+async function buildMainWindow(skin, res, win){
+  const L = skin.layout;
+  const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
+  if (bgSrc) {
+    win.style.backgroundImage = "url(" + JSON.stringify(bgSrc) + ")";
+    if (L.bgCrop) {
+      win.style.backgroundSize = L.bgCrop.fullW + "px " + L.bgCrop.fullH + "px";
+      win.style.backgroundPosition = (-L.bgCrop.x) + "px " + (-L.bgCrop.y) + "px";
     } else {
-      scaler.style.backgroundSize = L.w+"px "+L.h+"px";
-      scaler.style.backgroundPosition = "0 0";
+      win.style.backgroundSize = L.w + "px " + L.h + "px";
+      win.style.backgroundPosition = "0 0";
     }
-  } else {
-    scaler.style.backgroundImage = "none";
   }
-  const skip = new Set(["player.bb-seek-empty","player.bb-seek-full",
-    "player.bb-volume-min","player.bb-volume-max",
-    "player.bb-spectrum-left","player.bb-spectrum-right","player.bb-spectrum-on",
+  // Frame chrome (silver title bar + menu bar) first, so the content
+  // layers paint over it where they overlap.
+  if (skin.frame) {
+    for (const lay of skin.frame.layers) {
+      if (!lay.imageFile) continue;
+      const src = await resolveImg(res, lay.image, lay.imageFile);
+      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    }
+    for (const t of skin.frame.texts) {
+      if (!t.default) continue;
+      const el = document.createElement("div");
+      el.className = "wtext";
+      el.style.left = t.x + "px"; el.style.top = t.y + "px";
+      el.style.width = (t.w || 50) + "px"; el.style.height = (t.h || 14) + "px";
+      el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 11) + "px";
+      el.style.lineHeight = (t.h || 14) + "px";
+      // The title ("WINAMP") is wider than its 50px XML box — let it
+      // overflow instead of clipping to "WINAMI".
+      el.style.overflow = "visible";
+      el.textContent = compName(t.default, (skin.name || "WINAMP"));
+      win.appendChild(el);
+    }
+    for (const b of skin.frame.buttons) await buildButton(b, win, res, onMainButton);
+  }
+  const skip = new Set(["player.bb-seek-empty", "player.bb-seek-full",
+    "player.bb-volume-min", "player.bb-volume-max",
+    "player.bb-spectrum-left", "player.bb-spectrum-right", "player.bb-spectrum-on",
     "player.bb-songticker-endcover"]);
-  for(const lay of SKIN.layers){
-    if(skip.has(lay.image)) continue;
-    const src = await resolveImg(lay.image, lay.imageFile);
-    if(src) scaler.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+  for (const lay of skin.layers) {
+    if (skip.has(lay.image)) continue;
+    if (!lay.imageFile) continue;
+    const src = await resolveImg(res, lay.image, lay.imageFile);
+    if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
   }
-  // texts: songticker + timer (by id first, then by display/ticker attr)
-  // Prefer the real songname ticker: some skins (DDTank) also have a
-  // ticker="1" songinfo line, which is not the song name.
-  const tick = SKIN.texts.find(t=>t.id && t.id.toLowerCase()==="songticker")
-    || SKIN.texts.find(t=>t.display==="songname")
-    || SKIN.texts.find(t=>t.ticker==="1");
-  const tim = SKIN.texts.find(t=>t.id==="timer")
-    || SKIN.texts.find(t=>t.display==="time");
-  if(tick){
+  // Texts: songticker + timer + small display labels.
+  const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
+    || skin.texts.find(t => t.display === "songname")
+    || skin.texts.find(t => t.ticker === "1");
+  const tim = skin.texts.find(t => t.id === "timer")
+    || skin.texts.find(t => t.display === "time");
+  if (tick) {
     const tickEl = document.createElement("div");
     tickEl.id = "ticker";
-    tickEl.style.left = tick.x+"px"; tickEl.style.top = tick.y+"px";
-    tickEl.style.width = tick.w+"px"; tickEl.style.height = (tick.h||14)+"px";
+    tickEl.style.left = tick.x + "px"; tickEl.style.top = tick.y + "px";
+    tickEl.style.width = tick.w + "px"; tickEl.style.height = (tick.h || 14) + "px";
     tickEl.innerHTML = "<span id='tickerspan'></span>";
-    scaler.appendChild(tickEl);
+    win.appendChild(tickEl);
   }
-  if(tim){
+  // Timer: a canvas when the skin gives a bitmap digit font, else text.
+  timerFont = null; timerFontImg = null;
+  if (tim) {
     const timEl = document.createElement("div");
     timEl.id = "timer";
-    timEl.style.left = tim.x+"px"; timEl.style.top = tim.y+"px";
-    timEl.style.width = tim.w+"px"; timEl.style.height = (tim.h||14)+"px";
-    timEl.textContent = "--:--";
-    scaler.appendChild(timEl);
+    timEl.style.left = tim.x + "px"; timEl.style.top = tim.y + "px";
+    timEl.style.width = tim.w + "px"; timEl.style.height = (tim.h || 14) + "px";
+    const font = tim.font && skin.fonts ? skin.fonts[tim.font] : null;
+    if (font && font.tag === "bitmapfont" && font.imageURL) {
+      const cv = document.createElement("canvas");
+      cv.width = tim.w; cv.height = tim.h || 14;
+      cv.dataset.align = tim.align || "left";
+      timEl.appendChild(cv);
+      timerFont = font;
+      timerFontImg = await new Promise(resolve => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => resolve(null);
+        im.src = font.imageURL;
+      });
+      if (!timerFontImg) timerFont = null;
+    }
+    if (!timerFont) timEl.textContent = "0:00";
+    win.appendChild(timEl);
   }
-  const cover = SKIN.layers.find(l=>l.image==="player.bb-songticker-endcover");
-  if(cover){
-    const src = await resolveImg(cover.image, cover.imageFile);
-    if(src) scaler.appendChild(imgElSrc(src, cover.x, cover.y, cover.w, cover.h));
+  for (const t of skin.texts) {
+    if (t === tick || t === tim) continue;
+    if (!t.default && !t.display) continue;
+    const el = document.createElement("div");
+    el.className = "wtext";
+    el.style.left = t.x + "px"; el.style.top = t.y + "px";
+    el.style.width = (t.w || 30) + "px"; el.style.height = (t.h || 8) + "px";
+    el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
+    el.textContent = compName(t.default || "", (skin.name || "WINAMP"));
+    el.dataset.display = t.display || "";
+    win.appendChild(el);
   }
-  await buildStrip();
-  const spec = SKIN.spectrum;
-  if(spec && spec.offFile){
-    const src = await resolveImg(null, spec.offFile);
-    if(src) scaler.appendChild(imgElSrc(src, spec.x, spec.y, spec.w, spec.h));
+  // Spectrum vis: a canvas over the skin's <vis> rect. It draws the live
+  // AnalyserNode spectrum while the EQ chain is on; with EQ off (true
+  // bypass) there is no analyser in the path, so the canvas stays clear
+  // and the blue display shows through. A live vis without the audio
+  // chain would cost the bypass — that trade is stated in the README.
+  visCanvas = null; visCtx = null;
+  if (skin.vis && skin.vis[0]) {
+    const v = skin.vis[0];
+    const cv = document.createElement("canvas");
+    cv.className = "vis";
+    cv.width = v.w || 72; cv.height = v.h || 25;
+    cv.style.left = v.x + "px"; cv.style.top = v.y + "px";
+    cv.style.width = (v.w || 72) + "px"; cv.style.height = (v.h || 25) + "px";
+    win.appendChild(cv);
+    visCanvas = cv; visCtx = cv.getContext("2d");
   }
-  for(const b of SKIN.buttons) await buildButton(b);
-  applyScale();
+  const cover = skin.layers.find(l => l.image === "player.bb-songticker-endcover");
+  if (cover) {
+    const src = await resolveImg(res, cover.image, cover.imageFile);
+    if (src) win.appendChild(imgElSrc(src, cover.x, cover.y, cover.w, cover.h));
+  }
+  await buildStrip(skin, res, win);
+  for (const s of skin.sliders) {
+    if (s.action === "VOLUME" || s.action === "SEEK") await buildMainSlider(s, win, res);
+  }
+  for (const b of skin.buttons) await buildButton(b, win, res, onMainButton);
+  // The Play/Pause merge (DDTank): the loader marks the merged button;
+  // updatePlayState() already swaps its icon while playing.
 }
-async function buildStrip(){
-  const s = SKIN.seek, v = SKIN.volume;
-  if(!s || !v) return; // skin without a seek/volume strip (e.g. ClassicPro)
+async function buildStrip(skin, res, win){
+  const s = skin.seek, v = skin.volume;
+  if (!s || !v) return;
   const d = document.createElement("div");
   d.className = "bar"; d.id = "strip";
-  d.style.left = s.x+"px"; d.style.top = s.y+"px";
-  d.style.width = s.w+"px"; d.style.height = s.h+"px";
-  const sEmpty = await resolveImg(s.emptyImage, s.emptyFile);
-  if(sEmpty) d.appendChild(imgElSrc(sEmpty, 0, 0, s.w, s.h));
+  d.style.left = s.x + "px"; d.style.top = s.y + "px";
+  d.style.width = s.w + "px"; d.style.height = s.h + "px";
+  const sEmpty = await resolveImg(res, s.emptyImage, s.emptyFile);
+  if (sEmpty) d.appendChild(imgElSrc(sEmpty, 0, 0, s.w, s.h));
   const fs = document.createElement("div");
   fs.className = "fill"; fs.id = "fill-seek"; fs.style.width = "0px";
-  const sFull = await resolveImg(s.fullImage, s.fullFile);
-  if(sFull) fs.appendChild(imgElSrc(sFull, 0, 0, s.w, s.h));
+  const sFull = await resolveImg(res, s.fullImage, s.fullFile);
+  if (sFull) fs.appendChild(imgElSrc(sFull, 0, 0, s.w, s.h));
   d.appendChild(fs);
-  const vEmpty = await resolveImg(v.emptyImage, v.emptyFile);
-  if(vEmpty) d.appendChild(imgElSrc(vEmpty, v.x-s.x, v.y-s.y, v.w, v.h));
+  const vEmpty = await resolveImg(res, v.emptyImage, v.emptyFile);
+  if (vEmpty) d.appendChild(imgElSrc(vEmpty, v.x - s.x, v.y - s.y, v.w, v.h));
   const fv = document.createElement("div");
   fv.className = "fill"; fv.id = "fill-vol"; fv.style.width = "0px";
-  fv.style.left = (v.x-s.x)+"px"; fv.style.top = (v.y-s.y)+"px";
-  const vFull = await resolveImg(v.fullImage, v.fullFile);
-  if(vFull) fv.appendChild(imgElSrc(vFull, 0, 0, v.w, v.h));
+  fv.style.left = (v.x - s.x) + "px"; fv.style.top = (v.y - s.y) + "px";
+  const vFull = await resolveImg(res, v.fullImage, v.fullFile);
+  if (vFull) fv.appendChild(imgElSrc(vFull, 0, 0, v.w, v.h));
   d.appendChild(fv);
-  d.addEventListener("pointerdown", e=>{ stripSet(e);
-    const mv = ev=>stripSet(ev);
-    const up = ()=>{ window.removeEventListener("pointermove", mv);
-                     window.removeEventListener("pointerup", up); };
+  d.addEventListener("pointerdown", e => {
+    stripSet(e);
+    const mv = ev => stripSet(ev);
+    const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", mv);
     window.addEventListener("pointerup", up);
   });
-  scaler.appendChild(d);
+  win.appendChild(d);
 }
 function stripSet(e){
-  const strip = $("#strip"); if(!strip) return;
+  const strip = $("#strip"); if (!strip) return;
   const el = strip.getBoundingClientRect();
-  const frac = Math.min(1, Math.max(0, (e.clientX-el.left)/el.width));
-  if(mode==="file" && isFinite(au.duration) && au.duration>0){
-    au.currentTime = frac*au.duration; setFill("seek", frac);
+  const frac = Math.min(1, Math.max(0, (e.clientX - el.left) / el.width));
+  if (mode === "file" && isFinite(au.duration) && au.duration > 0) {
+    au.currentTime = frac * au.duration; setFill("seek", frac);
   } else {
     au.volume = frac; setFill("vol", frac);
-    flashTicker("Âm lượng "+Math.round(frac*100)+"%");
+    flashTicker("Âm lượng " + Math.round(frac * 100) + "%");
   }
 }
 function setFill(kind, frac){
-  if(!SKIN) return; // no skin loaded yet (e.g. default zip failed)
-  const rect = kind==="seek" ? SKIN.seek : SKIN.volume;
-  const el = $("#fill-"+kind);
-  if(el && rect) el.style.width = Math.round(rect.w*frac)+"px";
+  if (!SKIN) return;
+  const rect = kind === "seek" ? SKIN.seek : SKIN.volume;
+  const el = $("#fill-" + kind);
+  if (el && rect) el.style.width = Math.round(rect.w * frac) + "px";
 }
-async function buildButton(b){
-  const d = document.createElement("div");
-  d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
-  d.style.left = b.x+"px"; d.style.top = b.y+"px";
-  d.style.width = b.w+"px"; d.style.height = b.h+"px";
-  b._src = await resolveImg(b.image, b.imageFile);
-  b._hoverSrc = b.hoverImage ? await resolveImg(b.hoverImage, b.hoverFile) : null;
-  b._downSrc = b.downImage ? await resolveImg(b.downImage, b.downFile) : null;
-  // Merged Play/Pause button (DDTank): show the pause icon while playing.
-  b._pauseSrc = b.pauseImage ? await resolveImg(b.pauseImage, b.pauseFile) : null;
-  if(!b._src) return; // no image for this button: hide it entirely, never a
-  // broken <img> with alt text over the skin (the D-Reliction bug: buttons
-  // whose image is only set by a MAKI script have no image in the XML).
-  const im = document.createElement("img");
-  im.src = b._src; im.draggable = false; im.alt = "";
-  im.onerror = ()=>{ d.style.display = "none"; };
-  d.appendChild(im);
-  const show = f => { if(f) im.src = f; };
-  d.addEventListener("mouseenter", ()=>show(b._hoverSrc));
-  d.addEventListener("mouseleave", ()=>show(b._src));
-  d.addEventListener("mousedown", ()=>show(b._downSrc || b._hoverSrc));
-  d.addEventListener("mouseup", ()=>show(b._hoverSrc || b._src));
-  d.addEventListener("touchstart", ()=>show(b._downSrc || b._hoverSrc), {passive:true});
-  d.addEventListener("touchend", ()=>show(b._src), {passive:true});
-  d.addEventListener("click", ()=>onButton(b));
-  scaler.appendChild(d);
-  b._el = d; b._img = im;
+/* A skin <slider> (Volume/Seeker): a draggable thumb over the track rect. */
+async function buildMainSlider(s, win, res){
+  const track = document.createElement("div");
+  track.className = "eqsl";
+  track.style.left = s.x + "px"; track.style.top = s.y + "px";
+  track.style.width = s.w + "px"; track.style.height = s.h + "px";
+  const thumbSrc = s.thumb ? await resolveImg(res, s.thumb, s.thumbFile) : null;
+  const tw = s.thumbW || 14, th = s.thumbH || 14;
+  let thumb = null;
+  if (thumbSrc) {
+    thumb = document.createElement("div");
+    thumb.className = "thumb";
+    thumb.style.width = tw + "px"; thumb.style.height = th + "px";
+    const im = document.createElement("img");
+    im.src = thumbSrc; im.draggable = false; im.alt = "";
+    im.onerror = () => { thumb.style.display = "none"; };
+    thumb.appendChild(im);
+    track.appendChild(thumb);
+  }
+  const horiz = s.orientation === "horizontal";
+  const getFrac = () => {
+    if (s.action === "VOLUME") return au.volume;
+    if (s.action === "SEEK") return (mode === "file" && isFinite(au.duration) && au.duration > 0) ? au.currentTime / au.duration : 0;
+    return 0;
+  };
+  const setFrac = frac => {
+    frac = Math.min(1, Math.max(0, frac));
+    if (s.action === "VOLUME") { au.volume = frac; setFill("vol", frac); }
+    else if (s.action === "SEEK" && mode === "file" && isFinite(au.duration) && au.duration > 0) {
+      au.currentTime = frac * au.duration; setFill("seek", frac);
+    }
+    placeThumb();
+  };
+  const placeThumb = () => {
+    if (!thumb) return;
+    const f = getFrac();
+    if (horiz) thumb.style.left = Math.round(f * (s.w - tw)) + "px";
+    else thumb.style.top = Math.round((1 - f) * (s.h - th)) + "px";
+  };
+  track.addEventListener("pointerdown", e => {
+    try { track.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event: no active pointer */ }
+    const r = track.getBoundingClientRect();
+    const frac = horiz ? (e.clientX - r.left) / r.width : 1 - (e.clientY - r.top) / r.height;
+    setFrac(frac);
+    const mv = ev => {
+      const rr = track.getBoundingClientRect();
+      setFrac(horiz ? (ev.clientX - rr.left) / rr.width : 1 - (ev.clientY - rr.top) / rr.height);
+    };
+    const up = () => { track.removeEventListener("pointermove", mv); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up); };
+    track.addEventListener("pointermove", mv);
+    track.addEventListener("pointerup", up);
+    track.addEventListener("pointercancel", up);
+    e.preventDefault();
+  });
+  s._placeThumb = placeThumb;
+  win.appendChild(track);
+  placeThumb();
 }
-function updatePlayState(){
-  if(!SKIN) return; // no skin loaded yet (e.g. default zip failed)
-  const play = SKIN.buttons.find(b=>b.action==="PLAY");
-  if(play && play._img) play._img.src = playing ? (play._pauseSrc || play._downSrc || play._src) : play._src;
+</script>
+
+<script>
+/* ---------- Playlist window ---------- */
+let plListEl = null, localFiles = [];
+function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function rebuildPlItems(){
+  plItems = channels.map((c, i) => ({ kind: "radio", ch: i, name: c.name, url: c.url }));
+  for (const f of localFiles) plItems.push({ kind: "file", name: f.name, blobURL: f.blobURL });
+  window.__plItems = plItems.map(it => ({ kind: it.kind, name: it.name }));
+}
+function isCurrentPlItem(it){
+  if (it.kind === "radio") return mode === "radio" && idx === it.ch;
+  return mode === "file" && fileBlobURL === it.blobURL;
+}
+function renderPlaylist(){
+  const list = plListEl; if (!list) return;
+  list.innerHTML = "";
+  plItems.forEach((it, i) => {
+    const row = document.createElement("div");
+    row.className = "row" + (isCurrentPlItem(it) ? " cur" : "");
+    row.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
+    row.addEventListener("click", () => playPlItem(it));
+    list.appendChild(row);
+  });
+  const cur = list.querySelector(".cur");
+  if (cur) cur.scrollIntoView({ block: "nearest" });
+}
+function playPlItem(it){
+  if (it.kind === "radio") loadChannel(it.ch, true);
+  else playLocalFile(it.blobURL, it.name);
+}
+function playlistListRect(pl){
+  // Native rect when usable; otherwise compute it from the window size
+  // and the bottom buttons. (Copperdeck's <component> covers the whole
+  // window; Nebular has no <component> at all.)
+  const r = pl.listRect;
+  if (r && r.w > 20 && r.h > 20 && !(r.x <= 0 && r.y <= 0 && r.w >= pl.w && r.h >= pl.h)) return r;
+  const bottomBtns = (pl.buttons || []).filter(b => b.y > pl.h * 0.6);
+  const bottomY = bottomBtns.length ? Math.min(...bottomBtns.map(b => b.y)) : pl.h;
+  const top = 24;
+  return { x: 6, y: top, w: pl.w - 12, h: Math.max(40, bottomY - 6 - top) };
+}
+async function buildPlaylistWindow(skin, res){
+  const win = document.createElement("div");
+  win.className = "win"; win.id = "plwin";
+  const pl = skin.playlist;
+  if (pl) {
+    win.dataset.w = pl.w; win.dataset.h = pl.h;
+    win.style.width = pl.w + "px"; win.style.height = pl.h + "px";
+    // Window background: the layout's background image (BLAKK), else the
+    // skin's frame texture tiled (WM566's basetexture). Either way the
+    // title-bar strip above the list (which the frame would paint, and
+    // which no layer covers) reads as silver, not black.
+    win.style.backgroundColor = "#a8adb5";
+    if (pl.backgroundFile) {
+      const bg = await resolveImg(res, pl.background, pl.backgroundFile);
+      if (bg) {
+        win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
+        win.style.backgroundSize = pl.w + "px " + pl.h + "px";
+      }
+    } else if (pl.backgrounds && pl.backgrounds[0] && pl.backgrounds[0].imageFile) {
+      const bg = await resolveImg(res, pl.backgrounds[0].image, pl.backgrounds[0].imageFile);
+      if (bg) win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
+    }
+    for (const bg of (pl.backgrounds || [])) {
+      if (!bg.imageFile) continue;
+      const src = await resolveImg(res, bg.image, bg.imageFile);
+      if (src) win.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h));
+    }
+    // Title in the strip (the original window title bar shows "Playlist").
+    const ptitle = document.createElement("div");
+    ptitle.className = "wtext";
+    ptitle.style.left = "8px"; ptitle.style.top = "3px";
+    ptitle.style.width = "120px"; ptitle.style.height = "14px";
+    // White with a dark shadow: readable on a silver frame (WM566/BLAKK)
+    // and on a dark title bar (Nebular).
+    ptitle.style.color = "#fff"; ptitle.style.textShadow = "0 1px 2px rgba(0,0,0,.8)";
+    ptitle.style.fontSize = "12px"; ptitle.style.lineHeight = "14px";
+    ptitle.textContent = "Playlist";
+    win.appendChild(ptitle);
+    for (const lay of pl.layers) {
+      if (!lay.imageFile) continue;
+      const src = await resolveImg(res, lay.image, lay.imageFile);
+      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    }
+    const rect = playlistListRect(pl);
+    const list = document.createElement("div");
+    list.className = "eqlist";
+    list.style.left = rect.x + "px"; list.style.top = rect.y + "px";
+    list.style.width = rect.w + "px"; list.style.height = rect.h + "px";
+    win.appendChild(list);
+    plListEl = list;
+    for (const t of pl.texts) {
+      if (!t.default && t.display !== "PE_Info") continue;
+      const el = document.createElement("div");
+      el.className = "wtext";
+      el.style.left = t.x + "px"; el.style.top = t.y + "px";
+      el.style.width = (t.w || 55) + "px"; el.style.height = (t.h || 8) + "px";
+      el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
+      el.dataset.display = t.display || "";
+      win.appendChild(el);
+    }
+    for (const b of pl.buttons) await buildButton(b, win, res, onPLButton);
+  } else {
+    // Fallback: a plain dark window (the skin has no playlist layout).
+    win.dataset.w = 320; win.dataset.h = 300;
+    win.classList.add("plfallback");
+    win.style.width = "320px"; win.style.height = "300px";
+    const title = document.createElement("div");
+    title.className = "title"; title.textContent = "Playlist";
+    win.appendChild(title);
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕";
+    x.addEventListener("click", () => toggleWindow("pl"));
+    win.appendChild(x);
+    const list = document.createElement("div");
+    list.className = "eqlist";
+    list.style.left = "6px"; list.style.top = "24px";
+    list.style.width = "308px"; list.style.height = "270px";
+    win.appendChild(list);
+    plListEl = list;
+  }
+  return win;
+}
+function onPLButton(b){
+  const a = b.action;
+  if (a === "PE_ADD") { $("#filepick").click(); }
+  else if (a === "PE_REM") {
+    const cur = plItems.find(isCurrentPlItem);
+    if (cur && cur.kind === "file") {
+      localFiles = localFiles.filter(f => f.blobURL !== cur.blobURL);
+      rebuildPlItems(); renderPlaylist();
+      setStatus("Đã bỏ file khỏi playlist: " + cur.name);
+    } else setStatus("PE_REM: chỉ bỏ được file local đang phát (kênh radio nằm trong radio.m3u)");
+  }
+  else if (a === "PE_SEL") setStatus("PE_SEL: menu chọn chưa làm trong bản này");
+  else if (a === "PE_MISC") setStatus("PE_MISC: menu phụ chưa làm trong bản này");
+  else if (a === "PE_LIST") { const s = $("#chan"); s.focus(); s.size = s.size ? 0 : 8; }
+  else if (a === "CLOSE") toggleWindow("pl");
+  else if (a === "SWITCH") setStatus("Nút winshade chưa làm trong bản này");
+  else setStatus("Nút playlist này chưa có tác dụng trong bản này");
 }
 
-/* ---------- load a skin file directly (.wal/.zip) ---------- */
+/* ---------- EQ window ---------- */
+let eqToggleBtns = [], eqSliderEls = [];
+function isEqFillLayer(lay){
+  const img = (lay.image || "").toLowerCase();
+  return img.includes("full");
+}
+async function buildEQSlider(s, bandIndex, win, res, eq){
+  const track = document.createElement("div");
+  track.className = "eqsl";
+  track.style.left = s.x + "px"; track.style.top = s.y + "px";
+  track.style.width = s.w + "px"; track.style.height = s.h + "px";
+  const horiz = s.orientation === "horizontal";
+  // Fill: the skin's "full" bar image at this slider's spot, clipped by
+  // value; a plain coloured bar when the skin has none (WM566).
+  let fillEl = null;
+  const fillLay = (eq.layers || []).find(l => isEqFillLayer(l) && Math.abs((l.x || 0) - s.x) < 6 && Math.abs((l.y || 0) - s.y) < 6);
+  let fillImg = null;
+  if (fillLay && fillLay.imageFile) fillImg = await resolveImg(res, fillLay.image, fillLay.imageFile);
+  fillEl = document.createElement("div");
+  fillEl.className = "fill";
+  fillEl.style.width = "100%"; fillEl.style.height = "0px";
+  if (fillImg) {
+    const im = document.createElement("img");
+    im.src = fillImg; im.draggable = false; im.alt = "";
+    im.style.width = s.w + "px"; im.style.height = s.h + "px";
+    fillEl.appendChild(im);
+  } else {
+    fillEl.style.background = "rgba(120,180,90,.55)";
+  }
+  track.appendChild(fillEl);
+  const thumbSrc = s.thumb ? await resolveImg(res, s.thumb, s.thumbFile) : null;
+  const tw = s.thumbW || 13, th = s.thumbH || 23;
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  thumb.style.width = tw + "px"; thumb.style.height = th + "px";
+  if (thumbSrc) {
+    const im = document.createElement("img");
+    im.src = thumbSrc; im.draggable = false; im.alt = "";
+    thumb.appendChild(im);
+  } else {
+    track.style.background = "#222"; track.style.border = "1px solid #444";
+    thumb.style.background = "#888"; thumb.style.border = "1px solid #bbb";
+  }
+  thumb.style.left = Math.round((s.w - tw) / 2) + "px";
+  track.appendChild(thumb);
+  const getVal = () => bandIndex < 0 ? eqState.preamp : eqState.bands[bandIndex];
+  const place = () => {
+    const v = getVal();
+    const frac = (v + 12) / 24; // 0 = -12 (bottom), 1 = +12 (top)
+    if (horiz) {
+      thumb.style.left = Math.round(frac * (s.w - tw)) + "px";
+      fillEl.style.width = Math.round(frac * s.w) + "px";
+    } else {
+      thumb.style.top = Math.round((1 - frac) * (s.h - th)) + "px";
+      fillEl.style.height = Math.round(frac * s.h) + "px";
+    }
+  };
+  const setVal = v => {
+    v = Math.max(-12, Math.min(12, Math.round(v * 10) / 10));
+    if (bandIndex < 0) eqState.preamp = v; else eqState.bands[bandIndex] = v;
+    saveEQState();
+    if (eqState.on) applyEQGains();
+    place();
+    eqStateHook();
+  };
+  track.addEventListener("pointerdown", e => {
+    try { track.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event: no active pointer */ }
+    const valFromEvent = ev => {
+      const r = track.getBoundingClientRect();
+      const f = horiz ? (ev.clientX - r.left) / r.width : 1 - (ev.clientY - r.top) / r.height;
+      return -12 + Math.min(1, Math.max(0, f)) * 24;
+    };
+    setVal(valFromEvent(e));
+    const mv = ev => setVal(valFromEvent(ev));
+    const up = () => { track.removeEventListener("pointermove", mv); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up); };
+    track.addEventListener("pointermove", mv);
+    track.addEventListener("pointerup", up);
+    track.addEventListener("pointercancel", up);
+    e.preventDefault();
+  });
+  win.appendChild(track);
+  place();
+  eqSliderEls.push({ bandIndex, place, setVal });
+}
+function applyEQPreset(name){
+  const p = EQ_PRESETS[name]; if (!p) return;
+  eqState.preamp = p.preamp;
+  eqState.bands = p.bands.slice();
+  saveEQState();
+  if (eqState.on) applyEQGains();
+  for (const sl of eqSliderEls) sl.place();
+  eqStateHook();
+  setStatus("EQ preset: " + name);
+}
+function showPresetMenu(anchorBtn){
+  const old = document.querySelector(".preset-menu");
+  if (old) { old.remove(); return; }
+  const menu = document.createElement("div");
+  menu.className = "preset-menu";
+  for (const name of Object.keys(EQ_PRESETS)) {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.addEventListener("click", () => { applyEQPreset(name); menu.remove(); });
+    menu.appendChild(b);
+  }
+  // Position it in viewport coordinates (the EQ window has
+  // overflow:hidden, so a menu inside it would be clipped).
+  const r = anchorBtn && anchorBtn._el ? anchorBtn._el.getBoundingClientRect() : null;
+  menu.style.position = "fixed";
+  menu.style.left = (r ? r.left : 8) + "px";
+  menu.style.top = (r ? r.bottom + 4 : 8) + "px";
+  document.body.appendChild(menu);
+  const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("pointerdown", close); } };
+  setTimeout(() => document.addEventListener("pointerdown", close), 0);
+}
+async function buildEQWindow(skin, res){
+  const win = document.createElement("div");
+  win.className = "win"; win.id = "eqwin";
+  eqToggleBtns = []; eqSliderEls = [];
+  const eq = skin.eq;
+  if (eq) {
+    win.dataset.w = eq.w; win.dataset.h = eq.h;
+    win.style.width = eq.w + "px"; win.style.height = eq.h + "px";
+    for (const lay of eq.layers) {
+      if (isEqFillLayer(lay)) continue; // rendered as a value-clipped fill
+      if (!lay.imageFile) continue;
+      const src = await resolveImg(res, lay.image, lay.imageFile);
+      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    }
+    if (eq.preamp) await buildEQSlider(eq.preamp, -1, win, res, eq);
+    for (let i = 0; i < eq.bands.length; i++) await buildEQSlider(eq.bands[i], i, win, res, eq);
+    for (const b of eq.buttons) {
+      if (!b.imageFile && !b.hoverFile && !b.downFile) continue; // text labels (+12/0/-12)
+      const d = await buildButton(b, win, res, onEQButton);
+      if (d && b.action === "EQ_TOGGLE") {
+        eqToggleBtns.push(b);
+        if (/led/i.test(b.id || "")) b._isLed = true;
+        else b._stateBase = () => eqState.on ? (b._downSrc || b._src) : b._src;
+      }
+    }
+    for (const t of eq.texts) {
+      if (!t.default) continue;
+      const el = document.createElement("div");
+      el.className = "wtext";
+      el.style.left = t.x + "px"; el.style.top = t.y + "px";
+      el.style.width = (t.w || 12) + "px"; el.style.height = (t.h || 8) + "px";
+      el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
+      el.textContent = compName(t.default, "Equalizer");
+      win.appendChild(el);
+    }
+  } else {
+    // Fallback: a plain EQ window (the skin has no equalizer layout).
+    win.dataset.w = 300; win.dataset.h = 220;
+    win.classList.add("plfallback");
+    win.style.width = "300px"; win.style.height = "220px";
+    const title = document.createElement("div");
+    title.className = "title"; title.textContent = "Equalizer";
+    win.appendChild(title);
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕";
+    x.addEventListener("click", () => toggleWindow("eq"));
+    win.appendChild(x);
+    const fakeEq = { layers: [] };
+    const mk = (x0, bandIndex) => ({ x: x0, y: 40, w: 16, h: 120, orientation: "vertical", thumb: null, thumbW: 16, thumbH: 14 });
+    await buildEQSlider(mk(12, -1), -1, win, res, fakeEq);
+    for (let i = 0; i < 10; i++) await buildEQSlider(mk(44 + i * 24, i), i, win, res, fakeEq);
+    const onBtn = document.createElement("button");
+    onBtn.textContent = "EQ: TẮT"; onBtn.style.cssText = "position:absolute;left:12px;top:180px;padding:5px 10px;background:#1a1a1a;color:#ddd;border:1px solid #444;cursor:pointer;";
+    onBtn.addEventListener("click", async () => { await setEQOn(!eqState.on); onBtn.textContent = eqState.on ? "EQ: BẬT" : "EQ: TẮT"; });
+    win.appendChild(onBtn);
+    const preBtn = document.createElement("button");
+    preBtn.textContent = "Preset"; preBtn.style.cssText = "position:absolute;left:110px;top:180px;padding:5px 10px;background:#1a1a1a;color:#ddd;border:1px solid #444;cursor:pointer;";
+    preBtn.addEventListener("click", () => showPresetMenu(null));
+    win.appendChild(preBtn);
+    win._fallbackOnBtn = onBtn;
+  }
+  return win;
+}
+function updateEQToggleVisual(){
+  for (const b of eqToggleBtns) {
+    if (!b._img) continue;
+    if (b._isLed) { b._img.style.opacity = eqState.on ? "1" : "0.3"; continue; }
+    b._img.src = b._base ? b._base() : b._src;
+  }
+  if (eqWin && eqWin._fallbackOnBtn) eqWin._fallbackOnBtn.textContent = eqState.on ? "EQ: BẬT" : "EQ: TẮT";
+}
+async function onEQButton(b){
+  const a = b.action, p = b.param;
+  if (a === "EQ_TOGGLE") { await setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); }
+  else if (a === "EQ_AUTO") setStatus("EQ Auto chưa làm trong bản này (giống nút Auto của Webamp fork)");
+  else if (a === "MENU" && p === "presets") showPresetMenu(b);
+  else if (a === "CLOSE") toggleWindow("eq");
+  else if (a === "MINIMIZE") toggleWindow("eq");
+  else setStatus("Nút EQ này chưa có tác dụng trong bản này");
+}
+
+/* ---------- spectrum vis draw loop (live only while the EQ chain is on) ---------- */
+function drawVis(){
+  requestAnimationFrame(drawVis);
+  if (!visCanvas || !visCtx) return;
+  if (!eqNodes || !eqNodes.analyser || !eqState.on) {
+    if (visCanvas._hadVis) { visCtx.clearRect(0, 0, visCanvas.width, visCanvas.height); visCanvas._hadVis = false; }
+    return;
+  }
+  const an = eqNodes.analyser;
+  const data = new Uint8Array(an.frequencyBinCount);
+  an.getByteFrequencyData(data);
+  const w = visCanvas.width, h = visCanvas.height;
+  visCtx.clearRect(0, 0, w, h);
+  const bars = 24, bw = w / bars;
+  for (let i = 0; i < bars; i++) {
+    const v = data[Math.floor(i * data.length / bars)] / 255;
+    const bh = Math.max(1, v * h);
+    visCtx.fillStyle = v > 0.75 ? "#e33" : v > 0.5 ? "#ec3" : "#4c4";
+    visCtx.fillRect(i * bw + 1, h - bh, bw - 2, bh);
+  }
+  visCanvas._hadVis = true;
+}
+requestAnimationFrame(drawVis);
+</script>
+
+<script>
+/* ---------- atomic skin swap ----------
+   buildSkinInto() builds ALL THREE windows into detached divs, awaiting
+   every image resolve. Only then does applySkinFile swap them into the
+   visible #stage in ONE synchronous replaceChildren — the old skin is
+   never torn down first, so a photo mid-load shows either the complete
+   old skin or the complete new skin, never a half-drawn player. On any
+   failure the live DOM and the old SKIN are left completely untouched. */
+// Skins put the literal placeholder ":componentname" in title texts;
+// Winamp replaces it at runtime (via MAKI). Substitute the window's
+// component name instead of showing the placeholder.
+function compName(txt, fallback) {
+  if (typeof txt !== "string") return txt;
+  return txt.replace(/:componentname/gi, fallback);
+}
+
+async function buildSkinInto(skin, res){
+  const main = document.createElement("div");
+  main.className = "win"; main.id = "scaler";
+  main.style.width = skin.layout.w + "px";
+  main.style.height = skin.layout.h + "px";
+  await buildMainWindow(skin, res, main);
+  const eq = await buildEQWindow(skin, res);
+  const pl = await buildPlaylistWindow(skin, res);
+  return { main, eq, pl };
+}
 async function applySkinFile(file){
-  if(!file) return;
-  setStatus("Đang đọc skin: "+file.name+"…");
-  try{
-    if(typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
+  if (!file) return;
+  setStatus("Đang đọc skin: " + file.name + "… (đang giải nén)");
+  try {
+    if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
     const res = await SkinLoader.loadSkinFile(file);
-    const prevSkin = SKIN, prevResolver = resolver;
+    setStatus("Đang đọc skin: " + file.name + "… (đang vẽ giao diện)");
+    const built = await buildSkinInto(res.skin, res.resolve);
+    // Let the browser paint the progress message before the swap.
+    await new Promise(r => setTimeout(r, 0));
+    stage.replaceChildren(built.main, built.eq, built.pl);
     SKIN = res.skin; resolver = res.resolve;
-    try { await buildSkin(); resetTicker(); renderTicker();
-      setTimer(mode === "file" && isFinite(au.duration) && au.duration > 0 ? fmt(au.currentTime) : "LIVE"); }
-    catch(e){ SKIN = prevSkin; resolver = prevResolver; await buildSkin(); throw e; }
+    mainWin = built.main; eqWin = built.eq; plWin = built.pl;
+    applyWindowVisibility();
+    renderPlaylist();
+    updateTimerDisplay();
+    updateEQToggleVisual();
+    updatePlayState();
+    if (SKIN.sliders) for (const s of SKIN.sliders) if (s._placeThumb) s._placeThumb();
     $("#skinname").textContent = SKIN.skin.name || file.name;
     const lv = loaderVersion();
-    $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h;
+    $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h
+      + (SKIN.eq ? " · EQ " + (SKIN.eq.native ? "theo skin" : "dự phòng") : " · EQ dự phòng")
+      + (SKIN.playlist ? " · Playlist " + (SKIN.playlist.native ? "theo skin" : "dự phòng") : " · Playlist dự phòng");
     showLoaderVersion();
     let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "");
     if (res.report.cropError) okMsg += " · không cắt được vùng mờ của ảnh nền (" + res.report.cropError + ") — skin có thể hiện rộng hơn bình thường";
@@ -355,106 +1134,104 @@ async function applySkinFile(file){
     setStatus(okMsg);
     window.__lastSkinLoad = { ok: true, name: SKIN.skin.name, author: SKIN.skin.author,
       file: file.name, buttons: SKIN.buttons.length, layout: SKIN.layout,
+      frame: !!SKIN.frame, eq: !!SKIN.eq, eqNative: !!(SKIN.eq && SKIN.eq.native),
+      playlist: !!SKIN.playlist, playlistNative: !!(SKIN.playlist && SKIN.playlist.native),
       missing: res.report.missing, notes: res.report.notes,
       loaderVersion: loaderVersion(), crop: res.report.crop || null };
-  }catch(err){
+  } catch (err) {
     window.__lastSkinLoad = { ok: false, file: file.name, error: err.message, loaderVersion: loaderVersion() };
-    // Loader errors go ONLY to the status line below the player — never
-    // into the ticker inside the skin (v3 bug, see resetTicker above).
     const lv2 = loaderVersion();
     setStatus("không đọc được skin này: " + err.message + (lv2 ? " · loader v" + lv2 : ""), true);
   }
 }
-$("#btn-skin").onclick = ()=>$("#skinpick").click();
-$("#skinpick").addEventListener("change", e=>{
+$("#btn-skin").onclick = () => $("#skinpick").click();
+$("#skinpick").addEventListener("change", e => {
   applySkinFile(e.target.files[0]);
-  e.target.value = ""; // allow picking the same file again
+  e.target.value = "";
 });
-viewport.addEventListener("dragover", e=>{ e.preventDefault(); viewport.classList.add("dragover"); });
-viewport.addEventListener("dragleave", ()=>viewport.classList.remove("dragover"));
-viewport.addEventListener("drop", e=>{
+viewport.addEventListener("dragover", e => { e.preventDefault(); viewport.classList.add("dragover"); });
+viewport.addEventListener("dragleave", () => viewport.classList.remove("dragover"));
+viewport.addEventListener("drop", e => {
   e.preventDefault(); viewport.classList.remove("dragover");
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if(f) applySkinFile(f);
+  if (f) applySkinFile(f);
 });
+stage.addEventListener("dblclick", () => setScaleMode(scaleMode === "fit" ? "1x" : "fit"));
 
-/* ---------- ticker: only song/channel names and volume go here ----------
-   Loader errors and "not implemented yet" notices NEVER go into the ticker:
-   they belong in the status line below the player. (v3 flashed the loader
-   error into the ticker, and a successful load never cleared it — so Act 3
-   Scene 1 and D-Reliction showed the previous failed skin's error text
-   over the new skin.) */
+/* ---------- ticker ---------- */
 function resetTicker(){
   tickerText = mode === "file" ? (fileName || "File local")
     : (channels[idx] ? channels[idx].name + " — Trực tiếp" : "Amp");
   tickerNoteUntil = 0;
 }
 function flashTicker(msg, ms){
-  tickerText = msg; tickerNoteUntil = Date.now() + (ms||2500);
+  tickerText = msg; tickerNoteUntil = Date.now() + (ms || 2500);
   renderTicker();
 }
 function renderTicker(){
-  const span = $("#tickerspan"); if(!span) return;
+  const span = $("#tickerspan"); if (!span) return;
   span.textContent = tickerText;
   span.dataset.x = "0";
   span.style.transform = "translateX(0px)";
 }
 function tickTicker(){
-  const span = $("#tickerspan"); if(!span) return;
+  const span = $("#tickerspan"); if (!span) return;
   const box = $("#ticker");
-  if(!box) return;
-  if(span.scrollWidth <= box.clientWidth || Date.now() < tickerNoteUntil){ return; }
+  if (!box) return;
+  if (span.scrollWidth <= box.clientWidth || Date.now() < tickerNoteUntil) return;
   let x = parseFloat(span.dataset.x || "0") - 1;
-  if(-x > span.scrollWidth) x = box.clientWidth;
-  span.dataset.x = x; span.style.transform = "translateX("+x+"px)";
+  if (-x > span.scrollWidth) x = box.clientWidth;
+  span.dataset.x = x; span.style.transform = "translateX(" + x + "px)";
 }
 setInterval(tickTicker, 40);
 
 /* ---------- playlist (radio.m3u) ---------- */
 function parseM3U(text){
   const lines = text.split(/\r?\n/); const out = [];
-  for(let i=0;i<lines.length;i++){
+  for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^#EXTINF:-?\d+,(.*)$/);
-    if(m){
-      const url = (lines[i+1]||"").trim();
-      if(url && !url.startsWith("#")) out.push({name:m[1].trim(), url});
+    if (m) {
+      const url = (lines[i + 1] || "").trim();
+      if (url && !url.startsWith("#")) out.push({ name: m[1].trim(), url });
     }
   }
   return out;
 }
 function fillChannelSelect(){
   const sel = $("#chan"); sel.innerHTML = "";
-  channels.forEach((c,i)=>{
+  channels.forEach((c, i) => {
     const o = document.createElement("option");
-    o.value = i; o.textContent = (i+1)+". "+c.name; sel.appendChild(o);
+    o.value = i; o.textContent = (i + 1) + ". " + c.name; sel.appendChild(o);
   });
   sel.value = idx;
-  sel.onchange = ()=>loadChannel(+sel.value, true);
+  sel.onchange = () => loadChannel(+sel.value, true);
 }
-$("#btn-list").onclick = ()=>{ const s=$("#chan"); s.focus(); s.size = s.size?0:8; };
 
 /* ---------- playback ---------- */
-function destroyHls(){ if(hls){ try{hls.destroy();}catch(e){} hls = null; } }
+let repeatMode = 0; // 0 = tắt, 1 = lặp playlist, 2 = lặp 1 bài (chỉ file local)
+function destroyHls(){ if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 function loadChannel(i, autoplay){
-  if(!channels.length) return;
-  idx = ((i%channels.length)+channels.length)%channels.length;
+  if (!channels.length) return;
+  idx = ((i % channels.length) + channels.length) % channels.length;
   mode = "radio"; failCount = 0;
   const c = channels[idx];
   $("#chan").value = idx;
-  tickerText = c.name+" — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
-  setTimer("LIVE"); setFill("seek", 0);
-  setStatus("Kênh "+(idx+1)+"/"+channels.length+": "+c.name);
+  tickerText = c.name + " — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
+  setFill("seek", 0);
+  setStatus("Kênh " + (idx + 1) + "/" + channels.length + ": " + c.name);
   destroyHls(); au.pause();
+  resetTimer(); // the clock restarts on every channel change
+  renderPlaylist();
   const url = c.url;
-  const playIt = ()=>{ if(autoplay) au.play().catch(()=>{ /* gesture needed */ }); };
-  if(/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()){
-    hls = new Hls({maxBufferLength:30});
+  const playIt = () => { if (autoplay) au.play().catch(() => {}); };
+  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
+    hls = new Hls({ maxBufferLength: 30 });
     hls.loadSource(url); hls.attachMedia(au);
-    hls.on(Hls.Events.ERROR, (ev,data)=>{
-      if(data && data.fatal) handleFail("HLS "+(data.type||"")+" "+(data.details||""));
+    hls.on(Hls.Events.ERROR, (ev, data) => {
+      if (data && data.fatal) handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
     });
     hls.on(Hls.Events.MANIFEST_PARSED, playIt);
-    setTimeout(()=>{ if(au.paused && autoplay && !au.src) playIt(); }, 3000);
+    setTimeout(() => { if (au.paused && autoplay && !au.src) playIt(); }, 3000);
   } else {
     au.src = url; playIt();
   }
@@ -462,104 +1239,146 @@ function loadChannel(i, autoplay){
 function handleFail(why){
   failCount++;
   const c = channels[idx];
-  const msg = c.name+" — không phát được"+(why?" ("+why+")":"");
-  // Ticker shows only the short form; the full reason goes to the status
-  // line below the player, so a long error never scrolls over the skin.
-  tickerText = c.name+" — không phát được"; tickerNoteUntil = Date.now()+2500; renderTicker();
+  const msg = c.name + " — không phát được" + (why ? " (" + why + ")" : "");
+  tickerText = c.name + " — không phát được"; tickerNoteUntil = Date.now() + 2500; renderTicker();
   setStatus(msg, true);
-  if(failCount >= 6){ setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
+  if (failCount >= 6) { setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
   clearTimeout(failTimer);
-  failTimer = setTimeout(()=>loadChannel(idx+1, true), 2500);
+  failTimer = setTimeout(() => loadChannel(idx + 1, true), 2500);
 }
-au.addEventListener("playing", ()=>{ playing = true; updatePlayState(); });
-au.addEventListener("pause", ()=>{ playing = false; updatePlayState(); });
-au.addEventListener("error", ()=>{
-  if(!au.src || au.src==="") return;
-  if(mode==="file"){ setStatus("File lỗi — không phát được", true); return; }
-  handleFail("audio error");
-});
-au.addEventListener("timeupdate", ()=>{
-  if(mode==="file" && isFinite(au.duration) && au.duration>0){
-    setTimer(fmt(au.currentTime));
-    setFill("seek", au.currentTime/au.duration);
-  } else {
-    setTimer("LIVE");
-  }
-});
-au.addEventListener("ended", ()=>{ if(mode==="file"){ playing=false; updatePlayState(); } });
+function bindAudio(el){
+  el.addEventListener("playing", () => {
+    playing = true; updatePlayState(); onPlayStart();
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  });
+  el.addEventListener("pause", () => { playing = false; updatePlayState(); onPlayPause(); });
+  el.addEventListener("error", () => {
+    if (!el.src || el.src === "") return;
+    if (mode === "file") { setStatus("File lỗi — không phát được", true); return; }
+    handleFail("audio error");
+  });
+  el.addEventListener("timeupdate", () => {
+    if (mode === "file" && isFinite(el.duration) && el.duration > 0) {
+      setFill("seek", el.currentTime / el.duration);
+      if (SKIN && SKIN.sliders) for (const s of SKIN.sliders) if (s.action === "SEEK" && s._placeThumb) s._placeThumb();
+    }
+  });
+  el.addEventListener("ended", () => {
+    if (mode !== "file") return;
+    playing = false; updatePlayState(); onPlayPause();
+    if (repeatMode === 2) { el.currentTime = 0; el.play().catch(() => {}); }
+    else if (repeatMode === 1) {
+      const files = plItems.filter(it => it.kind === "file");
+      if (files.length) {
+        const cur = files.findIndex(isCurrentPlItem);
+        playPlItem(files[(cur + 1) % files.length]);
+      }
+    }
+  });
+}
+bindAudio(au);
+document.addEventListener("pointerdown", () => {
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+}, { passive: true });
 
-function onButton(b){
-  const a = b.action, p = b.param;
-  // Merged Play/Pause button (DDTank): tap toggles, like Winamp's MAKI.
-  if(a==="PLAY" && b.mergedPause && playing){ au.pause(); return; }
-  if(a==="PLAY"){ if(mode==="file" && au.src){ au.play(); } else loadChannel(idx, true); }
-  else if(a==="PAUSE"){ au.pause(); }
-  else if(a==="STOP"){ au.pause(); try{ au.currentTime=0; }catch(e){}
-    if(mode==="file"){ setFill("seek",0); setTimer("0:00"); } }
-  else if(a==="NEXT"){ loadChannel(idx+1, true); }
-  else if(a==="PREV"){ loadChannel(idx-1, true); }
-  else if(a==="EJECT"){ $("#filepick").click(); }
-  else if(a==="CLOSE"){ setStatus("Nút đóng chưa có tác dụng trong bản này"); }
-  else if(a==="MINIMIZE"){ setStatus("Nút thu nhỏ chưa có tác dụng trong bản này"); }
-  else if(a==="SYSMENU"){ $("#chan").focus(); setStatus("Menu: dùng danh sách kênh bên dưới"); }
-  else if(a==="TOGGLE"){
-    if(p==="eq") setStatus("EQ chưa có trong bản này");
-    else if(p && p.indexOf("PL")>=0) setStatus("Playlist chưa có trong bản này");
-    else if(p && p.indexOf("ML")>=0) setStatus("Media Library chưa có trong bản này");
+function playLocalFile(blobURL, name){
+  destroyHls();
+  mode = "file"; failCount = 0; fileName = name; fileBlobURL = blobURL;
+  au.src = blobURL;
+  resetTimer();
+  tickerText = name; tickerNoteUntil = 0; renderTicker();
+  setFill("seek", 0);
+  setStatus("File local: " + name);
+  renderPlaylist();
+  au.play().catch(() => {});
+}
+$("#filepick").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const blobURL = URL.createObjectURL(f);
+  localFiles.push({ name: f.name, blobURL });
+  rebuildPlItems();
+  playLocalFile(blobURL, f.name);
+  e.target.value = "";
+});
+
+/* ---------- transport / main-window buttons ---------- */
+function onMainButton(b){
+  const a = b.action, p = (b.param || "").toLowerCase();
+  if (a === "PLAY" && b.mergedPause && playing) { au.pause(); return; }
+  if (a === "PLAY") { if (mode === "file" && au.src) au.play(); else loadChannel(idx, true); }
+  else if (a === "PAUSE") au.pause();
+  else if (a === "STOP") {
+    au.pause(); try { au.currentTime = 0; } catch (e) {}
+    resetTimer();
+    if (mode === "file") setFill("seek", 0);
+  }
+  else if (a === "NEXT") loadChannel(idx + 1, true);
+  else if (a === "PREV") loadChannel(idx - 1, true);
+  else if (a === "EJECT") $("#filepick").click();
+  else if (a === "EQ_TOGGLE") { setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); }
+  else if (a === "CLOSE") setStatus("Nút đóng chưa có tác dụng trong bản này (tắt tab trình duyệt để đóng)");
+  else if (a === "MINIMIZE") setStatus("Nút thu nhỏ chưa có tác dụng trong bản này");
+  else if (a === "SYSMENU") { $("#chan").focus(); setStatus("Menu: dùng danh sách kênh bên dưới"); }
+  else if (a === "TOGGLE") {
+    if (p === "eq") toggleWindow("eq");
+    else if (p.indexOf("pl") >= 0) toggleWindow("pl");
+    else if (p.indexOf("ml") >= 0) setStatus("Media Library chưa có trong bản này (v6)");
     else setStatus("Nút này chưa có tác dụng trong bản này");
   }
-  else if(!a){ setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này"); }
+  else if (!a && /^repeat/i.test(b.id || "")) {
+    repeatMode = (repeatMode + 1) % 3;
+    const led = SKIN && SKIN.buttons.find(x => x.id === "RepeatLED");
+    if (led && led._img) led._img.style.opacity = repeatMode ? "1" : "0.3";
+    setStatus("Repeat: " + ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode] + " (chỉ áp dụng cho file local)");
+  }
+  else if (!a) setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
 }
-$("#filepick").addEventListener("change", e=>{
-  const f = e.target.files[0]; if(!f) return;
-  destroyHls(); mode = "file"; failCount = 0; fileName = f.name;
-  au.src = URL.createObjectURL(f);
-  tickerText = f.name; tickerNoteUntil = 0; renderTicker();
-  setTimer("0:00"); setFill("seek", 0);
-  setStatus("File local: "+f.name);
-  au.play().catch(()=>{});
-});
 
-/* ---------- boot: default skin = blakk.zip, same loader as a picked skin ----------
+/* ---------- boot: default skin = winampmodern566.wal, same loader as a picked skin ----------
    radio.m3u loads independently so the channel list works even if the
    default skin fails; in that case the page shows the message below and
-   the “Nạp skin” button stays usable — never a dead end. */
+   the "Nạp skin" button stays usable — never a dead end. */
 async function loadDefaultSkin(){
-  try{
-    if(typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
-    if(loaderMismatch()){
+  try {
+    if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
+    if (loaderMismatch()) {
       setStatus("đang chạy loader cũ (" + loaderLabel() + ") trong khi trang là v" + EXPECTED_LOADER_VERSION + " — bấm tải lại trang (hoặc mở tab ẩn danh) để nạp loader mới, skin có thể hiển thị sai", true);
     }
-    const r = await fetch("blakk.zip");
-    if(!r.ok) throw new Error("blakk.zip HTTP "+r.status);
+    const r = await fetch("winampmodern566.wal");
+    if (!r.ok) throw new Error("winampmodern566.wal HTTP " + r.status);
     const blob = await r.blob();
-    await applySkinFile(new File([blob], "blakk.zip", {type: "application/zip"}));
-    if(window.__lastSkinLoad && window.__lastSkinLoad.ok === false)
-      throw new Error(window.__lastSkinLoad.error || "không đọc được blakk.zip");
+    await applySkinFile(new File([blob], "winampmodern566.wal", { type: "application/zip" }));
+    if (window.__lastSkinLoad && window.__lastSkinLoad.ok === false)
+      throw new Error(window.__lastSkinLoad.error || "không đọc được winampmodern566.wal");
     return true;
-  }catch(err){
-    window.__lastSkinLoad = { ok: false, file: "blakk.zip", error: err.message };
-    setStatus("không nạp được skin mặc định ("+err.message+"), bấm Nạp skin để chọn file .wal/.zip", true);
+  } catch (err) {
+    window.__lastSkinLoad = { ok: false, file: "winampmodern566.wal", error: err.message };
+    setStatus("không nạp được skin mặc định (" + err.message + "), bấm Nạp skin để chọn file .wal/.zip", true);
     return false;
   }
 }
-fetch("radio.m3u").then(r=>{ if(!r.ok) throw new Error("radio.m3u HTTP "+r.status); return r.text(); })
-.then(async (m3u)=>{
+fetch("radio.m3u").then(r => { if (!r.ok) throw new Error("radio.m3u HTTP " + r.status); return r.text(); })
+.then(async (m3u) => {
   channels = parseM3U(m3u);
+  rebuildPlItems();
   fillChannelSelect();
   au.volume = 1.0; setFill("vol", 1.0);
   loadChannel(0, false);
   const ok = await loadDefaultSkin();
-  if(ok){
-    tickerText = channels[0] ? channels[0].name+" — Trực tiếp" : "BLAKK";
+  if (ok) {
+    tickerText = channels[0] ? channels[0].name + " — Trực tiếp" : "WinampModern566";
     renderTicker();
-    let msg = "Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip · loader v" + (loaderVersion() || "?");
-    if(loaderMismatch()) msg += " · CẢNH BÁO loader cũ, tải lại trang để nạp v" + EXPECTED_LOADER_VERSION;
-    if(!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
+    let msg = "Đã nạp " + channels.length + " kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip · loader v" + (loaderVersion() || "?");
+    if (loaderMismatch()) msg += " · CẢNH BÁO loader cũ, tải lại trang để nạp v" + EXPECTED_LOADER_VERSION;
+    if (!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
     setStatus(msg);
   }
-}).catch(err=>{
-  setStatus("Lỗi nạp radio.m3u: "+err.message, true);
+  // Restore a saved EQ-ON state: the graph is built now, but the context
+  // stays suspended until the first user gesture (which resumes it — see
+  // the 'playing' handler and the document pointerdown listener).
+  if (eqState.on) { try { await enableEQ(); updateEQToggleVisual(); } catch (e) {} }
+}).catch(err => {
+  setStatus("Lỗi nạp radio.m3u: " + err.message, true);
   console.error(err);
 });
 </script>
