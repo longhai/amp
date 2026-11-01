@@ -1,6 +1,9 @@
 /* skin-loader.js — load a Winamp Modern skin (.wal / .zip) DIRECTLY in the
    browser. No Python at runtime.
-   - Unzips with JSZip (CDN first, local jszip.min.js fallback).
+   - Unzips with JSZip loaded from CDN (cdnjs 3.10.1). There is NO vendored
+     jszip.min.js in the v4 package: if the CDN cannot be reached the loader
+     throws a clear "không tải được thư viện JSZip từ mạng (CDN)" error and
+     the page shows it in the status line below the player.
    - Reads skin.xml with DOMParser, follows <include file="..."/> recursively
      (skips @...@ placeholders such as @COLORTHEMESPATH@).
    - Builds the bitmap id -> file map (<bitmap id file x y w h>), resolves
@@ -19,7 +22,7 @@
 
 const SkinLoader = (() => {
 
-  /* ---------- JSZip (CDN first, local fallback) ---------- */
+  /* ---------- JSZip: CDN only (v4 has no vendored copy) ---------- */
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
@@ -31,10 +34,12 @@ const SkinLoader = (() => {
   }
   async function ensureJSZip() {
     if (window.JSZip) return window.JSZip;
-    try { await loadScript("jszip.min.js"); } catch (e) { /* try CDN below */ }
-    if (window.JSZip) return window.JSZip;
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
-    if (!window.JSZip) throw new Error("không tải được JSZip (cả CDN lẫn file local đều lỗi)");
+    try {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+    } catch (e) {
+      throw new Error("không tải được thư viện JSZip từ mạng (CDN) — kiểm tra mạng rồi tải lại trang");
+    }
+    if (!window.JSZip) throw new Error("không tải được thư viện JSZip từ mạng (CDN) — kiểm tra mạng rồi tải lại trang");
     return window.JSZip;
   }
 
@@ -315,6 +320,11 @@ const SkinLoader = (() => {
     // --- walk a layout (BLAKK style) ---
     const buttons = [], layers = [], texts = [], sliders = [];
     const unresolved = [];
+    // Wasabi <button>/<layer> elements sometimes carry their own w/h
+    // (Copperdeck: a 13x39 layer that uses the 289x135 winbck.main sprite
+    // as its image). The explicit size wins — the bitmap size is only a
+    // fallback. The old code always overwrote with the bitmap size, so that
+    // 13x39 layer painted a 289x135 grey rectangle over the skin.
     function addButton(el, x, y, kind) {
       const image = el.getAttribute("image");
       const hover = el.getAttribute("hoverImage");
@@ -327,7 +337,7 @@ const SkinLoader = (() => {
       buttons.push({
         id: el.getAttribute("id"), kind, action: act ? act.toUpperCase() : null,
         param: el.getAttribute("param"),
-        x, y, w: null, h: null,
+        x, y, w: intAttr(el, "w", 0) || null, h: intAttr(el, "h", 0) || null,
         image, imageFile: resolveImageRef(image),
         hoverImage: hover, hoverFile: hover ? resolveImageRef(hover) : null,
         downImage: down, downFile: down ? resolveImageRef(down) : null,
@@ -340,7 +350,7 @@ const SkinLoader = (() => {
       const image = el.getAttribute("image");
       layers.push({
         id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
-        x, y, w: null, h: null,
+        x, y, w: intAttr(el, "w", 0) || null, h: intAttr(el, "h", 0) || null,
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
         _imageId: image
       });
@@ -353,20 +363,27 @@ const SkinLoader = (() => {
       }
       return out;
     }
+    // Elements with visible="0" are hidden in Winamp (alternate vis modes,
+    // inactive states). The old code rendered them anyway.
+    function isVisible(el) { return el.getAttribute("visible") !== "0"; }
     function walkGroupChildren(items, depth) {
       for (const { el, x, y } of items) {
+        if (!isVisible(el)) continue;
         if (el.tagName === "button") addButton(el, x, y, "button");
         else if (el.tagName === "togglebutton") addButton(el, x, y, "togglebutton");
         else if (el.tagName === "layer") addLayer(el, x, y);
-        else if (el.tagName === "text") {
+        else if (el.tagName === "text" || el.tagName.toLowerCase() === "songticker") {
           // Ticker/timer often live inside a groupdef (Nebular: Songticker
           // and timer are in boombox-lcd-group), not as direct layout kids.
+          // Copperdeck writes the song ticker as <SongTicker> (capital S),
+          // not <text>: treat it as the songname ticker.
+          const isSongTicker = el.tagName.toLowerCase() === "songticker";
           texts.push({
-            id: el.getAttribute("id"), display: el.getAttribute("display"),
+            id: el.getAttribute("id"), display: el.getAttribute("display") || (isSongTicker ? "songname" : null),
             x, y, w: intAttr(el, "w", 0), h: intAttr(el, "h", 0),
             font: el.getAttribute("font"), color: el.getAttribute("color"),
             fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
-            ticker: el.getAttribute("ticker"), showlen: el.getAttribute("showlen")
+            ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: el.getAttribute("showlen")
           });
         }
         else if (el.tagName === "slider") {
@@ -471,6 +488,7 @@ const SkinLoader = (() => {
         if (s) layout.backgroundSize = s;
       }
       for (const child of elChildren(layoutEl)) {
+        if (!isVisible(child)) continue;
         if (child.tagName === "group") {
           walkGroupChildren(resolveGroup(child.getAttribute("id"),
             intAttr(child, "x", 0), intAttr(child, "y", 0), 0), 0);
@@ -478,14 +496,15 @@ const SkinLoader = (() => {
           addButton(child, intAttr(child, "x", 0), intAttr(child, "y", 0), child.tagName);
         } else if (child.tagName === "layer") {
           addLayer(child, intAttr(child, "x", 0), intAttr(child, "y", 0));
-        } else if (child.tagName === "text") {
+        } else if (child.tagName === "text" || child.tagName.toLowerCase() === "songticker") {
+          const isSongTicker = child.tagName.toLowerCase() === "songticker";
           texts.push({
-            id: child.getAttribute("id"), display: child.getAttribute("display"),
+            id: child.getAttribute("id"), display: child.getAttribute("display") || (isSongTicker ? "songname" : null),
             x: intAttr(child, "x", 0), y: intAttr(child, "y", 0),
             w: intAttr(child, "w", 0), h: intAttr(child, "h", 0),
             font: child.getAttribute("font"), color: child.getAttribute("color"),
             fontsize: child.getAttribute("fontsize"), align: child.getAttribute("align"),
-            ticker: child.getAttribute("ticker"), showlen: child.getAttribute("showlen")
+            ticker: child.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: child.getAttribute("showlen")
           });
         } else if (child.tagName === "slider") {
           sliders.push({ id: child.getAttribute("id"), action: child.getAttribute("action"),
@@ -495,14 +514,17 @@ const SkinLoader = (() => {
           unresolved.push("layout child <" + child.tagName + "> id=" + child.getAttribute("id") + " chưa xử lý");
         }
       }
-      // Fill w/h of buttons/layers from PNG bytes (or sprite crop).
+      // Fill w/h of buttons/layers from PNG bytes (or sprite crop) — but
+      // only where the element did not already carry its own w/h (see above).
       for (const b of buttons) {
+        if (b.w && b.h) continue;
         const [w, h] = await bitmapSize(b._imageId);
-        b.w = w; b.h = h;
+        if (!b.w) b.w = w; if (!b.h) b.h = h;
       }
       for (const l of layers) {
+        if (l.w && l.h) continue;
         const [w, h] = await bitmapSize(l._imageId);
-        l.w = w; l.h = h;
+        if (!l.w) l.w = w; if (!l.h) l.h = h;
       }
       // Play/Pause sharing one spot (DDTank: both at 156,217, a MAKI
       // script swaps them in Winamp). Rendered as two stacked divs the
@@ -519,6 +541,57 @@ const SkinLoader = (() => {
         buttons.splice(pauseIdx, 1);
         report.notes.push("gộp nút Play/Pause cùng vị trí (" + playBtn.x + "," + playBtn.y + ") thành 1 nút chuyển đổi");
       }
+      // --- visible-window crop from the background image alpha ---
+      // Some skins (Copperdeck II) declare a 645px layout but the background
+      // PNG is only opaque in the middle 289px (178..467): the rest is the
+      // drawer area, hidden in Winamp until the MAKI drawer slides out.
+      // Rendering the full 645px makes the player look small and cut off on
+      // a phone, and layers that reuse the background as a sprite
+      // (winbck.main) paint a big grey rectangle outside the window. Crop
+      // the layout to the opaque bounding box of the background image when
+      // it is clearly smaller than the layout (40%..95% of the size) and
+      // shift every element by the same offset. BLAKK/DDTank (fully opaque)
+      // and Nebular (98.9% opaque) are unaffected.
+      try {
+        if (layout.backgroundFile) {
+          const blob = await blobFor(layout.backgroundFile);
+          if (blob) {
+            const bmp = await createImageBitmap(blob);
+            const cv = document.createElement("canvas");
+            cv.width = bmp.width; cv.height = bmp.height;
+            const cx = cv.getContext("2d", { willReadFrequently: true });
+            cx.drawImage(bmp, 0, 0);
+            // NOTE: read width/height BEFORE bmp.close() — after close()
+            // an ImageBitmap reports 0x0, which made this whole scan a
+            // no-op (bbox stayed empty) in the first v4 build.
+            const bw0 = bmp.width, bh0 = bmp.height;
+            const data = cx.getImageData(0, 0, bw0, bh0).data;
+            bmp.close();
+            let minX = bw0, minY = bh0, maxX = -1, maxY = -1;
+            for (let yy = 0; yy < bh0; yy++) {
+              for (let xx = 0; xx < bw0; xx++) {
+                if (data[(yy * bw0 + xx) * 4 + 3] > 10) {
+                  if (xx < minX) minX = xx; if (xx > maxX) maxX = xx;
+                  if (yy < minY) minY = yy; if (yy > maxY) maxY = yy;
+                }
+              }
+            }
+            if (maxX >= 0) {
+              const bw = maxX + 1 - minX, bh = maxY + 1 - minY;
+              if ((bw < layout.w * 0.95 || bh < layout.h * 0.95) && bw >= layout.w * 0.4 && bh >= layout.h * 0.4) {
+                const ox = minX, oy = minY;
+                for (const b of buttons) { b.x -= ox; b.y -= oy; }
+                for (const l of layers) { l.x -= ox; l.y -= oy; }
+                for (const t of texts) { t.x -= ox; t.y -= oy; }
+                for (const s of sliders) { if (typeof s.x === "number") s.x -= ox; if (typeof s.y === "number") s.y -= oy; }
+                layout.bgCrop = { x: ox, y: oy, fullW: layout.w, fullH: layout.h };
+                layout.w = bw; layout.h = bh;
+                report.notes.push("cắt cửa sổ theo vùng mờ của ảnh nền: " + layout.bgCrop.fullW + "x" + layout.bgCrop.fullH + " -> " + bw + "x" + bh + " (dịch -" + ox + ",-" + oy + ")");
+              }
+            }
+          }
+        }
+      } catch (e) { report.notes.push("không tính được vùng mờ của ảnh nền: " + e.message); }
     } else {
       // --- ClassicPro fallback (AyonPlayer): no <layout> in the skin ---
       report.notes.push("không thấy <layout> trong XML — thử kiểu ClassicPro (mainframe + sendparams).");

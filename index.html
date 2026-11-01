@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Amp — v2 slim (nạp skin .wal/.zip)</title>
+<title>Amp — v4 (nạp skin .wal/.zip, thư viện qua CDN)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -19,7 +19,10 @@
   #viewport{position:relative;margin:10px auto 0;}
   #viewport.dragover{outline:2px dashed #6a0;outline-offset:4px;}
   #scaler{position:absolute;left:0;top:0;width:436px;height:160px;
-    transform-origin:top left;background:#000 no-repeat 0 0;}
+    transform-origin:top left;background:#000 no-repeat 0 0;overflow:hidden;}
+  /* overflow:hidden: the skin window clips to its own box, like Winamp's
+     shaped window — a layer that sticks out (e.g. a sprite reused at the
+     wrong size) must not widen the page or paint over the panel below. */
   #scaler img{position:absolute;display:block;border:0;padding:0;
     image-rendering:auto;-webkit-user-drag:none;user-select:none;}
   #scaler .btn{position:absolute;padding:0;border:0;background:transparent;
@@ -48,7 +51,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">BLAKK</b> — Amp v2 slim · main window only · <span id="skinsub">skin mặc định nạp trực tiếp từ blakk.zip, đổi skin bằng file .wal/.zip</span></h1>
+<h1><b id="skinname">BLAKK</b> — Amp v4 · main window only · <span id="skinsub">skin mặc định nạp trực tiếp từ blakk.zip, đổi skin bằng file .wal/.zip</span></h1>
 <div id="viewport"><div id="scaler"></div></div>
 
 <div id="panel">
@@ -67,10 +70,11 @@
 
 <script>
 "use strict";
-/* v2 slim: same renderer + playback as v2, but there is NO built-in
-   blakk.json / assets/ folder any more. The default BLAKK skin is loaded
-   from blakk.zip in this folder through the SAME SkinLoader.loadSkinFile()
-   path as a user-picked .wal/.zip — one code path for every skin.
+/* v4: same renderer + playback as v3, but there are NO vendored libraries
+   any more — JSZip and hls.js both come from CDN (see the <script> tags
+   above). The default BLAKK skin is loaded from blakk.zip in this folder
+   through the SAME SkinLoader.loadSkinFile() path as a user-picked
+   .wal/.zip — one code path for every skin.
    Nothing here is hand-measured: x/y/w/h come from the skin XML. */
 const $ = s => document.querySelector(s);
 const scaler = $("#scaler"), viewport = $("#viewport"), statusEl = $("#status");
@@ -78,7 +82,7 @@ const au = $("#au");
 let SKIN = null, channels = [], idx = 0, mode = "radio";
 let hls = null, failCount = 0, failTimer = null, playing = false;
 let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
-let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null;
+let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
 
 /* ---------- asset resolver: always from a loaded skin (blob URLs) ----------
    There is no built-in assets/ folder in the slim build: the default skin
@@ -136,6 +140,9 @@ async function resolveImg(imageId, imageFile){
 function imgElSrc(src, x, y, w, h){
   const im = document.createElement("img");
   im.src = src; im.draggable = false; im.alt = "";
+  // A skin image that fails to load must vanish, never show a broken-image
+  // icon + alt text over the skin (the D-Reliction bug).
+  im.onerror = ()=>{ im.style.display = "none"; };
   im.style.left = x+"px"; im.style.top = y+"px";
   if(w) im.style.width = w+"px"; if(h) im.style.height = h+"px";
   return im;
@@ -147,7 +154,15 @@ async function buildSkin(){
   const bgSrc = L.backgroundFile ? await resolveImg(L.background, L.backgroundFile) : null;
   if(bgSrc){
     scaler.style.backgroundImage = "url("+JSON.stringify(bgSrc)+")";
-    scaler.style.backgroundSize = L.w+"px "+L.h+"px";
+    if(L.bgCrop){
+      // Layout was cropped to the background's opaque box (Copperdeck):
+      // show the full background image shifted so the opaque part aligns.
+      scaler.style.backgroundSize = L.bgCrop.fullW+"px "+L.bgCrop.fullH+"px";
+      scaler.style.backgroundPosition = (-L.bgCrop.x)+"px "+(-L.bgCrop.y)+"px";
+    } else {
+      scaler.style.backgroundSize = L.w+"px "+L.h+"px";
+      scaler.style.backgroundPosition = "0 0";
+    }
   } else {
     scaler.style.backgroundImage = "none";
   }
@@ -163,7 +178,7 @@ async function buildSkin(){
   // texts: songticker + timer (by id first, then by display/ticker attr)
   // Prefer the real songname ticker: some skins (DDTank) also have a
   // ticker="1" songinfo line, which is not the song name.
-  const tick = SKIN.texts.find(t=>t.id==="Songticker")
+  const tick = SKIN.texts.find(t=>t.id && t.id.toLowerCase()==="songticker")
     || SKIN.texts.find(t=>t.display==="songname")
     || SKIN.texts.find(t=>t.ticker==="1");
   const tim = SKIN.texts.find(t=>t.id==="timer")
@@ -172,7 +187,7 @@ async function buildSkin(){
     const tickEl = document.createElement("div");
     tickEl.id = "ticker";
     tickEl.style.left = tick.x+"px"; tickEl.style.top = tick.y+"px";
-    tickEl.style.width = tick.w+"px"; tickEl.style.height = tick.h+"px";
+    tickEl.style.width = tick.w+"px"; tickEl.style.height = (tick.h||14)+"px";
     tickEl.innerHTML = "<span id='tickerspan'></span>";
     scaler.appendChild(tickEl);
   }
@@ -180,7 +195,7 @@ async function buildSkin(){
     const timEl = document.createElement("div");
     timEl.id = "timer";
     timEl.style.left = tim.x+"px"; timEl.style.top = tim.y+"px";
-    timEl.style.width = tim.w+"px"; timEl.style.height = tim.h+"px";
+    timEl.style.width = tim.w+"px"; timEl.style.height = (tim.h||14)+"px";
     timEl.textContent = "--:--";
     scaler.appendChild(timEl);
   }
@@ -256,8 +271,12 @@ async function buildButton(b){
   b._downSrc = b.downImage ? await resolveImg(b.downImage, b.downFile) : null;
   // Merged Play/Pause button (DDTank): show the pause icon while playing.
   b._pauseSrc = b.pauseImage ? await resolveImg(b.pauseImage, b.pauseFile) : null;
+  if(!b._src) return; // no image for this button: hide it entirely, never a
+  // broken <img> with alt text over the skin (the D-Reliction bug: buttons
+  // whose image is only set by a MAKI script have no image in the XML).
   const im = document.createElement("img");
-  im.src = b._src || ""; im.draggable = false; im.alt = b.id||"";
+  im.src = b._src; im.draggable = false; im.alt = "";
+  im.onerror = ()=>{ d.style.display = "none"; };
   d.appendChild(im);
   const show = f => { if(f) im.src = f; };
   d.addEventListener("mouseenter", ()=>show(b._hoverSrc));
@@ -285,7 +304,7 @@ async function applySkinFile(file){
     const res = await SkinLoader.loadSkinFile(file);
     const prevSkin = SKIN, prevResolver = resolver;
     SKIN = res.skin; resolver = res.resolve;
-    try { await buildSkin(); renderTicker();
+    try { await buildSkin(); resetTicker(); renderTicker();
       setTimer(mode === "file" && isFinite(au.duration) && au.duration > 0 ? fmt(au.currentTime) : "LIVE"); }
     catch(e){ SKIN = prevSkin; resolver = prevResolver; await buildSkin(); throw e; }
     $("#skinname").textContent = SKIN.skin.name || file.name;
@@ -296,7 +315,8 @@ async function applySkinFile(file){
       missing: res.report.missing, notes: res.report.notes };
   }catch(err){
     window.__lastSkinLoad = { ok: false, file: file.name, error: err.message };
-    flashTicker("không đọc được skin này: " + err.message);
+    // Loader errors go ONLY to the status line below the player — never
+    // into the ticker inside the skin (v3 bug, see resetTicker above).
     setStatus("không đọc được skin này: " + err.message, true);
   }
 }
@@ -313,7 +333,17 @@ viewport.addEventListener("drop", e=>{
   if(f) applySkinFile(f);
 });
 
-/* ---------- ticker ---------- */
+/* ---------- ticker: only song/channel names and volume go here ----------
+   Loader errors and "not implemented yet" notices NEVER go into the ticker:
+   they belong in the status line below the player. (v3 flashed the loader
+   error into the ticker, and a successful load never cleared it — so Act 3
+   Scene 1 and D-Reliction showed the previous failed skin's error text
+   over the new skin.) */
+function resetTicker(){
+  tickerText = mode === "file" ? (fileName || "File local")
+    : (channels[idx] ? channels[idx].name + " — Trực tiếp" : "Amp");
+  tickerNoteUntil = 0;
+}
 function flashTicker(msg, ms){
   tickerText = msg; tickerNoteUntil = Date.now() + (ms||2500);
   renderTicker();
@@ -388,7 +418,9 @@ function handleFail(why){
   failCount++;
   const c = channels[idx];
   const msg = c.name+" — không phát được"+(why?" ("+why+")":"");
-  tickerText = msg; tickerNoteUntil = Date.now()+2500; renderTicker();
+  // Ticker shows only the short form; the full reason goes to the status
+  // line below the player, so a long error never scrolls over the skin.
+  tickerText = c.name+" — không phát được"; tickerNoteUntil = Date.now()+2500; renderTicker();
   setStatus(msg, true);
   if(failCount >= 6){ setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
   clearTimeout(failTimer);
@@ -398,7 +430,7 @@ au.addEventListener("playing", ()=>{ playing = true; updatePlayState(); });
 au.addEventListener("pause", ()=>{ playing = false; updatePlayState(); });
 au.addEventListener("error", ()=>{
   if(!au.src || au.src==="") return;
-  if(mode==="file"){ flashTicker("File lỗi — không phát được"); setStatus("File lỗi — không phát được", true); return; }
+  if(mode==="file"){ setStatus("File lỗi — không phát được", true); return; }
   handleFail("audio error");
 });
 au.addEventListener("timeupdate", ()=>{
@@ -422,20 +454,20 @@ function onButton(b){
   else if(a==="NEXT"){ loadChannel(idx+1, true); }
   else if(a==="PREV"){ loadChannel(idx-1, true); }
   else if(a==="EJECT"){ $("#filepick").click(); }
-  else if(a==="CLOSE"){ flashTicker("v2: nút đóng chưa có tác dụng"); }
-  else if(a==="MINIMIZE"){ flashTicker("v2: nút thu nhỏ chưa có tác dụng"); }
-  else if(a==="SYSMENU"){ $("#chan").focus(); flashTicker("Menu: dùng danh sách kênh bên dưới"); }
+  else if(a==="CLOSE"){ setStatus("Nút đóng chưa có tác dụng trong bản này"); }
+  else if(a==="MINIMIZE"){ setStatus("Nút thu nhỏ chưa có tác dụng trong bản này"); }
+  else if(a==="SYSMENU"){ $("#chan").focus(); setStatus("Menu: dùng danh sách kênh bên dưới"); }
   else if(a==="TOGGLE"){
-    if(p==="eq") flashTicker("EQ chưa có trong v2");
-    else if(p && p.indexOf("PL")>=0) flashTicker("Playlist chưa có trong v2");
-    else if(p && p.indexOf("ML")>=0) flashTicker("Media Library chưa có trong v2");
-    else flashTicker("v2: nút này chưa có tác dụng");
+    if(p==="eq") setStatus("EQ chưa có trong bản này");
+    else if(p && p.indexOf("PL")>=0) setStatus("Playlist chưa có trong bản này");
+    else if(p && p.indexOf("ML")>=0) setStatus("Media Library chưa có trong bản này");
+    else setStatus("Nút này chưa có tác dụng trong bản này");
   }
-  else if(!a){ flashTicker("v2: nút chuyển chế độ chưa có tác dụng"); }
+  else if(!a){ setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này"); }
 }
 $("#filepick").addEventListener("change", e=>{
   const f = e.target.files[0]; if(!f) return;
-  destroyHls(); mode = "file"; failCount = 0;
+  destroyHls(); mode = "file"; failCount = 0; fileName = f.name;
   au.src = URL.createObjectURL(f);
   tickerText = f.name; tickerNoteUntil = 0; renderTicker();
   setTimer("0:00"); setFill("seek", 0);
@@ -473,7 +505,9 @@ fetch("radio.m3u").then(r=>{ if(!r.ok) throw new Error("radio.m3u HTTP "+r.statu
   if(ok){
     tickerText = channels[0] ? channels[0].name+" — Trực tiếp" : "BLAKK";
     renderTicker();
-    setStatus("Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip");
+    let msg = "Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip";
+    if(!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
+    setStatus(msg);
   }
 }).catch(err=>{
   setStatus("Lỗi nạp radio.m3u: "+err.message, true);
