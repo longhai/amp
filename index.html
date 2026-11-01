@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLAKK — Webamp Modern v1 (main window)</title>
+<link rel="icon" href="data:,">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#000;color:#ccc;
+    font-family:Verdana,Arial,sans-serif;}
+  body{text-align:center;}
+  h1{font-size:13px;color:#888;margin:10px 0 2px;font-weight:normal;}
+  h1 b{color:#bbb;}
+  /* --- the skin stage: 436x160 coordinate space, scaled by CSS transform --- */
+  #viewport{position:relative;margin:10px auto 0;}
+  #scaler{position:absolute;left:0;top:0;width:436px;height:160px;
+    transform-origin:top left;
+    background:#000 url(assets/player/bb-base.png) no-repeat 0 0/436px 160px;}
+  #scaler img{position:absolute;display:block;border:0;padding:0;
+    image-rendering:auto;-webkit-user-drag:none;user-select:none;}
+  #scaler .btn{position:absolute;padding:0;border:0;background:transparent;
+    cursor:pointer;}
+  #scaler .btn img{position:static;width:100%;height:100%;}
+  #ticker{position:absolute;overflow:hidden;white-space:nowrap;
+    color:#b9b9b9;font-size:12px;line-height:15px;text-align:center;}
+  #ticker span{display:inline-block;padding-left:0;will-change:transform;}
+  #timer{position:absolute;color:#d2d2d2;font:700 11px/15px monospace;
+    text-align:center;overflow:hidden;white-space:nowrap;}
+  .bar{position:absolute;cursor:pointer;}
+  .bar img{position:absolute;left:0;top:0;}
+  .bar .fill{position:absolute;left:0;top:0;overflow:hidden;height:100%;}
+  .bar .fill img{position:absolute;left:0;top:0;}
+  /* --- controls below the skin (not part of the skin) --- */
+  #panel{margin:8px auto 20px;max-width:640px;padding:0 10px;
+    font-size:13px;color:#999;}
+  #panel select{max-width:100%;background:#111;color:#ddd;border:1px solid #333;
+    padding:6px;font-size:14px;}
+  #panel button{background:#1a1a1a;color:#ddd;border:1px solid #444;
+    padding:6px 12px;margin:4px 2px;font-size:13px;cursor:pointer;}
+  #panel button.on{background:#2c4a1e;border-color:#6a0;}
+  #status{margin-top:6px;font-size:12px;color:#777;min-height:16px;}
+  #status .err{color:#e88;}
+</style>
+</head>
+<body>
+<h1><b>BLAKK</b> — Webamp Modern v1 · main window only · layout from <code>blakk.json</code></h1>
+<div id="viewport"><div id="scaler"></div></div>
+
+<div id="panel">
+  <select id="chan" title="Chọn kênh"></select><br>
+  <button id="btn-fit">Vừa màn hình</button>
+  <button id="btn-1x">Cỡ gốc 1x</button>
+  <button id="btn-list">Danh sách kênh</button>
+  <div id="status">Đang nạp blakk.json + radio.m3u…</div>
+  <input type="file" id="filepick" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden>
+</div>
+
+<audio id="au" preload="none"></audio>
+
+<script>
+"use strict";
+/* v1: renders the BLAKK boombox layout exactly from blakk.json.
+   All x/y/w/h come from the skin XML (via tools/parse_blakk.py);
+   nothing here is hand-measured. Scaling is a CSS transform of the
+   whole 436x160 stage, so buttons stay aligned at any size. */
+const $ = s => document.querySelector(s);
+const scaler = $("#scaler"), viewport = $("#viewport"), statusEl = $("#status");
+const au = $("#au");
+let SKIN = null, channels = [], idx = 0, mode = "radio";
+let hls = null, failCount = 0, failTimer = null, playing = false;
+let scaleMode = localStorage.getItem("blakk-v1-scale") || "fit";
+let tickerText = "BLAKK v1", tickerNoteUntil = 0, tickerTimer = null;
+
+function setStatus(msg, isErr){
+  statusEl.innerHTML = isErr ? '<span class="err">'+msg+'</span>' : msg;
+}
+function fmt(t){ if(!isFinite(t)) return "--:--";
+  t=Math.max(0,Math.floor(t)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); }
+
+/* ---------- scaling: follow the image, not a fixed template ---------- */
+function applyScale(){
+  const W = SKIN ? SKIN.layout.w : 436, H = SKIN ? SKIN.layout.h : 160;
+  let s;
+  if(scaleMode === "1x"){ s = 1; }
+  else {
+    const availH = Math.max(120, window.innerHeight - 130); // room for panel below
+    s = Math.min(window.innerWidth*0.98/W, availH/H, 3);
+  }
+  scaler.style.transform = "scale("+s+")";
+  viewport.style.width = (W*s)+"px";
+  viewport.style.height = (H*s)+"px";
+  $("#btn-fit").classList.toggle("on", scaleMode==="fit");
+  $("#btn-1x").classList.toggle("on", scaleMode==="1x");
+}
+function setScaleMode(m){
+  scaleMode = m; localStorage.setItem("blakk-v1-scale", m); applyScale();
+}
+$("#btn-fit").onclick = ()=>setScaleMode("fit");
+$("#btn-1x").onclick = ()=>setScaleMode("1x");
+scaler.addEventListener("dblclick", ()=>setScaleMode(scaleMode==="fit"?"1x":"fit"));
+window.addEventListener("resize", applyScale);
+
+/* ---------- build the skin from blakk.json ---------- */
+function imgEl(file, x, y, w, h){
+  const im = document.createElement("img");
+  im.src = "assets/"+file; im.draggable = false; im.alt = "";
+  im.style.left = x+"px"; im.style.top = y+"px";
+  if(w) im.style.width = w+"px"; if(h) im.style.height = h+"px";
+  return im;
+}
+function buildSkin(){
+  const L = SKIN.layout;
+  // decorative layers, in XML order; seek/volume/spectrum bars are
+  // built separately below (they need a clipped "full" image).
+  const skip = new Set(["player.bb-seek-empty","player.bb-seek-full",
+    "player.bb-volume-min","player.bb-volume-max",
+    "player.bb-spectrum-left","player.bb-spectrum-right","player.bb-spectrum-on",
+    "player.bb-songticker-endcover"]);
+  for(const lay of SKIN.layers){
+    if(skip.has(lay.image)) continue;
+    scaler.appendChild(imgEl(lay.imageFile, lay.x, lay.y, lay.w, lay.h));
+  }
+  // texts: songticker + timer (from XML <text> elements)
+  const tick = SKIN.texts.find(t=>t.id==="Songticker");
+  const tim = SKIN.texts.find(t=>t.id==="timer");
+  const tickEl = document.createElement("div");
+  tickEl.id = "ticker";
+  tickEl.style.left = tick.x+"px"; tickEl.style.top = tick.y+"px";
+  tickEl.style.width = tick.w+"px"; tickEl.style.height = tick.h+"px";
+  tickEl.innerHTML = "<span id='tickerspan'></span>";
+  scaler.appendChild(tickEl);
+  const timEl = document.createElement("div");
+  timEl.id = "timer";
+  timEl.style.left = tim.x+"px"; timEl.style.top = tim.y+"px";
+  timEl.style.width = tim.w+"px"; timEl.style.height = tim.h+"px";
+  timEl.textContent = "--:--";
+  scaler.appendChild(timEl);
+  // ticker end-cover goes over the ticker text (XML order)
+  const cover = SKIN.layers.find(l=>l.image==="player.bb-songticker-endcover");
+  if(cover) scaler.appendChild(imgEl(cover.imageFile, cover.x, cover.y, cover.w, cover.h));
+  // Seek + volume share one strip in the original skin: the XML puts
+  // the seek bar at (122,99,191,14) and the volume bar at (123,98,191,10)
+  // — the same green strip, arbitrated by scripts/boombox.maki (not
+  // parsed). v1 renders both fills on one strip: radio/live shows the
+  // volume fill; a local file shows the seek fill over it. Clicking the
+  // strip seeks a local file, otherwise it sets the volume.
+  buildStrip();
+  // spectrum: static "off" layer only in v1 (no vis yet)
+  const spec = SKIN.spectrum;
+  scaler.appendChild(imgEl(spec.offFile, spec.x, spec.y, spec.w, spec.h));
+  // buttons
+  for(const b of SKIN.buttons) buildButton(b);
+  applyScale();
+}
+function buildStrip(){
+  const s = SKIN.seek, v = SKIN.volume;
+  const d = document.createElement("div");
+  d.className = "bar"; d.id = "strip";
+  d.style.left = s.x+"px"; d.style.top = s.y+"px";
+  d.style.width = s.w+"px"; d.style.height = s.h+"px";
+  d.appendChild(imgEl(s.emptyFile, 0, 0, s.w, s.h));           // seek track
+  const fs = document.createElement("div");
+  fs.className = "fill"; fs.id = "fill-seek"; fs.style.width = "0px";
+  fs.appendChild(imgEl(s.fullFile, 0, 0, s.w, s.h));
+  d.appendChild(fs);
+  const vm = imgEl(v.emptyFile, v.x-s.x, v.y-s.y, v.w, v.h);   // volume track (1px up)
+  d.appendChild(vm);
+  const fv = document.createElement("div");
+  fv.className = "fill"; fv.id = "fill-vol"; fv.style.width = "0px";
+  fv.style.left = (v.x-s.x)+"px"; fv.style.top = (v.y-s.y)+"px";
+  fv.appendChild(imgEl(v.fullFile, 0, 0, v.w, v.h));
+  d.appendChild(fv);
+  d.addEventListener("pointerdown", e=>{ stripSet(e);
+    const mv = ev=>stripSet(ev);
+    const up = ()=>{ window.removeEventListener("pointermove", mv);
+                     window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", mv);
+    window.addEventListener("pointerup", up);
+  });
+  scaler.appendChild(d);
+}
+function stripSet(e){
+  const el = $("#strip").getBoundingClientRect();
+  const frac = Math.min(1, Math.max(0, (e.clientX-el.left)/el.width));
+  if(mode==="file" && isFinite(au.duration) && au.duration>0){
+    au.currentTime = frac*au.duration; setFill("seek", frac);
+  } else {
+    au.volume = frac; setFill("vol", frac);
+    flashTicker("Âm lượng "+Math.round(frac*100)+"%");
+  }
+}
+function setFill(kind, frac){
+  const rect = kind==="seek" ? SKIN.seek : SKIN.volume;
+  const el = $("#fill-"+kind);
+  if(el) el.style.width = Math.round(rect.w*frac)+"px";
+}
+function buildButton(b){
+  const d = document.createElement("div");
+  d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
+  d.style.left = b.x+"px"; d.style.top = b.y+"px";
+  d.style.width = b.w+"px"; d.style.height = b.h+"px";
+  const im = document.createElement("img");
+  im.src = "assets/"+b.imageFile; im.draggable = false; im.alt = b.id||"";
+  d.appendChild(im);
+  const show = f => { if(f) im.src = "assets/"+f; };
+  d.addEventListener("mouseenter", ()=>show(b.hoverFile));
+  d.addEventListener("mouseleave", ()=>show(b.imageFile));
+  d.addEventListener("mousedown", ()=>show(b.downFile || b.hoverFile));
+  d.addEventListener("mouseup", ()=>show(b.hoverFile || b.imageFile));
+  d.addEventListener("touchstart", ()=>show(b.downFile || b.hoverFile), {passive:true});
+  d.addEventListener("touchend", ()=>show(b.imageFile), {passive:true});
+  d.addEventListener("click", ()=>onButton(b));
+  scaler.appendChild(d);
+  b._el = d; b._img = im;
+}
+function updatePlayState(){
+  const play = SKIN.buttons.find(b=>b.action==="PLAY");
+  if(play && play._img) play._img.src = "assets/"+(playing ? play.downFile : play.imageFile);
+}
+
+/* ---------- ticker ---------- */
+function flashTicker(msg, ms){
+  tickerText = msg; tickerNoteUntil = Date.now() + (ms||2500);
+  renderTicker();
+}
+function renderTicker(){
+  const span = $("#tickerspan"); if(!span) return;
+  span.textContent = tickerText;
+  span.dataset.x = "0";
+  span.style.transform = "translateX(0px)";
+}
+function tickTicker(){
+  const span = $("#tickerspan"); if(!span) return;
+  const box = $("#ticker");
+  if(span.scrollWidth <= box.clientWidth || Date.now() < tickerNoteUntil){ return; }
+  let x = parseFloat(span.dataset.x || "0") - 1;
+  if(-x > span.scrollWidth) x = box.clientWidth;
+  span.dataset.x = x; span.style.transform = "translateX("+x+"px)";
+}
+setInterval(tickTicker, 40);
+
+/* ---------- playlist (radio.m3u) ---------- */
+function parseM3U(text){
+  const lines = text.split(/\r?\n/); const out = [];
+  for(let i=0;i<lines.length;i++){
+    const m = lines[i].match(/^#EXTINF:-?\d+,(.*)$/);
+    if(m){
+      const url = (lines[i+1]||"").trim();
+      if(url && !url.startsWith("#")) out.push({name:m[1].trim(), url});
+    }
+  }
+  return out;
+}
+function fillChannelSelect(){
+  const sel = $("#chan"); sel.innerHTML = "";
+  channels.forEach((c,i)=>{
+    const o = document.createElement("option");
+    o.value = i; o.textContent = (i+1)+". "+c.name; sel.appendChild(o);
+  });
+  sel.value = idx;
+  sel.onchange = ()=>loadChannel(+sel.value, true);
+}
+$("#btn-list").onclick = ()=>{ const s=$("#chan"); s.focus(); s.size = s.size?0:8; };
+
+/* ---------- playback ---------- */
+function destroyHls(){ if(hls){ try{hls.destroy();}catch(e){} hls = null; } }
+function loadChannel(i, autoplay){
+  if(!channels.length) return;
+  idx = ((i%channels.length)+channels.length)%channels.length;
+  mode = "radio"; failCount = 0;
+  const c = channels[idx];
+  $("#chan").value = idx;
+  tickerText = c.name+" — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
+  $("#timer").textContent = "LIVE"; setFill("seek", 0);
+  setStatus("Kênh "+(idx+1)+"/"+channels.length+": "+c.name);
+  destroyHls(); au.pause();
+  const url = c.url;
+  const playIt = ()=>{ if(autoplay) au.play().catch(()=>{ /* gesture needed */ }); };
+  if(/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()){
+    hls = new Hls({maxBufferLength:30});
+    hls.loadSource(url); hls.attachMedia(au);
+    hls.on(Hls.Events.ERROR, (ev,data)=>{
+      if(data && data.fatal) handleFail("HLS "+(data.type||"")+" "+(data.details||""));
+    });
+    hls.on(Hls.Events.MANIFEST_PARSED, playIt);
+    setTimeout(()=>{ if(au.paused && autoplay && !au.src) playIt(); }, 3000);
+  } else {
+    au.src = url; playIt();
+  }
+}
+function handleFail(why){
+  failCount++;
+  const c = channels[idx];
+  const msg = c.name+" — không phát được"+(why?" ("+why+")":"");
+  tickerText = msg; tickerNoteUntil = Date.now()+2500; renderTicker();
+  setStatus(msg, true);
+  if(failCount >= 6){ setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
+  clearTimeout(failTimer);
+  failTimer = setTimeout(()=>loadChannel(idx+1, true), 2500);
+}
+au.addEventListener("playing", ()=>{ playing = true; updatePlayState(); });
+au.addEventListener("pause", ()=>{ playing = false; updatePlayState(); });
+au.addEventListener("error", ()=>{
+  if(!au.src || au.src==="") return;
+  if(mode==="file"){ flashTicker("File lỗi — không phát được"); setStatus("File lỗi — không phát được", true); return; }
+  handleFail("audio error");
+});
+au.addEventListener("timeupdate", ()=>{
+  if(mode==="file" && isFinite(au.duration) && au.duration>0){
+    $("#timer").textContent = fmt(au.currentTime);
+    setFill("seek", au.currentTime/au.duration);
+  } else {
+    $("#timer").textContent = "LIVE";
+  }
+});
+au.addEventListener("ended", ()=>{ if(mode==="file"){ playing=false; updatePlayState(); } });
+
+function onButton(b){
+  const a = b.action, p = b.param;
+  if(a==="PLAY"){ if(mode==="file" && au.src){ au.play(); } else loadChannel(idx, true); }
+  else if(a==="PAUSE"){ au.pause(); }
+  else if(a==="STOP"){ au.pause(); try{ au.currentTime=0; }catch(e){}
+    if(mode==="file"){ setFill("seek",0); $("#timer").textContent="0:00"; } }
+  else if(a==="NEXT"){ loadChannel(idx+1, true); }
+  else if(a==="PREV"){ loadChannel(idx-1, true); }
+  else if(a==="EJECT"){ $("#filepick").click(); }
+  else if(a==="CLOSE"){ flashTicker("v1: nút đóng chưa có tác dụng"); }
+  else if(a==="MINIMIZE"){ flashTicker("v1: nút thu nhỏ chưa có tác dụng"); }
+  else if(a==="SYSMENU"){ $("#chan").focus(); flashTicker("Menu: dùng danh sách kênh bên dưới"); }
+  else if(a==="TOGGLE"){
+    if(p==="eq") flashTicker("EQ chưa có trong v1");
+    else if(p && p.indexOf("PL")>=0) flashTicker("Playlist chưa có trong v1");
+    else if(p && p.indexOf("ML")>=0) flashTicker("Media Library chưa có trong v1");
+    else flashTicker("v1: nút này chưa có tác dụng");
+  }
+  else if(!a){ flashTicker("v1: nút chuyển chế độ chưa có tác dụng"); }
+}
+$("#filepick").addEventListener("change", e=>{
+  const f = e.target.files[0]; if(!f) return;
+  destroyHls(); mode = "file"; failCount = 0;
+  au.src = URL.createObjectURL(f);
+  tickerText = f.name; tickerNoteUntil = 0; renderTicker();
+  $("#timer").textContent = "0:00"; setFill("seek", 0);
+  setStatus("File local: "+f.name);
+  au.play().catch(()=>{});
+});
+
+/* ---------- boot ---------- */
+Promise.all([
+  fetch("blakk.json").then(r=>{ if(!r.ok) throw new Error("blakk.json HTTP "+r.status); return r.json(); }),
+  fetch("radio.m3u").then(r=>{ if(!r.ok) throw new Error("radio.m3u HTTP "+r.status); return r.text(); })
+]).then(([skin, m3u])=>{
+  SKIN = skin;
+  channels = parseM3U(m3u);
+  buildSkin();
+  fillChannelSelect();
+  au.volume = 1.0; setFill("vol", 1.0);
+  loadChannel(0, false);
+  tickerText = channels[0] ? channels[0].name+" — Trực tiếp" : "BLAKK v1";
+  renderTicker();
+  setStatus("Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình");
+}).catch(err=>{
+  setStatus("Lỗi nạp: "+err.message, true);
+  console.error(err);
+});
+</script>
+</body>
+</html>

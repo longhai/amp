@@ -1,0 +1,83 @@
+#EXTM3U
+#EXTINF:-1,Đà Nẵng
+https://live.mediatech.vn/live/2858a998b1c7fbf4522accd5554588ceae3/playlist.m3u8
+#EXTINF:-1,Quảng Ngãi
+https://live.mediatech.vn/live/2853bb18b89d074498c81d7a0deb32a3755/playlist.m3u8
+#EXTINF:-1,Nghệ An
+https://live.truyenhinhnghean.vn/hls/na1/index.m3u8
+#EXTINF:-1,Ninh Bình
+https://live.mediatech.vn/live/285391a08f01f83458793b293c5e9517265/playlist.m3u8
+#EXTINF:-1,Điện Biên
+https://live.mediatech.vn/live/28535437e79046746c1bf9787970a876038/playlist.m3u8
+#EXTINF:-1,Bắc Ninh
+https://live.mediatech.vn/live/285acd5e43b501e4c21b0af4e55810625c8/chunklist.m3u8
+#EXTINF:-1,Đồng Tháp FM 98.4 MHz
+https://618b88f69e53b.streamlock.net/THDTR/thdtradio/playlist.m3u8
+#EXTINF:-1,Cần Thơ FM 89.6 MHz
+https://live.canthotv.vn/live/radiocs2/playlist.m3u8
+#EXTINF:-1,Tây Ninh FM 103.1 MHz | FM 96.9 MHz
+https://live-hq.evgcdn.net/live/2851dd3d9016ac74d84b0c4a7a659f76891/chunklist.m3u8
+#EXTINF:-1,Sơn La
+https://cdn.sonlatv.vn/live/285bfb76d0d7a3c4615b853fe7a698e150c/playlist.m3u8
+#EXTINF:-1,Hải Phòng
+https://cdn.thhp.vn/live/2853ef29ebf29c64155acb32d102dd69a4a/playlist.m3u8
+#EXTINF:-1,VOV1 FM 100MHz
+https://audio-lss.vov.vn/live/vov1.m3u8
+#EXTINF:-1,VOV2 FM 96.5 MHz
+https://audio-lss.vov.vn/live/vov2.m3u8
+#EXTINF:-1,VOV3 FM 102.7 MHz
+https://audio-lss.vov.vn/live/vov3.m3u8
+#EXTINF:-1,VOV4 Tây Nguyên
+https://str.vov.gov.vn/vovlive/vov4.TayNguyen.sdp_aac/playlist.m3u8
+#EXTINF:-1,VOV English 24/7
+https://str.vov.gov.vn/vovlive/vov247vov5English.sdp_aac/playlist.m3u8
+#EXTINF:-1,VOV5 FM 105.5MHz
+https://audio-lss.vov.vn/live/vov5.m3u8
+#EXTINF:-1,VOVGT HN
+https://audio-lss.vov.vn/live/giao_thong_ha_noi.m3u8
+#EXTINF:-1,Vpop
+https://vnso-pt-50-tf-multi-playlist-zmp3.zmdcdn.me/JB2zPitWC-s/zhls/playback-realtime/audio/6ddadf76e3330a6d5322/audio.m3u8
+#EXTINF:-1,Bolero
+https://vnso-pt-51-tf-multi-playlist-zmp3.zmdcdn.me/BJ7DyJjfG_E/zhls/playback-realtime/audio/5bace800d4453d1b6454/audio.m3u8
+#EXTINF:-1,US-UK
+https://vnno-cm-1-tf-multi-playlist-zmp3.zmdcdn.me/5k37-bBNjIU/zhls/playback-realtime/audio/f49e38320477ed29b466/audio.m3u8
+#EXTINF:-1,Acoustic
+https://vnno-ne-6-tf-multi-playlist-zmp3.zmdcdn.me/4TX5Vj5v__E/zhls/playback-realtime/audio/9b7b55d7699280ccd983/audio.m3u8
+#EXTINF:-1,Ráp Việt
+https://vnso-pt-37-tf-multi-playlist-zmp3.zmdcdn.me/7k45_gFb6I8/zhls/playback-realtime/audio/cef1015d3d18d4468d09/audio.m3u8
+#EXTINF:-1,EDM
+https://vnno-cm-8-tf-multi-playlist-zmp3.zmdcdn.me/AkjPOEj66pI/zhls/playback-realtime/audio/7386bb2a876f6e31377e/audio.m3u8
+#EXTINF:-1,Nhạc không lời
+https://vnso-pt-55-tf-multi-playlist-zmp3.zmdcdn.me/KOY-wvc-pKE/zhls/playback-realtime/audio/1f36d59ae9df008159ce/audio.m3u8
+#EXTINF:-1,RFI Tiếng Việt
+https://rfienvietnamien64k.ice.infomaniak.ch/rfienvietnamien-64.mp3
+#EXTINF:-1,M Radio Việt Nam
+https://stream.zeno.fm/4q7y9hvkp2zuv.mp3
+#EXTINF:-1,Cải Luong Việt Nam
+https://stream.zeno.fm/0trm6wrnga0uv.mp3
+#EXTINF:-1,karutofm
+https://stream.zeno.fm/cpy1yhgn1c9uv.mp3
+#EXTINF:-1,DuyM53
+https://stream.zeno.fm/2141ytrbn48uv.mp3
+#EXTINF:-1,Lofi Radio Vietnam
+https://stream.zeno.fm/hbf2d2dmh48uv.mp3
+#EXTINF:-1,Demo nhạc
+https://stream.zeno.fm/3npxzpwm7e9uv.mp3
+#EXTINF:-1,Nhạc remix
+https://stream.zeno.fm/38paz80m268uv.mp3
+#EXTINF:-1,Radio Bolsa
+https://stream.zeno.fm/qa3v2zyrqy5tv.mp3
+#EXTINF:-1,Divine Mercy Vietnamese Radio
+https://stream.zeno.fm/acwm8eq8uy5tv.mp3
+#EXTINF:-1,Radio PHỐ ĐÊM
+https://stream.zeno.fm/9c0w88h5feruv.mp3
+#EXTINF:-1,Cherry Radio - NHẠC TRẺ
+https://stream.zeno.fm/umt5gqmg3reuv.mp3
+#EXTINF:-1,Cherry Radio - NHẠC TRỮ TÌNH 24/7
+https://a11.asurahosting.com:6750/radio.mp3
+#EXTINF:-1,vietradio HOUSTON 1560 AM
+https://cdn20.swarm.v247.com/3rdout/radio.hou.std2/icecast.audio
+#EXTINF:-1,vietradio DALLAS  1480 AM
+https://cdn20.swarm.v247.com/3rdout/radio.dfw/icecast.audio
+#EXTINF:-1,oneway Công Giáo
+https://oneway.out.airtime.pro/oneway_a
