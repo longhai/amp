@@ -51,6 +51,7 @@ async function buildPlaylistWindow(skin, res){
     list.className = "eqlist";
     list.style.left = rect.x + "px"; list.style.top = rect.y + "px";
     list.style.width = rect.w + "px"; list.style.height = rect.h + "px";
+    if (pl.colors) { list.style.background = pl.colors.bg; list.style.color = pl.colors.normal; }
     win.appendChild(list);
     plListEl = list;
     win._plList = list; win._plRect = rect;

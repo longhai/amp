@@ -7,11 +7,11 @@
      Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
      200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
 <meta name="referrer" content="no-referrer">
-<title>Amp — v5.1 (Playlist + EQ · skin mặc định WinampModern566)</title>
+<title>Amp — v6 (ML · Video · Vis · Album Art · Notifier · About · Drawer · Remote/Stick)</title>
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=5.1"></script>
+<script defer src="skin-loader.js?v=7"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -46,6 +46,7 @@
   #ticker{position:absolute;overflow:hidden;white-space:nowrap;
     color:#b9b9b9;font-size:12px;line-height:15px;text-align:center;}
   #ticker span{display:inline-block;padding-left:0;will-change:transform;}
+  #ticker canvas{display:inline-block;will-change:transform;image-rendering:pixelated;}
   #timer{position:absolute;color:#d2d2d2;font:700 11px/15px monospace;
     text-align:center;overflow:hidden;white-space:nowrap;}
   #timer canvas{position:absolute;left:0;top:0;}
@@ -94,6 +95,28 @@
   .preset-menu button{display:block;width:100%;background:none;border:0;
     color:#ddd;font-size:13px;padding:7px 10px;text-align:left;cursor:pointer;}
   .preset-menu button:hover{background:#2c4a1e;}
+  .win video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000;object-fit:contain;}
+  .win canvas.avscv{position:absolute;left:0;top:0;}
+  .win .mlnav{position:absolute;left:0;right:0;top:0;height:22px;display:flex;gap:2px;align-items:center;
+    padding:0 4px;background:rgba(0,0,0,.55);color:#ddd;font-size:12px;z-index:3;}
+  .win .mlnav button{background:#222;color:#ddd;border:1px solid #555;padding:2px 7px;font-size:12px;cursor:pointer;}
+  .win .mlnav .crumb{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1;text-align:left;}
+  .win .aaimg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;background:#000;}
+  .win .aaname{position:absolute;left:0;right:0;bottom:0;padding:2px 6px;background:rgba(0,0,0,.6);
+    color:#ddd;font-size:11px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .win .optrow{position:absolute;left:0;right:0;text-align:left;color:#ddd;font-size:13px;
+    padding:5px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .win .optrow:hover{background:rgba(255,255,255,.12);}
+  .win .optrow .st{float:right;color:#8f8;}
+  .win .themelist{position:absolute;overflow-y:auto;overflow-x:hidden;color:#ddd;font-size:12px;
+    line-height:18px;text-align:left;scrollbar-width:thin;}
+  .win .themelist .trow{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  .win .themelist .trow.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
+  #notifier{position:fixed;top:10px;right:10px;z-index:50;display:none;overflow:hidden;
+    background:#111 no-repeat 0 0;box-shadow:0 4px 18px rgba(0,0,0,.7);cursor:pointer;}
+  #notifier .nt{position:absolute;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#222;}
+  .drawerwrap{overflow:hidden;}
+  .drawerwrap .drawerinner{transition:transform .25s ease;}
   /* --- controls below the skin (not part of the skin) --- */
   #panel{margin:8px auto 20px;max-width:640px;padding:0 10px;
     font-size:13px;color:#999;}
@@ -108,7 +131,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v5.1 · Playlist + EQ · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip</span></h1>
+<h1><b id="skinname">WinampModern566</b> — Amp v7 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
 <div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <div id="panel">
@@ -117,11 +140,18 @@
   <button id="btn-1x">Cỡ gốc 1x</button>
   <button id="btn-list">Playlist (PL)</button>
   <button id="btn-eq">EQ</button>
-  <button id="btn-skin" class="skinbtn">Nạp skin (.wal/.zip)</button><br>
-  <span style="font-size:12px;color:#666">Kéo thả file .wal/.zip vào player cũng được — nếu skin không đọc được thì giữ skin cũ.</span>
+  <button id="btn-ml">Thư viện (ML)</button>
+  <button id="btn-video">Video</button>
+  <button id="btn-avs">Hiệu ứng (Vis)</button>
+  <button id="btn-aa">Ảnh bìa</button>
+  <button id="btn-about">Giới thiệu</button>
+  <button id="btn-drawer">Cài đặt (Config)</button>
+  <button id="btn-remote">Remote</button>
+  <button id="btn-skin" class="skinbtn">Nạp skin (.wal/.zip/.wsz)</button><br>
+  <span style="font-size:12px;color:#666">Kéo thả file .wal/.zip/.wsz vào player cũng được — nếu skin không đọc được thì giữ skin cũ.</span>
   <div id="status">Đang nạp winampmodern566.wal + radio.m3u…</div>
   <input type="file" id="filepick" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden>
-  <input type="file" id="skinpick" accept=".wal,.zip" hidden>
+  <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 </div>
 
 <audio id="au" preload="none"></audio>
@@ -142,7 +172,7 @@ let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "5.1";
+const EXPECTED_LOADER_VERSION = "7";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -194,23 +224,74 @@ function eqStateHook(){
 }
 eqStateHook();
 
-let playStartAt = 0, elapsedBase = 0;
+let playStartAt = 0, elapsedBase = 0, timeMode = "elapsed", timerInkColor = "#fff";
 function elapsedSecs(){
+  if (mode === "file" && typeof au !== "undefined" && au) return au.currentTime || 0;
   return elapsedBase + (playStartAt ? (performance.now() - playStartAt) / 1000 : 0);
+}
+function fileDuration(){
+  if (mode !== "file" || typeof au === "undefined" || !au) return null;
+  const d = au.duration;
+  return (isFinite(d) && d > 0) ? d : null;
 }
 function resetTimer(){ elapsedBase = 0; playStartAt = 0; updateTimerDisplay(); }
 function onPlayStart(){ if (!playStartAt) playStartAt = performance.now(); updateTimerDisplay(); }
 function onPlayPause(){ if (playStartAt) { elapsedBase = elapsedSecs(); playStartAt = 0; } updateTimerDisplay(); }
+function toggleTimeMode(){
+  if (mode !== "file" || fileDuration() === null) {
+    setStatus("Đài trực tiếp — không có thời lượng, đồng hồ chỉ đếm thời gian đã phát");
+    return;
+  }
+  timeMode = timeMode === "remaining" ? "elapsed" : "remaining";
+  updateTimerDisplay();
+  setStatus(timeMode === "remaining" ? "Đồng hồ: thời gian còn lại" : "Đồng hồ: thời gian đã phát");
+}
 function updateTimerDisplay(){
-  const t = fmt(elapsedSecs());
-  window.__timer = { text: t, elapsed: elapsedSecs() };
+  const el = elapsedSecs();
+  const dur = fileDuration();
+  const classic = !!(timerFont && timerFont.classicSlots);
+  let t;
+  if (timeMode === "remaining" && dur !== null) {
+    const rem = Math.max(0, dur - el);
+    t = "-" + (classic ? fmt2(rem) : fmt(rem));
+  } else {
+    t = classic ? fmt2(el) : fmt(el);
+  }
+  window.__timer = { text: t, elapsed: el, duration: dur, mode: timeMode };
+  for (const e2 of extraTimers) {
+    if (e2.isConnected) e2.textContent = t;
+  }
   const timEl = $("#timer");
   if (!timEl) return;
   if (timerFontImg && timerFont) {
     const cv = timEl.querySelector("canvas");
-    if (cv) drawTimerBitmap(cv, t);
+    if (cv) { if (classic) drawClassicTimerBitmap(cv, t); else drawTimerBitmap(cv, t); }
   } else {
     timEl.textContent = t;
+  }
+}
+function fmt2(t){
+  if (!isFinite(t)) return "--:--";
+  t = Math.max(0, Math.floor(t));
+  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+}
+function drawClassicTimerBitmap(cv, text){
+  const ctx = cv.getContext("2d");
+  const f = timerFont, img = timerFontImg;
+  const cw = f.charwidth, ch = f.charheight;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const slots = [9, 21, 39, 51];
+  let di = 0;
+  for (const chr of text.replace("-", "")) {
+    if (chr === ":") continue;
+    const col = chr.charCodeAt(0) - 48;
+    if (col >= 0 && col <= 9 && di < slots.length)
+      ctx.drawImage(img, col * cw, 0, cw, ch, slots[di], 0, cw, ch);
+    di++;
+  }
+  if (text.charAt(0) === "-" && f.minus) {
+    const m = f.minus;
+    ctx.drawImage(img, m.sx, m.sy, m.sw, m.sh, -1, 6, m.sw, m.sh);
   }
 }
 /* đồng hồ: cắt số theo charwidth, ":" đo từ ảnh font */
@@ -230,6 +311,10 @@ function drawTimerBitmap(cv, text){
     if (chr >= "0" && chr <= "9") col = chr.charCodeAt(0) - 48;
     else if (chr === ":") col = colonCol;
     if (col >= 0) ctx.drawImage(img, col * cw, row * ch, cw, ch, x, y, cw, ch);
+    else if (chr === "-") {
+      ctx.fillStyle = timerInkColor || "#fff";
+      ctx.fillRect(x + Math.round(cw * 0.2), y + Math.round(ch / 2) - 1, Math.round(cw * 0.6), 2);
+    }
     x += step;
   }
 }
@@ -245,12 +330,25 @@ async function bitmapFontImage(font){
   bitmapFontImgs.set(font.file, im);
   return im;
 }
+function bitmapCharIndex(font, ch){
+  if (!font || !font.charset) return -1;
+  let i = font.charset.indexOf(ch);
+  if (i >= 0) return i;
+  i = font.charset.indexOf(ch.toUpperCase());
+  if (i >= 0) return i;
+  const stripped = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/đ/g, "d");
+  i = font.charset.indexOf(stripped.toUpperCase());
+  if (i >= 0) return i;
+  const punct = { "—": "-", "–": "-", "“": "\"", "”": "\"", "‘": "'", "’": "'", "…": "…" };
+  if (punct[ch]) { i = font.charset.indexOf(punct[ch]); if (i >= 0) return i; }
+  return -1;
+}
 async function drawBitmapFontText(t, font, skinName){
   const img = await bitmapFontImage(font);
   if (!img) return null;
   const text = compName(t.default || "", skinName || "WINAMP");
   const cw = font.charwidth, ch = font.charheight;
-  const row = (font.glyphRow || 0) * ch;
+  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
   const cv = document.createElement("canvas");
   cv.className = "wtext";
   cv.width = Math.max(1, text.length * cw);
@@ -259,10 +357,13 @@ async function drawBitmapFontText(t, font, skinName){
   cv.style.width = cv.width + "px"; cv.style.height = ch + "px";
   const cx = cv.getContext("2d");
   for (let i = 0; i < text.length; i++) {
-    let col = font.charset.indexOf(text[i]);
-    if (col < 0) col = font.charset.indexOf(" ");
-    if (col < 0) col = 0;
-    cx.drawImage(img, col * cw, row, cw, ch, i * cw, 0, cw, ch);
+    let idx = bitmapCharIndex(font, text[i]);
+    if (idx < 0) idx = font.charset.indexOf(" ");
+    if (idx < 0) idx = 0;
+    let col, rowPx;
+    if (font.charset.length > cols) { col = idx % cols; rowPx = Math.floor(idx / cols) * ch; }
+    else { col = idx; rowPx = (font.glyphRow || 0) * ch; }
+    cx.drawImage(img, col * cw, rowPx, cw, ch, i * cw, 0, cw, ch);
   }
   return cv;
 }
@@ -271,6 +372,16 @@ setInterval(updateTimerDisplay, 250);
 
 <script>
 let mainWin = null, eqWin = null, plWin = null;
+let mlWin = null, vidWin = null, avsWin = null, aaWin = null, aboutWin = null;
+let remoteWin = null, stickWin = null, drawerWin = null, drawerOpen = false;
+let visMonitor = false, visMonitorBusy = null;
+let extraTimers = [], extraTickers = [];
+let winVisMap = {};
+try { winVisMap = JSON.parse(localStorage.getItem("amp-win-visible-v6") || "{}"); } catch (e) {}
+function setWinVisible(kind, v){
+  winVisMap[kind] = !!v;
+  try { localStorage.setItem("amp-win-visible-v6", JSON.stringify(winVisMap)); } catch (e) {}
+}
 function winVisible(kind){
   if (kind === "eq") {
     if (eqVisible !== null) return eqVisible;
@@ -280,14 +391,21 @@ function winVisible(kind){
     if (plVisible !== null) return plVisible;
     return !!(SKIN && SKIN.playlist && SKIN.playlist.defaultVisible);
   }
-  return true;
+  if (kind === "drawer") return drawerOpen;
+  if (winVisMap[kind] !== undefined) return !!winVisMap[kind];
+  if (kind === "albumart") return !!(SKIN && SKIN.albumart && SKIN.albumart.defaultVisible);
+  return false;
 }
 /* cả 3 cửa sổ cùng chiều rộng trên màn hình */
 function applyScale(){
   if (!SKIN || !mainWin) return;
   const wins = [{ el: mainWin, w: SKIN.layout.w, h: SKIN.layout.h }];
-  if (eqWin && winVisible("eq")) wins.push({ el: eqWin, w: +eqWin.dataset.w, h: +eqWin.dataset.h });
-  if (plWin && winVisible("pl")) wins.push({ el: plWin, w: +plWin.dataset.w, h: +plWin.dataset.h });
+  if (drawerWin && drawerOpen) wins.push({ el: drawerWin, w: +drawerWin.dataset.w, h: +drawerWin.dataset.h });
+  const stackKinds = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
+    ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
+  for (const [kind, wEl] of stackKinds) {
+    if (wEl && winVisible(kind)) wins.push({ el: wEl, w: +wEl.dataset.w, h: +wEl.dataset.h });
+  }
   const mainW = SKIN.layout.w;
   const ratioSum = wins.reduce((a, w) => a + w.h / w.w, 0);
   let s;
@@ -311,12 +429,18 @@ function applyScale(){
     yPx += hPx;
   }
   stage.style.height = yPx + "px";
-  if (eqWin && !winVisible("eq")) eqWin.style.display = "none";
-  if (plWin && !winVisible("pl")) plWin.style.display = "none";
+  const allWins = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
+    ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
+  for (const [kind, wEl] of allWins) if (wEl && !winVisible(kind)) wEl.style.display = "none";
+  if (drawerWin && !drawerOpen) drawerWin.style.display = "none";
   $("#btn-fit").classList.toggle("on", scaleMode === "fit");
   $("#btn-1x").classList.toggle("on", scaleMode === "1x");
   $("#btn-list").classList.toggle("on", !!(plWin && winVisible("pl")));
   $("#btn-eq").classList.toggle("on", eqState.on);
+  const tog = (id, kind, win) => { const b = $(id); if (b) b.classList.toggle("on", !!(win && winVisible(kind))); };
+  tog("#btn-ml", "ml", mlWin); tog("#btn-video", "video", vidWin); tog("#btn-avs", "avs", avsWin);
+  tog("#btn-aa", "albumart", aaWin); tog("#btn-about", "about", aboutWin);
+  tog("#btn-drawer", "drawer", drawerWin); tog("#btn-remote", "remote", remoteWin);
 }
 function setScaleMode(m){
   scaleMode = m; localStorage.setItem("webamp-modern-scale", m); applyScale();
@@ -328,6 +452,83 @@ function applyWindowVisibility(){ applyScale(); }
 /* nạp chậm: eq.js / playlist.js chỉ tải khi mở cửa sổ đó */
 let curRes = null;
 let eqJsPromise = null, plJsPromise = null;
+let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
+let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
+function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=6"); return mlJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7"); return videoJsPromise; }
+function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=6"); return avsJsPromise; }
+function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=6"); return aaJsPromise; }
+function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=6"); return aboutJsPromise; }
+function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=6"); return drawerJsPromise; }
+function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=6"); return remoteJsPromise; }
+function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=6"); return notifierJsPromise; }
+async function ensureMlWindow(){
+  if (mlWin) return mlWin;
+  await ensureMlJs();
+  mlWin = await buildMLWindow(SKIN, curRes);
+  stage.appendChild(mlWin);
+  applyScale();
+  return mlWin;
+}
+async function ensureVideoWindow(){
+  if (vidWin) return vidWin;
+  await ensureVideoJs();
+  vidWin = await buildVideoWindow(SKIN, curRes);
+  stage.appendChild(vidWin);
+  applyScale();
+  return vidWin;
+}
+async function ensureAvsWindow(){
+  if (avsWin) return avsWin;
+  await ensureAvsJs();
+  avsWin = await buildAVSWindow(SKIN, curRes);
+  stage.appendChild(avsWin);
+  applyScale();
+  return avsWin;
+}
+async function ensureAaWindow(){
+  if (aaWin) return aaWin;
+  await ensureAaJs();
+  aaWin = await buildAlbumArtWindow(SKIN, curRes);
+  stage.appendChild(aaWin);
+  applyScale();
+  return aaWin;
+}
+async function ensureAboutWindow(){
+  if (aboutWin) return aboutWin;
+  await ensureAboutJs();
+  aboutWin = await buildAboutWindow(SKIN, curRes);
+  stage.appendChild(aboutWin);
+  applyScale();
+  return aboutWin;
+}
+async function ensureRemoteWindow(){
+  if (remoteWin) return remoteWin;
+  await ensureRemoteJs();
+  remoteWin = await buildStandaloneWindow(SKIN, curRes, "remote");
+  if (!remoteWin) return null;
+  stage.appendChild(remoteWin);
+  applyScale();
+  return remoteWin;
+}
+async function ensureStickWindow(){
+  if (stickWin) return stickWin;
+  await ensureRemoteJs();
+  stickWin = await buildStandaloneWindow(SKIN, curRes, "stick");
+  if (!stickWin) return null;
+  stage.appendChild(stickWin);
+  applyScale();
+  return stickWin;
+}
+async function ensureDrawerWindow(){
+  if (drawerWin) return drawerWin;
+  await ensureDrawerJs();
+  drawerWin = await buildDrawerWindow(SKIN, curRes);
+  if (!drawerWin) return null;
+  stage.appendChild(drawerWin);
+  applyScale();
+  return drawerWin;
+}
 function loadScriptFile(src){
   return new Promise((resolve, reject) => {
     const s = document.createElement("script");
@@ -338,12 +539,31 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=5.1");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=5.1");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7");
   return plJsPromise;
+}
+let classicJsPromise = null;
+function ensureClassicJs(){
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7");
+  return classicJsPromise;
+}
+async function detectSkinKind(file){
+  if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
+  const JSZip = await SkinLoader.ensureJSZip();
+  const zip = await JSZip.loadAsync(file);
+  const names = Object.keys(zip.files).map(n => n.toLowerCase());
+  const hasXml = names.some(n => n === "skin.xml" || n.endsWith("/skin.xml"));
+  const hasMainRoot = names.some(n => /^main\.(bmp|png)$/.test(n));
+  if (hasXml) return { kind: "modern", zip };
+  if (hasMainRoot) return { kind: "classic", zip };
+  const ext = (file.name || "").toLowerCase();
+  if (ext.endsWith(".wsz")) return { kind: "classic", zip };
+  if (ext.endsWith(".wal") || ext.endsWith(".zip")) return { kind: "modern", zip };
+  return { kind: "unknown", zip: null };
 }
 async function ensureEqWindow(){
   if (eqWin) return eqWin;
@@ -402,6 +622,12 @@ function addResizeHandle(win, kind){
         win._plList.style.width = Math.max(40, w - win._plRect.x - (win._plInsetR || 6)) + "px";
         win._plList.style.height = Math.max(40, h - win._plRect.y - (win._plInsetB || 6)) + "px";
       }
+      if (win._flexBox && win._flexRect) {
+        win._flexBox.style.width = Math.max(40, w - win._flexRect.x - (win._flexInsetR || 6)) + "px";
+        win._flexBox.style.height = Math.max(40, h - win._flexRect.y - (win._flexInsetB || 6)) + "px";
+        if (win._flexBox.tagName === "CANVAS") { win._flexBox.width = win._flexBox.clientWidth; win._flexBox.height = win._flexBox.clientHeight; }
+        if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
+      }
       if (win._bgImg) win.style.backgroundSize = w + "px " + h + "px";
       applyScale();
     };
@@ -418,19 +644,65 @@ function addResizeHandle(win, kind){
   });
   win.appendChild(g);
 }
+const WIN_ENSURERS = {
+  eq: ensureEqWindow, pl: ensurePlWindow, ml: ensureMlWindow, video: ensureVideoWindow,
+  avs: ensureAvsWindow, albumart: ensureAaWindow, about: ensureAboutWindow,
+  remote: ensureRemoteWindow, stick: ensureStickWindow
+};
+const WIN_LABELS = { eq: "EQ", pl: "Playlist", ml: "Thư viện", video: "Video",
+  avs: "Hiệu ứng", albumart: "Ảnh bìa", about: "Giới thiệu", remote: "Remote", stick: "Stick" };
 async function toggleWindow(kind){
-  if (kind === "pl") {
-    if (!plWin) {
-      try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); return; }
+  if (kind === "drawer") { await toggleDrawer(); return; }
+  const ensure = WIN_ENSURERS[kind];
+  if (!ensure) return;
+  const winVar = { eq: () => eqWin, pl: () => plWin, ml: () => mlWin, video: () => vidWin,
+    avs: () => avsWin, albumart: () => aaWin, about: () => aboutWin,
+    remote: () => remoteWin, stick: () => stickWin }[kind]();
+  if (!winVar) {
+    try { await ensure(); } catch (e) { setStatus("không mở được " + (WIN_LABELS[kind] || kind) + ": " + e.message, true); return; }
+    if (kind === "remote" && !remoteWin) { setStatus("Skin này không có cửa sổ Remote", true); return; }
+    if (kind === "stick" && !stickWin) { setStatus("Skin này không có cửa sổ Stick", true); return; }
+  }
+  const now = !winVisible(kind);
+  if (kind === "pl") { plVisible = now; try { localStorage.setItem("amp-pl-visible-v5", now ? "1" : "0"); } catch (e) {} }
+  else if (kind === "eq") { eqVisible = now; try { localStorage.setItem("amp-eq-visible-v5", now ? "1" : "0"); } catch (e) {} }
+  else setWinVisible(kind, now);
+  if (kind === "avs" && !now && window.__avsClosed) window.__avsClosed();
+  if (kind === "avs" && now && window.__avsOpened) window.__avsOpened();
+  if (kind === "video" && now && mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && window.playVideoChannel) playVideoChannel(channels[idx], playing);
+  if (kind === "albumart" && now && window.updateAlbumArt) window.updateAlbumArt();
+  applyWindowVisibility();
+}
+async function toggleDrawer(){
+  if (!SKIN || !SKIN.drawer) { setStatus("Skin này không có ngăn kéo Config", true); return; }
+  if (!drawerWin) {
+    try { await ensureDrawerWindow(); } catch (e) { setStatus("không mở được ngăn kéo Config: " + e.message, true); return; }
+    if (!drawerWin) { setStatus("Skin này không có ngăn kéo Config", true); return; }
+  }
+  drawerOpen = !drawerOpen;
+  setWinVisible("drawer", drawerOpen);
+  if (drawerWin) {
+    drawerWin.style.display = drawerOpen ? "" : "none";
+    if (drawerOpen && drawerWin._inner) {
+      drawerWin._inner.style.transform = "translateY(100%)";
+      requestAnimationFrame(() => { if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(0)"; });
     }
-    plVisible = !winVisible("pl");
-    try { localStorage.setItem("amp-pl-visible-v5", plVisible ? "1" : "0"); } catch (e) {}
-  } else {
-    if (!eqWin) {
-      try { await ensureEqWindow(); } catch (e) { setStatus("không mở được EQ: " + e.message, true); return; }
-    }
-    eqVisible = !winVisible("eq");
-    try { localStorage.setItem("amp-eq-visible-v5", eqVisible ? "1" : "0"); } catch (e) {}
+  }
+  applyWindowVisibility();
+}
+async function cycleRemoteStick(){
+  if (!SKIN || (!SKIN.remote && !SKIN.stick)) { setStatus("Skin này không có Remote/Stick", true); return; }
+  if (remoteWin && winVisible("remote")) {
+    setWinVisible("remote", false);
+    if (SKIN.stick) { await ensureStickWindow(); setWinVisible("stick", true); }
+  } else if (stickWin && winVisible("stick")) {
+    setWinVisible("stick", false);
+  } else if (SKIN.remote) {
+    await ensureRemoteWindow();
+    setWinVisible("remote", true); setWinVisible("stick", false);
+  } else if (SKIN.stick) {
+    await ensureStickWindow();
+    setWinVisible("stick", true);
   }
   applyWindowVisibility();
 }
@@ -442,6 +714,13 @@ try {
 } catch (e) {}
 $("#btn-list").onclick = () => toggleWindow("pl");
 $("#btn-eq").onclick = () => toggleWindow("eq");
+$("#btn-ml").onclick = () => toggleWindow("ml");
+$("#btn-video").onclick = () => toggleWindow("video");
+$("#btn-avs").onclick = () => toggleWindow("avs");
+$("#btn-aa").onclick = () => toggleWindow("albumart");
+$("#btn-about").onclick = () => toggleWindow("about");
+$("#btn-drawer").onclick = () => toggleDrawer();
+$("#btn-remote").onclick = () => cycleRemoteStick();
 
 async function resolveImg(res, imageId, imageFile){
   if (imageId && res.hasCrop(imageId)) {
@@ -450,6 +729,36 @@ async function resolveImg(res, imageId, imageFile){
   }
   if (imageFile) return await res.fileURL(imageFile);
   return null;
+}
+async function renderFrameInto(win, frame, res){
+  if (!frame) return;
+  for (const lay of frame.layers) {
+    if (!lay.imageFile) continue;
+    const src = await resolveImg(res, lay.image, lay.imageFile);
+    if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+  }
+  for (const t of frame.texts) {
+    if (!t.default) continue;
+    const el = document.createElement("div");
+    el.className = "wtext";
+    el.style.left = t.x + "px"; el.style.top = t.y + "px";
+    el.style.width = (t.w || 50) + "px"; el.style.height = (t.h || 14) + "px";
+    el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 11) + "px";
+    el.style.lineHeight = (t.h || 14) + "px";
+    el.style.overflow = "visible";
+    el.textContent = compName(t.default, (SKIN && SKIN.skin && SKIN.skin.name) || "WINAMP");
+    win.appendChild(el);
+  }
+  for (const b of frame.buttons) await buildButton(b, win, res, onFrameButton);
+}
+async function onFrameButton(b){
+  if (b.action === "CLOSE") {
+    const kind = b._winKind;
+    if (kind === "drawer") { await toggleDrawer(); return; }
+    if (kind) { setWinVisible(kind, false); applyWindowVisibility(); }
+    return;
+  }
+  onMainButton(b);
 }
 function imgElSrc(src, x, y, w, h){
   const im = document.createElement("img");
@@ -500,10 +809,19 @@ function updatePlayState(){
   if (!SKIN) return;
   const play = SKIN.buttons.find(b => b.action === "PLAY");
   if (play && play._img) play._img.src = play._base ? play._base() : play._src;
+  const ind = SKIN.layers && SKIN.layers.find(l => l.id === "playIndicator");
+  if (ind && ind._img && resolver && resolver.bitmapURL) {
+    const id = playing ? "PLAYPAUS.playing" : ((mode === "file" && au && au.currentTime > 0) ? "PLAYPAUS.paused" : "PLAYPAUS.stopped");
+    if (ind._indId !== id) {
+      ind._indId = id;
+      resolver.bitmapURL(id).then(u => { if (u && ind._indId === id) ind._img.src = u; });
+    }
+  }
 }
 
 async function buildMainWindow(skin, res, win){
   const L = skin.layout;
+  hiddenGroups = {};
   const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
   if (bgSrc) {
     win.style.backgroundImage = "url(" + JSON.stringify(bgSrc) + ")";
@@ -519,7 +837,11 @@ async function buildMainWindow(skin, res, win){
     for (const lay of skin.frame.layers) {
       if (!lay.imageFile) continue;
       const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+      if (src) {
+        const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
+        win.appendChild(im);
+        const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
+      }
     }
     for (const t of skin.frame.texts) {
       if (!t.default) continue;
@@ -532,8 +854,12 @@ async function buildMainWindow(skin, res, win){
       el.style.overflow = "visible";
       el.textContent = compName(t.default, (skin.name || "WINAMP"));
       win.appendChild(el);
+      const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
     }
-    for (const b of skin.frame.buttons) await buildButton(b, win, res, onMainButton);
+    for (const b of skin.frame.buttons) {
+      const bel = await buildButton(b, win, res, onMainButton);
+      const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
+    }
   }
   const skip = new Set(["player.bb-seek-empty", "player.bb-seek-full",
     "player.bb-volume-min", "player.bb-volume-max",
@@ -543,7 +869,10 @@ async function buildMainWindow(skin, res, win){
     if (skip.has(lay.image)) continue;
     if (!lay.imageFile) continue;
     const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    if (src) {
+      const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h); lay._img = im; win.appendChild(im);
+      const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
+    }
   }
   const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
     || skin.texts.find(t => t.display === "songname")
@@ -557,6 +886,21 @@ async function buildMainWindow(skin, res, win){
     tickEl.style.width = tick.w + "px"; tickEl.style.height = (tick.h || 14) + "px";
     tickEl.innerHTML = "<span id='tickerspan'></span>";
     win.appendChild(tickEl);
+    tickerEl = tick; tickerFont = null; tickerFontFamily = null;
+    const tfont = tick.font && skin.fonts ? skin.fonts[tick.font] : null;
+    if (tfont) {
+      tickerFont = tfont;
+      if (tfont.tag === "truetypefont" && tfont.file) {
+        const fam = "AmpSkin-" + (tick.font || "").replace(/[^a-z0-9]/gi, "");
+        res.fileURL(tfont.file).then(url => {
+          if (!url) return;
+          try {
+            const ff = new FontFace(fam, "url(" + url + ")");
+            ff.load().then(() => { document.fonts.add(ff); tickerFontFamily = fam; renderTicker(); }).catch(() => {});
+          } catch (e) { }
+        });
+      }
+    }
   }
   timerFont = null; timerFontImg = null;
   if (tim) {
@@ -564,10 +908,13 @@ async function buildMainWindow(skin, res, win){
     timEl.id = "timer";
     timEl.style.left = tim.x + "px"; timEl.style.top = tim.y + "px";
     timEl.style.width = tim.w + "px"; timEl.style.height = (tim.h || 14) + "px";
+    timEl.style.cursor = "pointer";
+    timEl.title = "Bấm để đổi đã phát / còn lại";
+    timEl.addEventListener("click", toggleTimeMode);
     const font = tim.font && skin.fonts ? skin.fonts[tim.font] : null;
     if (font && font.tag === "bitmapfont" && font.imageURL) {
       const cv = document.createElement("canvas");
-      cv.width = tim.w; cv.height = tim.h || 14;
+      cv.width = tim.w + (font.classicSlots ? 1 : 0); cv.height = tim.h || 14;
       cv.dataset.align = tim.align || "left";
       timEl.appendChild(cv);
       timerFont = font;
@@ -578,6 +925,7 @@ async function buildMainWindow(skin, res, win){
         im.src = font.imageURL;
       });
       if (!timerFontImg) timerFont = null;
+      else timerInkColor = sampleInkColor(timerFontImg);
     }
     if (!timerFont) timEl.textContent = "0:00";
     win.appendChild(timEl);
@@ -588,7 +936,11 @@ async function buildMainWindow(skin, res, win){
     const tfont = t.font && skin.fonts ? skin.fonts[t.font] : null;
     if (tfont && tfont.tag === "bitmapfont" && tfont.imageURL && tfont.charset && tfont.charwidth) {
       const cv = await drawBitmapFontText(t, tfont, skin.name);
-      if (cv) { win.appendChild(cv); continue; }
+      if (cv) {
+        win.appendChild(cv);
+        const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, cv);
+        continue;
+      }
     }
     const el = document.createElement("div");
     el.className = "wtext";
@@ -598,6 +950,7 @@ async function buildMainWindow(skin, res, win){
     el.textContent = compName(t.default || "", (skin.name || "WINAMP"));
     el.dataset.display = t.display || "";
     win.appendChild(el);
+    const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
   }
   visCanvas = null; visCtx = null;
   if (skin.vis && skin.vis[0]) {
@@ -609,6 +962,7 @@ async function buildMainWindow(skin, res, win){
     cv.style.width = (v.w || 72) + "px"; cv.style.height = (v.h || 25) + "px";
     win.appendChild(cv);
     visCanvas = cv; visCtx = cv.getContext("2d");
+    const hid = isHiddenEl(skin, v); if (hid) registerHidden(hid, cv);
   }
   const cover = skin.layers.find(l => l.image === "player.bb-songticker-endcover");
   if (cover) {
@@ -617,10 +971,17 @@ async function buildMainWindow(skin, res, win){
   }
   await buildStrip(skin, res, win);
   for (const s of skin.sliders) {
-    if (s.action === "VOLUME" || s.action === "SEEK") await buildMainSlider(s, win, res);
+    if (s.action === "VOLUME" || s.action === "SEEK" || s.action === "EQ_PREAMP" || s.action === "EQ_BAND") {
+      const tr = await buildMainSlider(s, win, res);
+      const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, tr);
+    }
   }
-  for (const b of skin.buttons) await buildButton(b, win, res, onMainButton);
+  for (const b of skin.buttons) {
+    const bel = await buildButton(b, win, res, onMainButton);
+    const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
+  }
   for (const b of skin.buttons) if (b.action === "EQ_TOGGLE" && b._img) b._stateBase = () => eqState.on ? (b._activeSrc || b._downSrc || b._src) : b._src;
+  refreshModeLEDs(skin, res);
 }
 async function buildStrip(skin, res, win){
   const s = skin.seek, v = skin.volume;
@@ -689,24 +1050,55 @@ async function buildMainSlider(s, win, res){
     track.appendChild(thumb);
   }
   const horiz = s.orientation === "horizontal";
+  const bandIndex = s.action === "EQ_PREAMP" ? -1 : (s.action === "EQ_BAND" ? (parseInt(s.param || "1", 10) - 1) : -2);
   const getFrac = () => {
     if (s.action === "VOLUME") return au.volume;
     if (s.action === "SEEK") return (mode === "file" && isFinite(au.duration) && au.duration > 0) ? au.currentTime / au.duration : 0;
+    if (bandIndex >= -1) return ((bandIndex < 0 ? eqState.preamp : eqState.bands[bandIndex]) + 12) / 24;
     return 0;
   };
+  let stripUrl = null;
+  if (s.strip && s.strip.image) {
+    stripUrl = await resolveImg(res, s.strip.image, s.strip.imageFile);
+    if (stripUrl) track.style.backgroundImage = "url(" + JSON.stringify(stripUrl) + ")";
+  }
   const setFrac = frac => {
     frac = Math.min(1, Math.max(0, frac));
     if (s.action === "VOLUME") { au.volume = frac; setFill("vol", frac); }
     else if (s.action === "SEEK" && mode === "file" && isFinite(au.duration) && au.duration > 0) {
       au.currentTime = frac * au.duration; setFill("seek", frac);
     }
+    else if (bandIndex >= -1) {
+      const v = Math.max(-12, Math.min(12, Math.round((-12 + frac * 24) * 10) / 10));
+      if (bandIndex < 0) eqState.preamp = v; else eqState.bands[bandIndex] = v;
+      saveEQState();
+      if (!eqState.on) {
+        eqState.on = true; saveEQState();
+        ensureEqJs().then(() => { enableEQ().catch(() => {}); if (window.updateEQToggleVisual) updateEQToggleVisual(); }).catch(() => {});
+      }
+      if (typeof applyEQGains === "function") applyEQGains();
+      eqStateHook();
+    }
     placeThumb();
   };
   const placeThumb = () => {
-    if (!thumb) return;
     const f = getFrac();
-    if (horiz) thumb.style.left = Math.round(f * (s.w - tw)) + "px";
-    else thumb.style.top = Math.round((1 - f) * (s.h - th)) + "px";
+    if (thumb) {
+      if (horiz) thumb.style.left = Math.round(f * (s.w - tw)) + "px";
+      else thumb.style.top = Math.round((1 - f) * (s.h - th)) + "px";
+    }
+    if (stripUrl && s.strip) {
+      const st = s.strip, cols = st.cols || 1;
+      let idx;
+      if (st.zeroEmpty) {
+        idx = Math.round(f * st.n);
+        if (idx <= 0) { track.style.backgroundPosition = "0 15px"; return; }
+        idx = idx - 1;
+      } else {
+        idx = Math.round(f * (st.n - 1));
+      }
+      track.style.backgroundPosition = (-((idx % cols) * st.fw)) + "px " + (-(Math.floor(idx / cols) * st.fh)) + "px";
+    }
   };
   track.addEventListener("pointerdown", e => {
     try { track.setPointerCapture(e.pointerId); } catch (err) {  }
@@ -724,8 +1116,11 @@ async function buildMainSlider(s, win, res){
     e.preventDefault();
   });
   s._placeThumb = placeThumb;
+  if (bandIndex >= -1 && typeof eqSliderEls !== "undefined")
+    eqSliderEls.push({ bandIndex, place: placeThumb, setVal: v => setFrac((v + 12) / 24) });
   win.appendChild(track);
   placeThumb();
+  return track;
 }
 </script>
 
@@ -744,11 +1139,18 @@ function isCurrentPlItem(it){
   return mode === "file" && fileBlobURL === it.blobURL;
 }
 function renderPlaylist(scrollToCur){
+  if (window.refreshML) { try { window.refreshML(); } catch (e) {} }
   const list = plListEl; if (!list) return;
   list.innerHTML = "";
+  const pc = SKIN && SKIN.playlist && SKIN.playlist.colors;
   plItems.forEach((it, i) => {
     const row = document.createElement("div");
-    row.className = "row" + (isCurrentPlItem(it) ? " cur" : "") + (selectedPl === it ? " sel" : "");
+    const cur = isCurrentPlItem(it);
+    row.className = "row" + (cur ? " cur" : "") + (selectedPl === it ? " sel" : "");
+    if (pc) {
+      row.style.color = cur ? pc.current : pc.normal;
+      row.style.background = (cur || selectedPl === it) ? pc.selectedBg : pc.bg;
+    }
     row.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
     row.addEventListener("click", () => selectPlItem(it));
     list.appendChild(row);
@@ -796,7 +1198,7 @@ function shellNote(msg){ const sh = document.querySelector("#shell .shell-s"); i
 let _idb = null;
 function idbOpen(){
   return new Promise((res, rej) => {
-    const r = indexedDB.open("amp-skin-cache-v5.1", 1);
+    const r = indexedDB.open("amp-skin-cache-v7", 1);
     r.onupgradeneeded = () => r.result.createObjectStore("skins");
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -823,19 +1225,26 @@ async function idbPut(key, val){
     return true;
   } catch (e) { return false; }
 }
-function skinCacheKey(name){ return name + "|5.1"; }
+function skinCacheKey(name){ return name + "|7"; }
 async function tryCachedSkin(file){
   if (typeof SkinLoader === "undefined" || typeof SkinLoader.loadSkinFromCache !== "function") return null;
   const c = await idbGet(skinCacheKey(file.name));
   if (!c || !c.skin || !c.bitmaps || !c.files) return null;
   if (file.size && c.size && c.size !== file.size) return null;
-  try { return await SkinLoader.loadSkinFromCache(c); } catch (e) { return null; }
+  try {
+    if (c.kind === "classic" || (c.skin && c.skin.kind === "classic")) {
+      await ensureClassicJs();
+      if (typeof ClassicSkin === "undefined" || typeof ClassicSkin.loadClassicFromCache !== "function") return null;
+      return await ClassicSkin.loadClassicFromCache(c);
+    }
+    return await SkinLoader.loadSkinFromCache(c);
+  } catch (e) { return null; }
 }
 async function cacheSkin(file, res){
   if (!res || !res.skin || !res.bitmaps || !res.files) return;
   const skinCopy = JSON.parse(JSON.stringify(res.skin));
   for (const f of Object.values(skinCopy.fonts || {})) { delete f.imageURL; delete f.imageW; delete f.imageH; }
-  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: "5.1", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
+  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: "7", kind: res.kind || (res.skin && res.skin.kind) || "modern", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
 }
 async function headValidate(name, cached){
   try {
@@ -856,15 +1265,37 @@ async function applySkinFile(file){
     if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
     let res = await tryCachedSkin(file);
     let fromCache = !!res;
-    if (!res) res = await SkinLoader.loadSkinFile(file);
+    if (!res) {
+      const det = await detectSkinKind(file);
+      if (det.kind === "classic") {
+        await ensureClassicJs();
+        if (typeof ClassicSkin === "undefined") throw new Error("classic-skin.js chưa nạp được");
+        res = await ClassicSkin.loadClassicFile(file, det.zip);
+      } else if (det.kind === "modern") {
+        res = await SkinLoader.loadSkinFile(file, det.zip);
+      } else {
+        throw new Error("không nhận ra file skin (không thấy skin.xml của .wal hay main.bmp/main.png của .wsz)");
+      }
+    }
     setStatus("Đang đọc skin: " + file.name + "… (đang vẽ giao diện)");
     const built = await buildSkinInto(res.skin, res.resolve);
     await new Promise(r => setTimeout(r, 0));
     stage.replaceChildren(built.main);
     SKIN = res.skin; resolver = res.resolve; curRes = res.resolve;
     mainWin = built.main; eqWin = null; plWin = null;
+    mlWin = null; vidWin = null; avsWin = null; aaWin = null; aboutWin = null;
+    remoteWin = null; stickWin = null; drawerWin = null; drawerOpen = false;
+    extraTimers = []; extraTickers = [];
+    if (visMonitor) { visMonitor = false; }
     if (winVisible("eq")) { try { await ensureEqWindow(); } catch (e) { setStatus("không mở được EQ: " + e.message, true); } }
     if (winVisible("pl")) { try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); } }
+    for (const kind of ["ml", "video", "avs", "albumart", "about"]) {
+      if (winVisible(kind)) { try { await WIN_ENSURERS[kind](); } catch (e) { setStatus("không mở được " + (WIN_LABELS[kind] || kind) + ": " + e.message, true); } }
+    }
+    if (winVisible("remote") && SKIN.remote) { try { await ensureRemoteWindow(); } catch (e) {} }
+    if (winVisible("stick") && SKIN.stick) { try { await ensureStickWindow(); } catch (e) {} }
+    if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && winVisible("video") && window.playVideoChannel) playVideoChannel(channels[idx], playing);
+    if (window.applySavedColorTheme) window.applySavedColorTheme();
     applyWindowVisibility();
     renderPlaylist(true);
     updateTimerDisplay();
@@ -873,9 +1304,14 @@ async function applySkinFile(file){
     if (SKIN.sliders) for (const s of SKIN.sliders) if (s._placeThumb) s._placeThumb();
     $("#skinname").textContent = SKIN.skin.name || file.name;
     const lv = loaderVersion();
+    const winTag = (key, label) => (SKIN[key] ? " · " + label + " " + (SKIN[key].native ? "theo skin" : "dự phòng") : "");
     $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h
       + (SKIN.eq ? " · EQ " + (SKIN.eq.native ? "theo skin" : "dự phòng") : " · EQ dự phòng")
-      + (SKIN.playlist ? " · Playlist " + (SKIN.playlist.native ? "theo skin" : "dự phòng") : " · Playlist dự phòng");
+      + (SKIN.playlist ? " · Playlist " + (SKIN.playlist.native ? "theo skin" : "dự phòng") : " · Playlist dự phòng")
+      + winTag("ml", "ML") + winTag("video", "Video") + winTag("avs", "Vis")
+      + winTag("albumart", "Album Art") + winTag("notifier", "Notifier") + winTag("about", "About")
+      + (SKIN.drawer ? " · Drawer theo skin" : "") + (SKIN.remote ? " · Remote theo skin" : "")
+      + (SKIN.stick ? " · Stick theo skin" : "");
     showLoaderVersion();
     if (!fromCache) await cacheSkin(file, res);
     let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "") + (fromCache ? " · từ bộ nhớ đệm" : "");
@@ -886,6 +1322,14 @@ async function applySkinFile(file){
       file: file.name, buttons: SKIN.buttons.length, layout: SKIN.layout,
       frame: !!SKIN.frame, eq: !!SKIN.eq, eqNative: !!(SKIN.eq && SKIN.eq.native),
       playlist: !!SKIN.playlist, playlistNative: !!(SKIN.playlist && SKIN.playlist.native),
+      ml: !!SKIN.ml, mlNative: !!(SKIN.ml && SKIN.ml.native),
+      video: !!SKIN.video, videoNative: !!(SKIN.video && SKIN.video.native),
+      avs: !!SKIN.avs, avsNative: !!(SKIN.avs && SKIN.avs.native),
+      albumart: !!SKIN.albumart, albumartNative: !!(SKIN.albumart && SKIN.albumart.native),
+      notifier: !!SKIN.notifier, notifierNative: !!(SKIN.notifier && SKIN.notifier.native),
+      about: !!SKIN.about, aboutNative: !!(SKIN.about && SKIN.about.native),
+      drawer: !!SKIN.drawer, remote: !!SKIN.remote, stick: !!SKIN.stick,
+      colorPresets: (SKIN.colorPresets || []).length,
       missing: res.report.missing, notes: res.report.notes, fromCache,
       loaderVersion: loaderVersion(), crop: res.report.crop || null };
   } catch (err) {
@@ -917,20 +1361,99 @@ function flashTicker(msg, ms){
   tickerText = msg; tickerNoteUntil = Date.now() + (ms || 2500);
   renderTicker();
 }
+function sampleInkColor(img){
+  try {
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const cx = c.getContext("2d");
+    cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 16) {
+      if (d[i + 3] > 30) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    }
+    if (n) return "rgb(" + Math.round(r / n) + "," + Math.round(g / n) + "," + Math.round(b / n) + ")";
+  } catch (e) { }
+  return "#fff";
+}
+let tickerFont = null, tickerFontFamily = null, tickerEl = null, tickerDrawSeq = 0;
+function tickerCharIndex(font, ch){ return bitmapCharIndex(font, ch); }
+async function drawTickerCanvas(box){
+  const seq = ++tickerDrawSeq;
+  const img = await bitmapFontImage(tickerFont);
+  if (seq !== tickerDrawSeq || !img || !box.isConnected) return;
+  const f = tickerFont;
+  const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
+  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
+  const text = tickerText;
+  const cv = document.createElement("canvas");
+  cv.className = "ticker-cv";
+  const ink = sampleInkColor(img);
+  const altfam = (tickerEl && tickerEl.altfont) || "Arial";
+  const meas = document.createElement("canvas").getContext("2d");
+  meas.font = ch + "px " + altfam;
+  let w = 0;
+  const runs = [];
+  for (const chr of text) {
+    const idx = tickerCharIndex(f, chr);
+    if (idx >= 0) { runs.push({ idx, w: step }); w += step; }
+    else {
+      const aw = Math.max(2, Math.ceil(meas.measureText(chr).width));
+      runs.push({ chr, w: aw + (f.hspacing || 0) }); w += aw + (f.hspacing || 0);
+    }
+  }
+  w = Math.max(1, w - (f.hspacing || 0));
+  cv.width = w; cv.height = ch;
+  const ctx = cv.getContext("2d");
+  let x = 0;
+  for (const r of runs) {
+    if (r.idx !== undefined) {
+      const col = r.idx % cols, row = Math.floor(r.idx / cols);
+      ctx.drawImage(img, col * cw, row * ch, cw, ch, x, 0, cw, ch);
+    } else {
+      ctx.fillStyle = ink;
+      ctx.font = ch + "px " + altfam;
+      ctx.textBaseline = "top";
+      ctx.fillText(r.chr, x, 0);
+    }
+    x += r.w;
+  }
+  if (seq !== tickerDrawSeq || !box.isConnected) return;
+  const elH = (tickerEl && tickerEl.h) || 14;
+  const scale = elH / ch;
+  cv.style.height = elH + "px";
+  cv.style.width = Math.round(w * scale) + "px";
+  cv.dataset.w = Math.round(w * scale);
+  cv.dataset.x = "0";
+  cv.style.transform = "translateX(0px)";
+  box.replaceChildren(cv);
+  window.__ticker = { font: f ? "bitmapfont" : null, glyphs: runs.filter(r => r.idx !== undefined).length, altchars: runs.filter(r => r.idx === undefined).length, text };
+}
 function renderTicker(){
-  const span = $("#tickerspan"); if (!span) return;
+  for (const el of extraTickers) {
+    if (el.isConnected) el.textContent = tickerText;
+  }
+  const box = $("#ticker"); if (!box) return;
+  if (tickerFont && tickerFont.tag === "bitmapfont" && tickerFont.imageURL) {
+    drawTickerCanvas(box);
+    return;
+  }
+  let span = box.querySelector("#tickerspan");
+  if (!span) { box.innerHTML = "<span id='tickerspan'></span>"; span = box.querySelector("#tickerspan"); }
   span.textContent = tickerText;
-  span.dataset.x = "0";
-  span.style.transform = "translateX(0px)";
+  if (tickerFontFamily) span.style.fontFamily = tickerFontFamily;
+  if (tickerEl && tickerEl.fontsize) span.style.fontSize = Math.min(18, +tickerEl.fontsize) + "px";
+  if (tickerEl && tickerEl.color && /^\d+,\d+,\d+$/.test(tickerEl.color)) span.style.color = "rgb(" + tickerEl.color + ")";
+  span.dataset.x = "0"; span.style.transform = "translateX(0px)";
 }
 function tickTicker(){
-  const span = $("#tickerspan"); if (!span) return;
-  const box = $("#ticker");
-  if (!box) return;
-  if (span.scrollWidth <= box.clientWidth || Date.now() < tickerNoteUntil) return;
-  let x = parseFloat(span.dataset.x || "0") - 1;
-  if (-x > span.scrollWidth) x = box.clientWidth;
-  span.dataset.x = x; span.style.transform = "translateX(" + x + "px)";
+  const box = $("#ticker"); if (!box) return;
+  const inner = box.querySelector("canvas, #tickerspan"); if (!inner) return;
+  const w = inner.tagName === "CANVAS" ? parseFloat(inner.dataset.w || "0") : inner.scrollWidth;
+  if (w <= box.clientWidth || Date.now() < tickerNoteUntil) return;
+  let x = parseFloat(inner.dataset.x || "0") - 1;
+  if (-x > w) x = box.clientWidth;
+  inner.dataset.x = x; inner.style.transform = "translateX(" + x + "px)";
 }
 setInterval(tickTicker, 40);
 
@@ -940,10 +1463,18 @@ function parseM3U(text){
     const m = lines[i].match(/^#EXTINF:-?\d+,(.*)$/);
     if (m) {
       const url = (lines[i + 1] || "").trim();
-      if (url && !url.startsWith("#")) out.push({ name: m[1].trim(), url });
+      if (url && !url.startsWith("#")) {
+        const g = lines[i].match(/group-title="([^"]*)"/);
+        out.push({ name: m[1].trim(), url, group: g ? g[1] : "" });
+      }
     }
   }
   return out;
+}
+function channelIsVideo(c){
+  if (!c) return false;
+  if (/hình|video/i.test(c.group || "")) return true;
+  return /mediatech\.vn|truyenhinhnghean\.vn/i.test(c.url || "");
 }
 function fillChannelSelect(){
   const sel = $("#chan"); sel.innerHTML = "";
@@ -956,11 +1487,133 @@ function fillChannelSelect(){
 }
 
 let repeatMode = 0;
+let shuffleOn = false;
+try {
+  const savedMode = JSON.parse(localStorage.getItem("amp-mode-v7") || "null");
+  if (savedMode) {
+    repeatMode = [0, 1, 2].indexOf(+savedMode.repeat) >= 0 ? +savedMode.repeat : 0;
+    shuffleOn = !!savedMode.shuffle;
+  }
+} catch (e) { }
+function saveModeState(){
+  try { localStorage.setItem("amp-mode-v7", JSON.stringify({ repeat: repeatMode, shuffle: shuffleOn })); } catch (e) { }
+}
+function randomPlIndex(cur){
+  if (!plItems.length) return -1;
+  if (plItems.length === 1) return 0;
+  let n;
+  do { n = Math.floor(Math.random() * plItems.length); } while (n === cur);
+  return n;
+}
+function playNextPlItem(wrap){
+  if (!plItems.length) return false;
+  const cur = plItems.findIndex(isCurrentPlItem);
+  let n;
+  if (shuffleOn) n = randomPlIndex(cur);
+  else {
+    n = cur + 1;
+    if (n >= plItems.length) { if (!wrap) return false; n = 0; }
+    if (cur < 0) n = 0;
+  }
+  if (n < 0) return false;
+  playPlItem(plItems[n]);
+  return true;
+}
+function stepPlItem(dir){
+  if (!plItems.length) return;
+  const cur = plItems.findIndex(isCurrentPlItem);
+  let n;
+  if (shuffleOn) n = randomPlIndex(cur);
+  else n = cur < 0 ? 0 : (cur + dir + plItems.length) % plItems.length;
+  if (n < 0) return;
+  playPlItem(plItems[n]);
+}
+let hiddenGroups = {};
+function isHiddenEl(skin, el){
+  const ids = (skin && skin.hiddenIds) || [];
+  if (!ids.length) return null;
+  if (el.id && ids.indexOf(el.id) >= 0) return el.id;
+  if (el._group && ids.indexOf(el._group) >= 0) return el._group;
+  return null;
+}
+function registerHidden(gid, node){
+  if (!node) return;
+  const g = hiddenGroups[gid] || (hiddenGroups[gid] = { nodes: [], shown: false, covered: [] });
+  g.nodes.push(node);
+  node.style.display = "none";
+}
+function rectsOverlap(a, b){
+  const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (ox <= 0 || oy <= 0) return 0;
+  return (ox * oy) / Math.max(1, a.w * a.h);
+}
+function toggleHiddenGroup(param){
+  const ids = (SKIN && SKIN.hiddenIds) || [];
+  const p = (param || "").toLowerCase();
+  const gid = ids.find(id => id.toLowerCase().indexOf(p) >= 0 || p.indexOf(id.toLowerCase()) >= 0);
+  if (!gid) return false;
+  const g = hiddenGroups[gid];
+  if (!g) return false;
+  const show = !g.shown;
+  g.shown = show;
+  for (const n of g.nodes) n.style.display = show ? "" : "none";
+  if (show) {
+    g.covered = [];
+    const gr = (SKIN.groupRects || {})[gid];
+    if (gr && gr.w > 0 && gr.h > 0) {
+      for (const lay of (SKIN.layers || [])) {
+        if (lay._group === gid) continue;
+        if (!lay._img || lay._img.style.display === "none") continue;
+        if ((lay.w || 0) <= 0 || (lay.h || 0) <= 0) continue;
+        if (rectsOverlap({ x: lay.x || 0, y: lay.y || 0, w: lay.w, h: lay.h }, gr) > 0.5) {
+          lay._img.style.display = "none";
+          g.covered.push(lay._img);
+        }
+      }
+    }
+  } else {
+    for (const n of g.covered || []) n.style.display = "";
+    g.covered = [];
+  }
+  const tb = (SKIN.buttons || []).find(b => b.kind === "togglebutton" && (b.param || "").toLowerCase() === p);
+  if (tb && tb._img) {
+    tb._stateBase = () => show ? (tb._activeSrc || tb._downSrc || tb._src) : tb._src;
+    tb._img.src = tb._base ? tb._base() : tb._src;
+  }
+  return true;
+}
+function refreshModeLEDs(skin, res){
+  if (!skin) return;
+  const setBase = (id, on) => {
+    const b = skin.buttons.find(x => x.id === id);
+    if (!b || !b._img) return;
+    if (b._activeSrc) {
+      b._stateBase = () => on ? b._activeSrc : b._src;
+      b._img.src = b._base();
+      b._img.style.opacity = "1";
+    } else {
+      b._img.style.opacity = on ? "1" : "0.35";
+    }
+  };
+  setBase("RepeatLED", repeatMode > 0);
+  setBase("ShuffleLED", shuffleOn);
+  setBase("ShuffleDisplay", shuffleOn);
+  setBase("Repeat", repeatMode > 0);
+  setBase("Shuffle", shuffleOn);
+  const rd = skin.buttons.find(x => x.id === "RepeatDisplay");
+  if (rd && rd._img && res && res.bitmapURL) {
+    const m = repeatMode;
+    res.bitmapURL("player.songinfo.repeat" + m).then(u => {
+      if (u && repeatMode === m) { rd._img.src = u; rd._src = u; }
+    });
+  }
+}
 function destroyHls(){ if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 function loadChannel(i, autoplay){
   if (!channels.length) return;
   idx = ((i % channels.length) + channels.length) % channels.length;
-  mode = "radio"; failCount = 0;
+  mode = "radio";
   const c = channels[idx];
   $("#chan").value = idx;
   tickerText = c.name + " — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
@@ -969,6 +1622,24 @@ function loadChannel(i, autoplay){
   destroyHls(); au.pause();
   resetTimer();
   renderPlaylist(true);
+  showNotifierFor(c);
+  updateAlbumArtForCurrent();
+  const isVid = channelIsVideo(c);
+  if (isVid && winVisMap.video !== false && (vidWin ? winVisible("video") : autoplay)) {
+    if (!vidWin) {
+      setWinVisible("video", true);
+      ensureVideoWindow().then(() => {
+        if (winVisible("video") && window.playVideoChannel) playVideoChannel(c, autoplay);
+        else playAudioChannel(c, autoplay);
+      }).catch(() => playAudioChannel(c, autoplay));
+      return;
+    }
+    if (winVisible("video") && window.playVideoChannel) { playVideoChannel(c, autoplay); return; }
+  }
+  if (window.stopVideoPlayback) stopVideoPlayback();
+  playAudioChannel(c, autoplay);
+}
+function playAudioChannel(c, autoplay){
   const url = c.url;
   const playIt = () => { if (autoplay) au.play().catch(() => {}); };
   if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
@@ -994,11 +1665,27 @@ function handleFail(why){
   setStatus(msg, true);
   if (failCount >= 6) { setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
   clearTimeout(failTimer);
-  failTimer = setTimeout(() => loadChannel(idx + 1, true), 2500);
+  if (repeatMode === 2) {
+    failTimer = setTimeout(() => loadChannel(idx, true), 2500);
+  } else {
+    failTimer = setTimeout(() => { playNextPlItem(repeatMode === 1); }, 2500);
+  }
+}
+function showNotifierFor(c){
+  if (!c || !SKIN) return;
+  const title = c.name || "";
+  const artist = (c.group || "") || (mode === "file" ? (fileName || "") : "Trực tiếp");
+  ensureNotifierJs().then(() => {
+    if (window.showNotifier) window.showNotifier(title, artist);
+  }).catch(() => {});
+}
+function updateAlbumArtForCurrent(){
+  if (aaWin && window.updateAlbumArt) window.updateAlbumArt();
 }
 function bindAudio(el){
   el.addEventListener("playing", () => {
     playing = true; updatePlayState(); onPlayStart();
+    failCount = 0;
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   });
   el.addEventListener("pause", () => { playing = false; updatePlayState(); onPlayPause(); });
@@ -1011,19 +1698,15 @@ function bindAudio(el){
     if (mode === "file" && isFinite(el.duration) && el.duration > 0) {
       setFill("seek", el.currentTime / el.duration);
       if (SKIN && SKIN.sliders) for (const s of SKIN.sliders) if (s.action === "SEEK" && s._placeThumb) s._placeThumb();
+      updateTimerDisplay();
     }
   });
   el.addEventListener("ended", () => {
     if (mode !== "file") return;
     playing = false; updatePlayState(); onPlayPause();
     if (repeatMode === 2) { el.currentTime = 0; el.play().catch(() => {}); }
-    else if (repeatMode === 1) {
-      const files = plItems.filter(it => it.kind === "file");
-      if (files.length) {
-        const cur = files.findIndex(isCurrentPlItem);
-        playPlItem(files[(cur + 1) % files.length]);
-      }
-    }
+    else if (repeatMode === 1) playNextPlItem(true);
+    else playNextPlItem(false);
   });
 }
 bindAudio(au);
@@ -1033,7 +1716,7 @@ document.addEventListener("pointerdown", () => {
 
 function playLocalFile(blobURL, name){
   destroyHls();
-  mode = "file"; failCount = 0; fileName = name; fileBlobURL = blobURL;
+  mode = "file"; fileName = name; fileBlobURL = blobURL;
   au.src = blobURL;
   resetTimer();
   tickerText = name; tickerNoteUntil = 0; renderTicker();
@@ -1061,8 +1744,8 @@ function onMainButton(b){
     resetTimer();
     if (mode === "file") setFill("seek", 0);
   }
-  else if (a === "NEXT") loadChannel(idx + 1, true);
-  else if (a === "PREV") loadChannel(idx - 1, true);
+  else if (a === "NEXT") stepPlItem(1);
+  else if (a === "PREV") stepPlItem(-1);
   else if (a === "EJECT") $("#filepick").click();
   else if (a === "EQ_TOGGLE") { (async () => { try { await ensureEqJs(); } catch (e) { setStatus("không tải được EQ: " + e.message, true); return; } await setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); })(); }
   else if (a === "CLOSE") setStatus("Nút đóng chưa có tác dụng trong bản này (tắt tab trình duyệt để đóng)");
@@ -1071,20 +1754,46 @@ function onMainButton(b){
   else if (a === "TOGGLE") {
     if (p === "eq") toggleWindow("eq");
     else if (p.indexOf("pl") >= 0) toggleWindow("pl");
-    else if (p.indexOf("ml") >= 0) setStatus("Media Library chưa có trong bản này (v6)");
+    else if (p.indexOf("ml") >= 0) toggleWindow("ml");
+    else if (/about/i.test(b.id || "")) toggleWindow("about");
     else setStatus("Nút này chưa có tác dụng trong bản này");
   }
+  else if (a === "VIDEO" || a === "VIS" || a === "AVS" ||
+      /switchto/i.test(b.id || "") || /button\.vis\.detach/i.test(b.id || "")) {
+    if (/switchto/i.test(b.id || "") || a === "VIDEO") toggleWindow("video");
+    else toggleWindow("avs");
+  }
+  else if (a === "ML" || /^ml$/i.test(b.id || "")) toggleWindow("ml");
+  else if (a === "ABOUT" || /^about$/i.test(b.id || "")) toggleWindow("about");
+  else if (a === "CONFIG" || /drawer\.button\.(open|close)/i.test(b.id || "")) toggleDrawer();
+  else if (a === "REMOTE" || /remote/i.test(b.id || "")) cycleRemoteStick();
+  else if (a === "VIS_FS" || a === "VID_FS") toggleWindow("avs");
+  else if (a === "VID_1X" || a === "VID_2X") toggleWindow("video");
+  else if (/^about$/i.test(b.id || "")) toggleWindow("about");
+  else if (/button\.vis\.switchto/i.test(b.id || "")) toggleWindow("video");
+  else if (/button\.vis\.detach/i.test(b.id || "")) toggleWindow("avs");
+  else if (/drawer\.button/i.test(b.id || "")) toggleDrawer();
+  else if (a === "DOUBLESIZE") setScaleMode(scaleMode === "fit" ? "1x" : "fit");
   else if (!a && /^repeat/i.test(b.id || "")) {
     repeatMode = (repeatMode + 1) % 3;
-    const led = SKIN && SKIN.buttons.find(x => x.id === "RepeatLED");
-    if (led && led._img) led._img.style.opacity = repeatMode ? "1" : "0.3";
-    const rd = SKIN && SKIN.buttons.find(x => x.id === "RepeatDisplay");
-    if (rd && rd._img && resolver && resolver.bitmapURL) {
-      resolver.bitmapURL("player.songinfo.repeat" + repeatMode).then(u => {
-        if (u) { rd._img.src = u; rd._src = u; }
-      });
+    saveModeState();
+    refreshModeLEDs(SKIN, resolver);
+    setStatus("Repeat: " + ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode] + (repeatMode ? " — áp dụng cho cả radio và file local" : ""));
+  }
+  else if (!a && /^shuffle/i.test(b.id || "")) {
+    shuffleOn = !shuffleOn;
+    saveModeState();
+    refreshModeLEDs(SKIN, resolver);
+    setStatus(shuffleOn ? "Trộn bài: BẬT — Next/Prev và hết bài sẽ chọn ngẫu nhiên trong playlist" : "Trộn bài: TẮT");
+  }
+  else if (!a && b.param && b.kind === "togglebutton") {
+    if (toggleHiddenGroup(b.param)) {
+      const gid = (SKIN.hiddenIds || []).find(id => id.toLowerCase().indexOf(b.param.toLowerCase()) >= 0 || b.param.toLowerCase().indexOf(id.toLowerCase()) >= 0) || b.param;
+      const g = hiddenGroups[gid];
+      setStatus("Nhóm " + gid + ": " + (g && g.shown ? "HIỆN" : "ẨN"));
+    } else {
+      setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
     }
-    setStatus("Repeat: " + ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode] + " (chỉ áp dụng cho file local)");
   }
   else if (!a) setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
 }
@@ -1109,8 +1818,8 @@ async function loadDefaultSkin(){
     return true;
   } catch (err) {
     window.__lastSkinLoad = { ok: false, file: "winampmodern566.wal", error: err.message };
-    shellNote("không nạp được skin mặc định — bấm Nạp skin để chọn file .wal/.zip");
-    setStatus("không nạp được skin mặc định (" + err.message + "), bấm Nạp skin để chọn file .wal/.zip", true);
+    shellNote("không nạp được skin mặc định — bấm Nạp skin để chọn file .wal/.zip/.wsz");
+    setStatus("không nạp được skin mặc định (" + err.message + "), bấm Nạp skin để chọn file .wal/.zip/.wsz", true);
     return false;
   }
 }
@@ -1126,7 +1835,7 @@ fetch("radio.m3u").then(r => { if (!r.ok) throw new Error("radio.m3u HTTP " + r.
   if (ok) {
     tickerText = channels[0] ? channels[0].name + " — Trực tiếp" : "WinampModern566";
     renderTicker();
-    let msg = "Đã nạp " + channels.length + " kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip · loader v" + (loaderVersion() || "?");
+    let msg = "Đã nạp " + channels.length + " kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip/.wsz · loader v" + (loaderVersion() || "?");
     if (loaderMismatch()) msg += " · CẢNH BÁO loader cũ, tải lại trang để nạp v" + EXPECTED_LOADER_VERSION;
     if (!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
     setStatus(msg);

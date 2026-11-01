@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "5.1";
+  const LOADER_VERSION = "7";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -55,7 +55,9 @@ const SkinLoader = (() => {
   }
   function elList(doc, tag) { return Array.from(doc.getElementsByTagName(tag)); }
   function intAttr(el, name, def) {
-    const v = el.getAttribute(name);
+    let v = el.getAttribute(name);
+    if (v === null || v === undefined || v === "") v = el.getAttribute(name.toUpperCase());
+    if (v === null || v === undefined || v === "") v = el.getAttribute(name.charAt(0).toUpperCase() + name.slice(1));
     if (v === null || v === undefined || v === "") return def;
     const n = parseInt(v, 10);
     return isNaN(n) ? def : n;
@@ -121,6 +123,10 @@ const SkinLoader = (() => {
   }
 
   const KNOWN_FONT_CHARSETS = { "player.songinfo.font": "0123456789._:  -'! +/\\     ,=  " };
+  const WASABI_BITMAP_CHARSET =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@   " +
+    "0123456789….:()-'!_+\\/[]^&%,=$#" +
+    "ÅÖÄ?*                           ";
 
   function makeResolver(bitmaps, blobFor) {
     const urlCache = new Map();
@@ -251,7 +257,8 @@ const SkinLoader = (() => {
         else if (!colInk && start >= 0) { runs.push([start, x - 1]); start = -1; }
       }
       if (start >= 0) runs.push([start, dims.w - 1]);
-      if (runs.length < 10) { detectInverse(); return; }
+      const setBasic = () => { font.imageURL = imgUrl; font.imageW = dims.w; font.imageH = dims.h; font.glyphRow = bestRow; };
+      if (runs.length < 10) { if (!detectInverse()) setBasic(); return; }
       const widths = runs.slice(0, 10).map(r => r[1] - r[0] + 1).sort((a, b) => a - b);
       const medW = widths[Math.floor(widths.length / 2)];
       let colonCol = null;
@@ -261,7 +268,7 @@ const SkinLoader = (() => {
           break;
         }
       }
-      if (colonCol === null) { detectInverse(); return; }
+      if (colonCol === null) { if (!detectInverse()) setBasic(); return; }
       font.imageURL = imgUrl;
       font.imageW = dims.w; font.imageH = dims.h;
       font.glyphRow = bestRow;
@@ -269,12 +276,12 @@ const SkinLoader = (() => {
     } catch (e) {  }
   }
 
-  async function loadSkinFile(file) {
+  async function loadSkinFile(file, preloadedZip) {
     const JSZip = await ensureJSZip();
     const report = { missing: [], found: [], notes: [] };
     let zip;
     try {
-      zip = await JSZip.loadAsync(file);
+      zip = preloadedZip || await JSZip.loadAsync(file);
     } catch (e) {
       throw new Error("không mở được file zip (" + (e.message || e) + ")");
     }
@@ -303,31 +310,56 @@ const SkinLoader = (() => {
     const docByPath = new Map([["skin.xml", docs[0]]]);
     const seen = new Set(["skin.xml"]);
     const queue = [docs[0]];
-    while (queue.length) {
-      const cur = queue.shift();
-      for (const inc of elList(cur.doc, "include")) {
-        const ref = inc.getAttribute("file");
-        if (!ref || ref.indexOf("@") >= 0) {
-          if (ref) report.notes.push("bỏ qua include có placeholder: " + ref);
-          continue;
-        }
-        const p = normPath(dirOf(cur.path), ref);
-        if (!cur.includes.includes(p)) cur.includes.push(p);
-        if (seen.has(p.toLowerCase())) continue;
-        seen.add(p.toLowerCase());
-        const text = await readText(zip, pathMap, p);
-        if (text === null) { report.notes.push("include không có trong file: " + p); continue; }
-        try {
-          const d = parseXmlText(text, p);
-          const entry = { path: p, doc: d, includes: [] };
-          docs.push(entry);
-          queue.push(entry);
-          docByPath.set(p.toLowerCase(), entry);
-        } catch (e) {
-          report.notes.push("không đọc được XML " + p + ": " + e.message);
+    async function drainQueue() {
+      while (queue.length) {
+        const cur = queue.shift();
+        for (const inc of elList(cur.doc, "include")) {
+          const ref = inc.getAttribute("file");
+          if (!ref || ref.indexOf("@") >= 0) {
+            if (ref) report.notes.push("bỏ qua include có placeholder: " + ref);
+            continue;
+          }
+          const p = normPath(dirOf(cur.path), ref);
+          if (!cur.includes.includes(p)) cur.includes.push(p);
+          if (seen.has(p.toLowerCase())) continue;
+          seen.add(p.toLowerCase());
+          const text = await readText(zip, pathMap, p);
+          if (text === null) { report.notes.push("include không có trong file: " + p); continue; }
+          try {
+            const d = parseXmlText(text, p);
+            const entry = { path: p, doc: d, includes: [] };
+            docs.push(entry);
+            queue.push(entry);
+            docByPath.set(p.toLowerCase(), entry);
+          } catch (e) {
+            report.notes.push("không đọc được XML " + p + ": " + e.message);
+          }
         }
       }
     }
+    await drainQueue();
+    const scanned = [];
+    for (const rawName of Object.keys(zip.files)) {
+      if (!/\.xml$/i.test(rawName) || rawName.endsWith("/")) continue;
+      const rel = rootPrefix && rawName.startsWith(rootPrefix) ? rawName.slice(rootPrefix.length) : rawName;
+      if (seen.has(rel.toLowerCase())) continue;
+      seen.add(rel.toLowerCase());
+      let text = null;
+      try { text = await zip.file(rawName).async("string"); } catch (e) { continue; }
+      if (text === null) continue;
+      try {
+        const d = parseXmlText(text, rel);
+        const entry = { path: rel, doc: d, includes: [] };
+        docs.push(entry);
+        queue.push(entry);
+        docByPath.set(rel.toLowerCase(), entry);
+        scanned.push(rel);
+      } catch (e) {
+        report.notes.push("không đọc được XML (quét toàn bộ) " + rel + ": " + e.message);
+      }
+    }
+    if (scanned.length) report.notes.push("quét toàn bộ XML: thêm " + scanned.length + " file ngoài chuỗi include (" + scanned.join(", ") + ")");
+    await drainQueue();
     function layoutsForDoc(docPath) {
       const out = [];
       const seenPaths = new Set();
@@ -380,7 +412,7 @@ const SkinLoader = (() => {
           if (id && !fonts[id]) fonts[id] = { tag, file: b.getAttribute("file") || "",
             charwidth: intAttr(b, "charwidth", 0), charheight: intAttr(b, "charheight", 0),
             hspacing: intAttr(b, "hspacing", 0), vspacing: intAttr(b, "vspacing", 0),
-            charset: KNOWN_FONT_CHARSETS[id] || null };
+            charset: KNOWN_FONT_CHARSETS[id] || (tag === "bitmapfont" ? WASABI_BITMAP_CHARSET : null) };
         }
       }
     }
@@ -402,11 +434,13 @@ const SkinLoader = (() => {
     }
     function relPos(el, attr, parent) {
       const v = intAttr(el, attr, 0);
-      return el.getAttribute("relat" + attr) === "1" ? parent + v : v;
+      const rel = el.getAttribute("relat" + attr) || el.getAttribute("relat" + attr.toUpperCase()) || el.getAttribute("Relat" + attr);
+      return rel === "1" ? parent + v : v;
     }
     function relSize(el, attr, parent) {
       const v = intAttr(el, attr, 0);
-      return el.getAttribute("relat" + attr) === "1" ? parent + v : v;
+      const rel = el.getAttribute("relat" + attr) || el.getAttribute("relat" + attr.toUpperCase()) || el.getAttribute("Relat" + attr);
+      return rel === "1" ? parent + v : v;
     }
     function groupSize(gid, parentW, parentH, instEl) {
       if (instEl && instEl.getAttribute("w") !== null) {
@@ -425,12 +459,12 @@ const SkinLoader = (() => {
     function posSize(v) { return (typeof v === "number" && v > 0) ? v : null; }
     function groupVisible(gid, instEl) {
       if (instEl) {
-        const v = instEl.getAttribute("visible");
+        const v = instEl.getAttribute("visible") || instEl.getAttribute("Visible");
         if (v === "1") return true;
         if (v === "0") return false;
       }
       const gd = groupdefEls[gid];
-      if (gd && gd.getAttribute("visible") === "0") return false;
+      if (gd && (gd.getAttribute("visible") || gd.getAttribute("Visible")) === "0") return false;
       return true;
     }
 
@@ -464,7 +498,7 @@ const SkinLoader = (() => {
 
     function newOut() {
       return { buttons: [], layers: [], texts: [], sliders: [],
-        vis: [], listRects: [], backgrounds: [], unresolved: [], frame: null };
+        vis: [], listRects: [], backgrounds: [], unresolved: [], frame: null, grid: null, hiddenIds: [] };
     }
     const mainOut = newOut();
     const buttons = mainOut.buttons, layers = mainOut.layers,
@@ -477,7 +511,7 @@ const SkinLoader = (() => {
       }
       return null;
     }
-    function addButton(out, el, x, y, kind, pw, ph) {
+    function addButton(out, el, x, y, kind, pw, ph, groupId) {
       let image = attrCI(el, "image", "Image");
       const hover = attrCI(el, "hoverImage", "hoverimage", "HoverImage");
       const down = attrCI(el, "downImage", "downimage", "DownImage");
@@ -490,7 +524,7 @@ const SkinLoader = (() => {
       }
       out.buttons.push({
         id: el.getAttribute("id"), kind, action: act ? act.toUpperCase() : null,
-        param: el.getAttribute("param"),
+        param: el.getAttribute("param"), _group: groupId || null,
         x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         image, imageFile,
         hoverImage: hover, hoverFile: hover ? resolveImageRef(hover) : null,
@@ -500,16 +534,16 @@ const SkinLoader = (() => {
         _imageId: image, _hoverId: hover, _downId: down, _activeId: active
       });
     }
-    function addLayer(out, el, x, y, pw, ph) {
+    function addLayer(out, el, x, y, pw, ph, groupId) {
       const image = attrCI(el, "image", "Image");
       out.layers.push({
         id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
         x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
-        _imageId: image
+        _imageId: image, _group: groupId || null
       });
     }
-    function addText(out, el, x, y, pw, ph, sendParams) {
+    function addText(out, el, x, y, pw, ph, sendParams, groupId) {
       const isSongTicker = el.tagName.toLowerCase() === "songticker";
       const id = el.getAttribute("id");
       let def = el.getAttribute("default");
@@ -520,18 +554,19 @@ const SkinLoader = (() => {
         x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         font: el.getAttribute("font"), color: el.getAttribute("color"),
         fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
+        altfont: el.getAttribute("altfont"),
         ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null),
-        showlen: el.getAttribute("showlen"), default: def
+        showlen: el.getAttribute("showlen"), default: def, _group: groupId || null
       });
     }
-    function addSlider(out, el, x, y, pw, ph) {
+    function addSlider(out, el, x, y, pw, ph, groupId) {
       const thumb = attrCI(el, "thumb", "Thumb");
       const hoverThumb = attrCI(el, "hoverthumb", "hoverThumb", "HoverThumb");
       const downThumb = attrCI(el, "downthumb", "downThumb", "DownThumb");
       const act = el.getAttribute("action");
       out.sliders.push({
         id: el.getAttribute("id"), action: act ? act.toUpperCase() : null,
-        param: el.getAttribute("param"),
+        param: el.getAttribute("param"), _group: groupId || null,
         x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         orientation: (() => { const o = (el.getAttribute("orientation") || "").toLowerCase();
           if (o === "v" || o === "vertical") return "vertical";
@@ -554,7 +589,10 @@ const SkinLoader = (() => {
       }
       return out;
     }
-    function isVisible(el) { return el.getAttribute("visible") !== "0"; }
+    function isVisible(el) {
+      const v = el.getAttribute("visible") || el.getAttribute("Visible");
+      return v !== "0";
+    }
     async function fillSizes(out) {
       for (const b of out.buttons) {
         if (b.w && b.h) continue;
@@ -575,7 +613,7 @@ const SkinLoader = (() => {
           s.orientation = s.w >= s.h ? "horizontal" : "vertical";
       }
     }
-    function dispatchEl(el, ax, ay, depth, parentW, parentH, out, sendParams) {
+    function dispatchEl(el, ax, ay, depth, parentW, parentH, out, sendParams, groupId) {
       if (!isVisible(el)) return;
       const tag = (el.tagName || "").toLowerCase();
       const content = el.getAttribute("content");
@@ -583,7 +621,7 @@ const SkinLoader = (() => {
         if (!groupVisible(content, el)) return;
         if (depth < 5) {
           const [gw, gh] = groupSize(content, parentW, parentH, el);
-          walkGroupChildren(resolveGroup(content, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+          walkGroupChildren(resolveGroup(content, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams, content);
         } else out.unresolved.push("nested group quá sâu: " + content);
         return;
       }
@@ -593,24 +631,34 @@ const SkinLoader = (() => {
         if (!groupVisible(gid, el)) return;
         if (depth < 5) {
           const [gw, gh] = groupSize(gid, parentW, parentH, el);
-          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams, gid);
         } else out.unresolved.push("nested XUI quá sâu: " + tag);
         return;
       }
-      if (tag === "button") addButton(out, el, ax, ay, "button", parentW, parentH);
-      else if (tag === "togglebutton") addButton(out, el, ax, ay, "togglebutton", parentW, parentH);
-      else if (tag === "nstatesbutton") addButton(out, el, ax, ay, "nstatesbutton", parentW, parentH);
-      else if (tag === "layer") addLayer(out, el, ax, ay, parentW, parentH);
+      if (tag === "button") addButton(out, el, ax, ay, "button", parentW, parentH, groupId);
+      else if (tag === "togglebutton") addButton(out, el, ax, ay, "togglebutton", parentW, parentH, groupId);
+      else if (tag === "nstatesbutton") addButton(out, el, ax, ay, "nstatesbutton", parentW, parentH, groupId);
+      else if (tag === "layer") addLayer(out, el, ax, ay, parentW, parentH, groupId);
       else if (tag === "text" || tag === "songticker")
-        addText(out, el, ax, ay, parentW, parentH, sendParams);
-      else if (tag === "slider") addSlider(out, el, ax, ay, parentW, parentH);
+        addText(out, el, ax, ay, parentW, parentH, sendParams, groupId);
+      else if (tag === "slider") addSlider(out, el, ax, ay, parentW, parentH, groupId);
       else if (tag === "vis") {
         out.vis.push({ id: el.getAttribute("id"), x: ax, y: ay,
-          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)) });
+          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)), _group: groupId || null });
       }
-      else if (tag === "windowholder" || tag === "component") {
+      else if (tag === "windowholder" || tag === "component" || tag === "albumart") {
         out.listRects.push({ id: el.getAttribute("id"), x: ax, y: ay,
-          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)) });
+          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)), _group: groupId || null });
+      }
+      else if (tag === "grid") {
+        out.grid = { left: el.getAttribute("left"), middle: el.getAttribute("middle"),
+          right: el.getAttribute("right") };
+      }
+      else if (tag === "animatedlayer") addLayer(out, el, ax, ay, parentW, parentH, groupId);
+      else if (tag === "rect" || tag === "guiobject" || tag === "componentbucket" ||
+               tag === "groupxfade" ||
+               (tag === "list" && /ColorThemes/i.test(el.getAttribute("data-xuitag") || ""))) {
+        return;
       }
       else if (tag === "group") {
         const gid = el.getAttribute("id");
@@ -628,20 +676,24 @@ const SkinLoader = (() => {
         }
         if (depth < 5) {
           const [gw, gh] = groupSize(gid, parentW, parentH, el);
-          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams);
+          walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh, out, sendParams, gid);
         } else out.unresolved.push("nested group quá sâu: " + gid);
       }
-      else if (tag === "sendparams" || tag === "script" ||
-               tag === "hideobject" || tag === "mousetrap") {
+      else if (tag === "hideobject") {
+        const t = el.getAttribute("target");
+        if (t) { out.hiddenIds.push(t); }
+        return;
+      }
+      else if (tag === "sendparams" || tag === "script" || tag === "mousetrap") {
         return;
       }
       else {
         out.unresolved.push(el.tagName + " id=" + el.getAttribute("id") + " chưa xử lý");
       }
     }
-    function walkGroupChildren(items, ox, oy, depth, parentW, parentH, out, sendParams) {
+    function walkGroupChildren(items, ox, oy, depth, parentW, parentH, out, sendParams, groupId) {
       for (const { el, x, y } of items) {
-        dispatchEl(el, x + ox, y + oy, depth, parentW, parentH, out, sendParams || {});
+        dispatchEl(el, x + ox, y + oy, depth, parentW, parentH, out, sendParams || {}, groupId || null);
       }
     }
     function collectSendParams(layEl) {
@@ -663,7 +715,7 @@ const SkinLoader = (() => {
       const xu = el.getAttribute("data-xuitag") || el.tagName;
       return /Frame/.test(xu) && !!el.getAttribute("content") && !!xuitagMap[xu];
     }
-    function walkFrame(frameEl, layoutW, layoutH, out, sendParams) {
+    function walkFrame(frameEl, layoutW, layoutH, out, sendParams, keepClose) {
       const frameGid = xuitagMap[frameEl.getAttribute("data-xuitag") || frameEl.tagName];
       if (!frameGid || !groupdefs[frameGid]) return 0;
       const fOut = newOut();
@@ -676,8 +728,9 @@ const SkinLoader = (() => {
       }
       if (!offsetY) offsetY = 18;
       fOut.menubarY = offsetY;
-      walkGroupChildren(resolveGroup(frameGid, layoutW, layoutH), 0, 0, 0, layoutW, layoutH, fOut, sendParams);
-      fOut.buttons = fOut.buttons.filter(b => b.id !== "Close" && b.id !== "Close.inactive");
+      walkGroupChildren(resolveGroup(frameGid, layoutW, layoutH), 0, 0, 0, layoutW, layoutH, fOut, sendParams, frameGid);
+      for (const h of fOut.hiddenIds) out.hiddenIds.push(h);
+      if (!keepClose) fOut.buttons = fOut.buttons.filter(b => b.id !== "Close" && b.id !== "Close.inactive");
       return offsetY;
     }
     function layoutMenuLabels(fOut) {
@@ -709,7 +762,7 @@ const SkinLoader = (() => {
         for (const child of elChildren(layEl)) {
           if (isFrameEl(child)) { frameEl = child; break; }
         }
-        if (frameEl) frameOffsetY = walkFrame(frameEl, layoutW, layoutH, out, sendParams);
+        if (frameEl) frameOffsetY = walkFrame(frameEl, layoutW, layoutH, out, sendParams, opts.keepFrameClose);
       }
       for (const child of elChildren(layEl)) {
         if (!isVisible(child)) continue;
@@ -719,7 +772,7 @@ const SkinLoader = (() => {
             const [gw, gh] = groupSize(content, layoutW, layoutH, child);
             walkGroupChildren(resolveGroup(content, gw, gh),
               relPos(child, "x", layoutW), relPos(child, "y", layoutH) + frameOffsetY,
-              0, gw, gh, out, sendParams);
+              0, gw, gh, out, sendParams, content);
           }
           continue;
         }
@@ -795,6 +848,8 @@ const SkinLoader = (() => {
     }
 
     let eq = null, playlist = null;
+    let ml = null, video = null, avs = null, albumart = null, notifier = null;
+    let about = null, drawer = null, remote = null, stick = null, colorPresets = [];
     if (layoutEl) {
       let bg = layoutEl.getAttribute("background");
       if (bg && !resolveImageRef(bg)) {
@@ -901,6 +956,7 @@ const SkinLoader = (() => {
                 for (const l of layers) { l.x -= ox; l.y -= oy; }
                 for (const t of texts) { t.x -= ox; t.y -= oy; }
                 for (const s of sliders) { if (typeof s.x === "number") s.x -= ox; if (typeof s.y === "number") s.y -= oy; }
+                for (const v of mainOut.vis) { if (typeof v.x === "number") v.x -= ox; if (typeof v.y === "number") v.y -= oy; }
                 if (mainOut.frame) {
                   for (const b of mainOut.frame.buttons) { b.x -= ox; b.y -= oy; }
                   for (const l of mainOut.frame.layers) { l.x -= ox; l.y -= oy; }
@@ -998,8 +1054,189 @@ const SkinLoader = (() => {
           texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
           listRect, native: true, source: "container:" + containerId };
       }
+
+      function mergePlayPause(out) {
+        const playBtn = out.buttons.find(b => b.action === "PLAY");
+        const pauseIdx = out.buttons.findIndex(b => b.action === "PAUSE" && playBtn &&
+          b.x === playBtn.x && b.y === playBtn.y);
+        if (pauseIdx >= 0) {
+          const pauseBtn = out.buttons[pauseIdx];
+          playBtn.pauseImage = pauseBtn.image;
+          playBtn.pauseFile = pauseBtn.imageFile;
+          playBtn.mergedPause = true;
+          out.buttons.splice(pauseIdx, 1);
+        }
+      }
+      function winFromOut(out, w, h, bg, bgFile, defaultVisible, source) {
+        return { w, h, background: bg, backgroundFile: bgFile, defaultVisible,
+          layers: out.layers, buttons: out.buttons, sliders: out.sliders,
+          texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
+          listRect: out.listRects[0] || null, frame: out.frame || null,
+          grid: out.grid || null, unresolved: out.unresolved,
+          native: true, source };
+      }
+      async function extractWindow(ids, opts) {
+        opts = opts || {};
+        const found = findContainer(id => ids.indexOf(id) >= 0);
+        if (!found) return null;
+        const lays = layoutsForDoc(found.docPath);
+        const layEl = lays.find(l => (l.getAttribute("id") || "") === "normal") || lays[0] || null;
+        if (!layEl) return null;
+        let sz = await layoutSize(layEl);
+        if (opts.preferMin) {
+          const mw = intAttr(layEl, "minimum_w", 0), mh = intAttr(layEl, "minimum_h", 0);
+          if (mw > 0 && mh > 0) sz = { w: mw, h: mh };
+        }
+        if (!sz.w || !sz.h) return null;
+        const out = newOut();
+        let bg = layEl.getAttribute("background") || layEl.getAttribute("alphabackground");
+        if (bg && !resolveImageRef(bg)) bg = null;
+        walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: true, keepFrameClose: true });
+        await fillSizes(out);
+        if (out.frame) await fillSizes(out.frame);
+        mergePlayPause(out);
+        const win = winFromOut(out, sz.w, sz.h, bg, bg ? resolveImageRef(bg) : null,
+          found.container.getAttribute("default_visible") !== "0",
+          "container:" + found.container.getAttribute("id"));
+        report.notes.push(win.source + " " + sz.w + "x" + sz.h +
+          (win.listRect ? (" — vùng nội dung " + win.listRect.w + "x" + win.listRect.h +
+            " tại (" + win.listRect.x + "," + win.listRect.y + ")") : " — không có vùng nội dung") +
+          (win.frame ? " — có khung" : " — không có khung"));
+        return win;
+      }
+      async function extractStandaloneLayout(wantId) {
+        let layEl = null;
+        for (const { doc } of docs) {
+          for (const l of elList(doc, "layout")) {
+            if ((l.getAttribute("id") || "").toLowerCase() === wantId) { layEl = l; break; }
+          }
+          if (layEl) break;
+        }
+        if (!layEl) return null;
+        const sz = await layoutSize(layEl);
+        if (!sz.w || !sz.h) return null;
+        const out = newOut();
+        let bg = layEl.getAttribute("background") || layEl.getAttribute("alphabackground");
+        if (bg && !resolveImageRef(bg)) bg = null;
+        walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: false });
+        await fillSizes(out);
+        mergePlayPause(out);
+        const win = winFromOut(out, sz.w, sz.h, bg, bg ? resolveImageRef(bg) : null,
+          false, "layout:" + wantId);
+        report.notes.push(win.source + " " + sz.w + "x" + sz.h + " — " + win.buttons.length + " nút");
+        return win;
+      }
+      function extractAbout() {
+        let gid = null;
+        for (const id of Object.keys(groupdefs)) {
+          if (/about/i.test(id) && groupdefs[id].some(el => (el.tagName || "").toLowerCase() === "layer")) { gid = id; break; }
+        }
+        if (!gid) return null;
+        let pw = 0, ph = 0;
+        for (const el of groupdefs[gid]) {
+          const w = intAttr(el, "w", 0), h = intAttr(el, "h", 0);
+          if (w > pw) pw = w; if (h > ph) ph = h;
+        }
+        if (!pw || !ph) return null;
+        const out = newOut();
+        walkGroupChildren(resolveGroup(gid, pw, ph), 0, 0, 0, pw, ph, out, {});
+        const win = winFromOut(out, pw, ph, null, null, false, "groupdef:" + gid);
+        report.notes.push(win.source + " " + pw + "x" + ph);
+        return win;
+      }
+      function extractColorPresets() {
+        const out = [];
+        for (const { doc } of docs) {
+          for (const gs of elList(doc, "gammaset")) {
+            const id = gs.getAttribute("id");
+            if (!id) continue;
+            const groups = {};
+            for (const gg of elChildren(gs)) {
+              if ((gg.tagName || "").toLowerCase() !== "gammagroup") continue;
+              groups[gg.getAttribute("id")] = (gg.getAttribute("value") || "0,0,0")
+                .split(",").map(n => parseInt(n, 10) || 0);
+            }
+            out.push({ id, groups });
+          }
+        }
+        if (out.length) report.notes.push("color presets: " + out.length + " bộ (" + out.map(o => o.id).slice(0, 5).join(", ") + (out.length > 5 ? ", …" : "") + ")");
+        return out;
+      }
+      async function extractDrawer() {
+        const gd = groupdefEls["player.normal.drawer"];
+        if (!gd) return null;
+        const w = layout.w, h = intAttr(gd, "h", 129) || 129;
+        const shell = newOut();
+        const items = resolveGroup("player.normal.drawer", w, h);
+        for (const { el, x, y } of items) {
+          const id = el.getAttribute("id") || "";
+          if (id === "player.normal.drawer.content") {
+            for (const c of resolveGroup("player.normal.drawer.content", 326, 127)) {
+              const cid = c.el.getAttribute("id") || "";
+              if (cid === "config.tabs") continue;
+              if (/player\.normal\.drawer\.(eq|options|colorthemes)$/.test(cid)) continue;
+              dispatchEl(c.el, c.x + x, c.y + y, 0, 326, 127, shell, {});
+            }
+            continue;
+          }
+          dispatchEl(el, x, y, 0, w, h, shell, {});
+        }
+        await fillSizes(shell);
+        const tabs = [];
+        for (const name of ["eq", "options", "colorthemes"]) {
+          const tab = { name, label: name === "eq" ? "EQ" : name === "options" ? "Options" : "Color Themes" };
+          for (const st of ["on", "off"]) {
+            const tgd = groupdefEls["config.tab." + name + "." + st];
+            if (!tgd) continue;
+            const gridEl = elChildren(tgd).find(e => (e.tagName || "").toLowerCase() === "grid");
+            const txtEl = elChildren(tgd).find(e => (e.tagName || "").toLowerCase() === "text");
+            tab[st] = {
+              left: gridEl ? gridEl.getAttribute("left") : null,
+              middle: gridEl ? gridEl.getAttribute("middle") : null,
+              right: gridEl ? gridEl.getAttribute("right") : null,
+              label: txtEl ? (txtEl.getAttribute("default") || tab.label) : tab.label
+            };
+          }
+          tabs.push(tab);
+        }
+        const contents = {};
+        for (const [key, cgid] of [["eq", "player.normal.drawer.eq"],
+            ["options", "player.normal.drawer.options"],
+            ["colorthemes", "player.normal.drawer.colorthemes"]]) {
+          const cgd = groupdefEls[cgid];
+          if (!cgd) continue;
+          const cw = intAttr(cgd, "w", 0), ch = intAttr(cgd, "h", 0);
+          if (!cw || !ch) continue;
+          const cout = newOut();
+          walkGroupChildren(resolveGroup(cgid, cw, ch), 0, 0, 0, cw, ch, cout, {});
+          await fillSizes(cout);
+          contents[key] = { w: cw, h: ch, layers: cout.layers, buttons: cout.buttons,
+            sliders: cout.sliders, texts: cout.texts, vis: cout.vis,
+            backgrounds: cout.backgrounds, listRect: cout.listRects[0] || null };
+        }
+        const bg = gd.getAttribute("background");
+        const win = { w, h, background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
+          defaultVisible: false, layers: shell.layers, buttons: shell.buttons,
+          sliders: shell.sliders, texts: shell.texts, vis: shell.vis,
+          backgrounds: shell.backgrounds, listRect: null, frame: null, grid: null,
+          unresolved: shell.unresolved, tabs, contents, native: true,
+          source: "groupdef:player.normal.drawer" };
+        report.notes.push("Drawer: " + w + "x" + h + " — tabs " + tabs.map(t => t.name).join("/") +
+          " — nội dung: " + Object.keys(contents).join(", "));
+        return win;
+      }
       eq = await extractEQ();
       playlist = await extractPlaylist();
+      ml = await extractWindow(["mlibrary", "ml", "medialibrary"], { preferMin: true });
+      video = await extractWindow(["video", "videowindow"], { preferMin: true });
+      avs = await extractWindow(["avs", "visualizations", "vis"], { preferMin: true });
+      albumart = await extractWindow(["winamp.albumart", "albumart"], { preferMin: false });
+      notifier = await extractWindow(["notifier"], { preferMin: false });
+      about = extractAbout();
+      drawer = await extractDrawer();
+      remote = await extractStandaloneLayout("remote");
+      stick = await extractStandaloneLayout("stick");
+      colorPresets = extractColorPresets();
       for (const f of Object.values(fonts)) {
         if (f.tag === "bitmapfont") { try { await detectFontRow(f, bitmaps, resolve.fileURL, findPath, pathMap); } catch (e) {  } }
       }
@@ -1136,11 +1373,29 @@ const SkinLoader = (() => {
       err.partial = { layout, buttons, layers, texts };
       throw err;
     }
+    const groupRects = {};
+    for (const coll of [buttons, layers, texts, sliders, mainOut.vis]) {
+      for (const e of coll || []) {
+        if (!e._group) continue;
+        const r = groupRects[e._group] || (groupRects[e._group] = { x: 1e9, y: 1e9, x2: -1e9, y2: -1e9 });
+        const x = e.x || 0, y = e.y || 0, w = e.w || 0, h = e.h || 0;
+        if (x < r.x) r.x = x; if (y < r.y) r.y = y;
+        if (x + w > r.x2) r.x2 = x + w; if (y + h > r.y2) r.y2 = y + h;
+      }
+    }
+    for (const gid of Object.keys(groupRects)) {
+      const r = groupRects[gid];
+      groupRects[gid] = { x: r.x, y: r.y, w: Math.max(0, r.x2 - r.x), h: Math.max(0, r.y2 - r.y) };
+    }
+    if ((mainOut.hiddenIds || []).length)
+      report.notes.push("hideobject: ẩn lúc mở " + mainOut.hiddenIds.join(", "));
     const skin = {
       skin: { ...info, source_files: docs.map(d => d.path), source_zip: file.name || "" },
       layout, buttons, layers, texts, sliders,
       display, seek, volume, spectrum, fonts,
       frame: mainOut.frame, vis: mainOut.vis, eq, playlist,
+      ml, video, avs, albumart, notifier, about, drawer, remote, stick, colorPresets,
+      hiddenIds: mainOut.hiddenIds || [], groupRects,
       unresolved: unresolved.concat(report.missing, report.notes)
     };
     function stripOut(out) {
@@ -1152,6 +1407,15 @@ const SkinLoader = (() => {
     stripOut(mainOut.frame);
     stripOut(eq);
     stripOut(playlist);
+    stripOut(ml); stripOut(video); stripOut(avs); stripOut(albumart);
+    stripOut(notifier); stripOut(about); stripOut(remote); stripOut(stick);
+    if (ml && ml.frame) stripOut(ml.frame);
+    if (video && video.frame) stripOut(video.frame);
+    if (avs && avs.frame) stripOut(avs.frame);
+    if (drawer) {
+      stripOut(drawer);
+      for (const c of Object.values(drawer.contents || {})) stripOut(c);
+    }
     const files = {};
     for (const [key, real] of pathMap) {
       if (real.endsWith("/")) continue;

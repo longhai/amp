@@ -33,7 +33,9 @@ function ensureAudioGraph(){
   applyEQGains();
 }
 async function resumeAudioCtx(){
-  if (audioCtx && audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch (e) {} }
+  if (audioCtx && audioCtx.state === "suspended") {
+    try { await Promise.race([audioCtx.resume(), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
+  }
 }
 function makeAudioElement(withCors){
   const wasVol = au.volume;
@@ -94,18 +96,54 @@ async function enableEQ(){
   const src = audioCtx.createMediaElementSource(au);
   src.connect(eqNodes.preamp);
   eqNodes.el = au; eqNodes.src = src;
+  monitorNodes = null;
   applyEQGains();
   eqStateHook();
   await cutover(oldEl, oldSrc, wasPlaying, wasTime);
+  await refreshMonitor();
 }
 async function disableEQ(){
   const wasPlaying = playing, wasTime = au.currentTime || 0;
   const oldEl = au, oldSrc = eqNodes ? eqNodes.src : null, oldHls = hls;
   if (eqNodes) { eqNodes.src = null; eqNodes.el = null; }
+  monitorNodes = null;
   makeAudioElement(false);
   await attachCurrentSource(oldHls);
   eqStateHook();
   await cutover(oldEl, oldSrc, wasPlaying, wasTime);
+  await refreshMonitor();
+}
+let monitorNodes = null;
+function getAnalyser(){
+  if (!eqNodes || !eqNodes.analyser) return null;
+  if (eqState.on) return eqNodes.analyser;
+  if (typeof visMonitor !== "undefined" && visMonitor && monitorNodes) return eqNodes.analyser;
+  return null;
+}
+async function refreshMonitor(){
+  if (eqState.on) {
+    if (monitorNodes) { try { monitorNodes.src.disconnect(); } catch (e) {} monitorNodes = null; }
+    return;
+  }
+  if (typeof visMonitor === "undefined" || !visMonitor) {
+    if (monitorNodes) {
+      try { monitorNodes.src.disconnect(); } catch (e) {}
+      monitorNodes = null;
+      const wasPlaying = playing, wasTime = au.currentTime || 0;
+      const oldEl = au, oldHls = hls;
+      makeAudioElement(false);
+      await attachCurrentSource(oldHls);
+      await cutover(oldEl, null, wasPlaying, wasTime);
+    }
+    return;
+  }
+  if (monitorNodes && monitorNodes.el === au) return;
+  ensureAudioGraph();
+  await resumeAudioCtx();
+  if (monitorNodes) { try { monitorNodes.src.disconnect(); } catch (e) {} }
+  const src = audioCtx.createMediaElementSource(au);
+  src.connect(eqNodes.analyser);
+  monitorNodes = { el: au, src };
 }
 /* bật/tắt nối tiếp nhau, không chạy chồng */
 let eqBusy = Promise.resolve();
@@ -133,22 +171,28 @@ async function buildEQSlider(s, bandIndex, win, res, eq){
   track.style.left = s.x + "px"; track.style.top = s.y + "px";
   track.style.width = s.w + "px"; track.style.height = s.h + "px";
   const horiz = s.orientation === "horizontal";
-  let fillEl = null;
-  const fillLay = (eq.layers || []).find(l => isEqFillLayer(l) && Math.abs((l.x || 0) - s.x) < 6 && Math.abs((l.y || 0) - s.y) < 6);
-  let fillImg = null;
-  if (fillLay && fillLay.imageFile) fillImg = await resolveImg(res, fillLay.image, fillLay.imageFile);
-  fillEl = document.createElement("div");
-  fillEl.className = "fill";
-  fillEl.style.width = "100%"; fillEl.style.height = "0px";
-  if (fillImg) {
-    const im = document.createElement("img");
-    im.src = fillImg; im.draggable = false; im.alt = "";
-    im.style.width = s.w + "px"; im.style.height = s.h + "px";
-    fillEl.appendChild(im);
-  } else {
-    fillEl.style.background = "rgba(120,180,90,.55)";
+  let fillEl = null, stripUrl = null;
+  if (s.strip && s.strip.image) {
+    stripUrl = await resolveImg(res, s.strip.image, s.strip.imageFile);
+    if (stripUrl) track.style.backgroundImage = "url(" + JSON.stringify(stripUrl) + ")";
   }
-  track.appendChild(fillEl);
+  if (!stripUrl) {
+    const fillLay = (eq.layers || []).find(l => isEqFillLayer(l) && Math.abs((l.x || 0) - s.x) < 6 && Math.abs((l.y || 0) - s.y) < 6);
+    let fillImg = null;
+    if (fillLay && fillLay.imageFile) fillImg = await resolveImg(res, fillLay.image, fillLay.imageFile);
+    fillEl = document.createElement("div");
+    fillEl.className = "fill";
+    fillEl.style.width = "100%"; fillEl.style.height = "0px";
+    if (fillImg) {
+      const im = document.createElement("img");
+      im.src = fillImg; im.draggable = false; im.alt = "";
+      im.style.width = s.w + "px"; im.style.height = s.h + "px";
+      fillEl.appendChild(im);
+    } else {
+      fillEl.style.background = "rgba(120,180,90,.55)";
+    }
+    track.appendChild(fillEl);
+  }
   const thumbSrc = s.thumb ? await resolveImg(res, s.thumb, s.thumbFile) : null;
   const tw = s.thumbW || 13, th = s.thumbH || 23;
   const thumb = document.createElement("div");
@@ -170,10 +214,15 @@ async function buildEQSlider(s, bandIndex, win, res, eq){
     const frac = (v + 12) / 24;
     if (horiz) {
       thumb.style.left = Math.round(frac * (s.w - tw)) + "px";
-      fillEl.style.width = Math.round(frac * s.w) + "px";
+      if (fillEl) fillEl.style.width = Math.round(frac * s.w) + "px";
     } else {
       thumb.style.top = Math.round((1 - frac) * (s.h - th)) + "px";
-      fillEl.style.height = Math.round(frac * s.h) + "px";
+      if (fillEl) fillEl.style.height = Math.round(frac * s.h) + "px";
+    }
+    if (stripUrl && s.strip) {
+      const st = s.strip, cols = st.cols || 1;
+      const idx = Math.round(frac * (st.n - 1));
+      track.style.backgroundPosition = (-((idx % cols) * st.fw)) + "px " + (-(Math.floor(idx / cols) * st.fh)) + "px";
     }
   };
   const setVal = v => {
@@ -318,11 +367,11 @@ async function onEQButton(b){
 function drawVis(){
   requestAnimationFrame(drawVis);
   if (!visCanvas || !visCtx) return;
-  if (!eqNodes || !eqNodes.analyser || !eqState.on) {
+  const an = getAnalyser();
+  if (!an) {
     if (visCanvas._hadVis) { visCtx.clearRect(0, 0, visCanvas.width, visCanvas.height); visCanvas._hadVis = false; }
     return;
   }
-  const an = eqNodes.analyser;
   const data = new Uint8Array(an.frequencyBinCount);
   an.getByteFrequencyData(data);
   const w = visCanvas.width, h = visCanvas.height;
