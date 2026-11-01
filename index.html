@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Amp — v4 (nạp skin .wal/.zip, thư viện qua CDN)</title>
+<!-- Không gửi Referer khi tải stream: server medatech (Đà Nẵng, Quảng Ngãi,
+     Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
+     200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
+<meta name="referrer" content="no-referrer">
+<title>Amp — v4.1 (nạp skin .wal/.zip, thư viện qua CDN)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="skin-loader.js"></script>
+<script src="skin-loader.js?v=4.1"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -51,7 +55,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">BLAKK</b> — Amp v4 · main window only · <span id="skinsub">skin mặc định nạp trực tiếp từ blakk.zip, đổi skin bằng file .wal/.zip</span></h1>
+<h1><b id="skinname">BLAKK</b> — Amp v4.1 · main window only · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định nạp trực tiếp từ blakk.zip, đổi skin bằng file .wal/.zip</span></h1>
 <div id="viewport"><div id="scaler"></div></div>
 
 <div id="panel">
@@ -83,6 +87,40 @@ let SKIN = null, channels = [], idx = 0, mode = "radio";
 let hls = null, failCount = 0, failTimer = null, playing = false;
 let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
 let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
+
+/* ---------- loader version stamp (v4.1) ----------
+   The version comes from skin-loader.js itself (SkinLoader.VERSION), never
+   from this file — so a screenshot proves which loader is really running.
+   index.html and skin-loader.js are separate files: GitHub Pages + the
+   browser cache can serve a NEW index.html with an OLD loader (that is
+   what happened with v4 on the user's phone: header said "Amp v4" but
+   Copperdeck rendered 645x135, the v3 behaviour). If the versions do not
+   match, the page warns in the status line instead of silently rendering
+   with mixed code. The ?v=4.1 query on the <script> tag makes the browser
+   fetch a fresh copy whenever the loader changes. */
+const EXPECTED_LOADER_VERSION = "4.1";
+function loaderVersion(){
+  return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
+}
+function showLoaderVersion(){
+  const el = $("#loaderver"); if(!el) return null;
+  const v = loaderVersion();
+  el.textContent = v ? ("loader v" + v) : "loader ?";
+  el.style.color = (v && v === EXPECTED_LOADER_VERSION) ? "" : "#e88";
+  return v;
+}
+function loaderMismatch(){
+  // Unknown version (v3 and older have no SkinLoader.VERSION) counts as a
+  // mismatch too — that is the exact stale-loader case from the user's
+  // phone: v4 page + v3 loader rendered Copperdeck at 645x135 with an
+  // empty ticker, and the old check let it pass silently.
+  return loaderVersion() !== EXPECTED_LOADER_VERSION;
+}
+function loaderLabel(){
+  const v = loaderVersion();
+  return v ? ("v" + v) : "không rõ phiên bản";
+}
+showLoaderVersion();
 
 /* ---------- asset resolver: always from a loaded skin (blob URLs) ----------
    There is no built-in assets/ folder in the slim build: the default skin
@@ -308,16 +346,23 @@ async function applySkinFile(file){
       setTimer(mode === "file" && isFinite(au.duration) && au.duration > 0 ? fmt(au.currentTime) : "LIVE"); }
     catch(e){ SKIN = prevSkin; resolver = prevResolver; await buildSkin(); throw e; }
     $("#skinname").textContent = SKIN.skin.name || file.name;
+    const lv = loaderVersion();
     $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h;
-    setStatus("Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || ""));
+    showLoaderVersion();
+    let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "");
+    if (res.report.cropError) okMsg += " · không cắt được vùng mờ của ảnh nền (" + res.report.cropError + ") — skin có thể hiện rộng hơn bình thường";
+    if (loaderMismatch()) okMsg += " · CẢNH BÁO: đang chạy loader " + (lv ? "cũ v" + lv : "không rõ phiên bản") + ", tải lại trang (hoặc mở tab ẩn danh) để nạp loader v" + EXPECTED_LOADER_VERSION;
+    setStatus(okMsg);
     window.__lastSkinLoad = { ok: true, name: SKIN.skin.name, author: SKIN.skin.author,
       file: file.name, buttons: SKIN.buttons.length, layout: SKIN.layout,
-      missing: res.report.missing, notes: res.report.notes };
+      missing: res.report.missing, notes: res.report.notes,
+      loaderVersion: loaderVersion(), crop: res.report.crop || null };
   }catch(err){
-    window.__lastSkinLoad = { ok: false, file: file.name, error: err.message };
+    window.__lastSkinLoad = { ok: false, file: file.name, error: err.message, loaderVersion: loaderVersion() };
     // Loader errors go ONLY to the status line below the player — never
     // into the ticker inside the skin (v3 bug, see resetTicker above).
-    setStatus("không đọc được skin này: " + err.message, true);
+    const lv2 = loaderVersion();
+    setStatus("không đọc được skin này: " + err.message + (lv2 ? " · loader v" + lv2 : ""), true);
   }
 }
 $("#btn-skin").onclick = ()=>$("#skinpick").click();
@@ -482,6 +527,9 @@ $("#filepick").addEventListener("change", e=>{
 async function loadDefaultSkin(){
   try{
     if(typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
+    if(loaderMismatch()){
+      setStatus("đang chạy loader cũ (" + loaderLabel() + ") trong khi trang là v" + EXPECTED_LOADER_VERSION + " — bấm tải lại trang (hoặc mở tab ẩn danh) để nạp loader mới, skin có thể hiển thị sai", true);
+    }
     const r = await fetch("blakk.zip");
     if(!r.ok) throw new Error("blakk.zip HTTP "+r.status);
     const blob = await r.blob();
@@ -505,7 +553,8 @@ fetch("radio.m3u").then(r=>{ if(!r.ok) throw new Error("radio.m3u HTTP "+r.statu
   if(ok){
     tickerText = channels[0] ? channels[0].name+" — Trực tiếp" : "BLAKK";
     renderTicker();
-    let msg = "Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip";
+    let msg = "Đã nạp "+channels.length+" kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip · loader v" + (loaderVersion() || "?");
+    if(loaderMismatch()) msg += " · CẢNH BÁO loader cũ, tải lại trang để nạp v" + EXPECTED_LOADER_VERSION;
     if(!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
     setStatus(msg);
   }

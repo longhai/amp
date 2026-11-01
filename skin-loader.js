@@ -22,6 +22,12 @@
 
 const SkinLoader = (() => {
 
+  /* Loader version — the page reads this (SkinLoader.VERSION) and shows
+     it in the <h1> and the status line, so a screenshot proves which
+     loader is actually running. Bump together with the ?v= query in
+     index.html whenever this file changes. */
+  const LOADER_VERSION = "4.1";
+
   /* ---------- JSZip: CDN only (v4 has no vendored copy) ---------- */
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -94,9 +100,13 @@ const SkinLoader = (() => {
   }
 
   /* ---------- zip helpers ---------- */
-  function buildPathMap(zip) {
+  function buildPathMap(zip, prefix) {
     const map = new Map(); // lower-case path -> real path
-    for (const name of Object.keys(zip.files)) map.set(name.toLowerCase(), name);
+    const pl = (prefix || "").toLowerCase();
+    for (const name of Object.keys(zip.files)) {
+      const key = (pl && name.toLowerCase().startsWith(pl)) ? name.slice(prefix.length) : name;
+      map.set(key.toLowerCase(), name);
+    }
     return map;
   }
   function findPath(pathMap, path) {
@@ -161,7 +171,22 @@ const SkinLoader = (() => {
     } catch (e) {
       throw new Error("không mở được file zip (" + (e.message || e) + ")");
     }
-    const pathMap = buildPathMap(zip);
+    // Some skins ship everything under one subfolder instead of the zip
+    // root (Winamp 5.66 base skin: "Winamp Modern/skin.xml"). Find skin.xml
+    // (root first, else the shallowest match) and treat its folder as the
+    // skin root: pathMap keys are stored with that prefix stripped, so every
+    // include/bitmap lookup below works unchanged.
+    let rootPrefix = "";
+    {
+      const names = Object.keys(zip.files);
+      if (!names.some(n => n.toLowerCase() === "skin.xml")) {
+        const hits = names.filter(n => /\/skin\.xml$/i.test(n));
+        hits.sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b));
+        if (hits.length) rootPrefix = hits[0].slice(0, hits[0].lastIndexOf("/") + 1);
+      }
+    }
+    const pathMap = buildPathMap(zip, rootPrefix);
+    if (rootPrefix) report.notes.push("skin nằm trong thư mục con '" + rootPrefix + "' — đã dùng làm gốc");
     sizeCache.clear();
 
     // --- skin.xml ---
@@ -240,11 +265,34 @@ const SkinLoader = (() => {
 
     // --- groupdefs ---
     const groupdefs = {};
+    const groupdefEls = {};
     for (const { doc } of docs) {
       for (const gd of elList(doc, "groupdef")) {
         const id = gd.getAttribute("id");
-        if (id && !groupdefs[id]) groupdefs[id] = elChildren(gd);
+        if (id && !groupdefs[id]) { groupdefs[id] = elChildren(gd); groupdefEls[id] = gd; }
       }
+    }
+    // Wasabi relative coordinates: relatx/relaty="1" means the value is
+    // measured from the parent's right/bottom edge (x = parentW + x),
+    // relatw/relath="1" the same for sizes. The Winamp 5 base skin uses
+    // them everywhere (window buttons at x="-41" relatx="1", the drawer
+    // group at y="-263" relaty="1", stretched background slices with
+    // w="-270" relatw="1"). Sizes resolve against the ENCLOSING group's
+    // own size (groupSize), falling back to the parent's size.
+    function relPos(el, attr, parent) {
+      const v = intAttr(el, attr, 0);
+      return el.getAttribute("relat" + attr) === "1" ? parent + v : v;
+    }
+    function relSize(el, attr, parent) {
+      const v = intAttr(el, attr, 0);
+      return el.getAttribute("relat" + attr) === "1" ? parent + v : v;
+    }
+    function groupSize(gid, parentW, parentH) {
+      const gd = groupdefEls[gid];
+      if (!gd) return [parentW, parentH];
+      const w = gd.getAttribute("w") !== null ? relSize(gd, "w", parentW) : parentW;
+      const h = gd.getAttribute("h") !== null ? relSize(gd, "h", parentH) : parentH;
+      return [w, h];
     }
 
     // --- asset resolver (blob URLs; canvas crop for sprite sheets) ---
@@ -325,7 +373,7 @@ const SkinLoader = (() => {
     // as its image). The explicit size wins — the bitmap size is only a
     // fallback. The old code always overwrote with the bitmap size, so that
     // 13x39 layer painted a 289x135 grey rectangle over the skin.
-    function addButton(el, x, y, kind) {
+    function addButton(el, x, y, kind, pw, ph) {
       const image = el.getAttribute("image");
       const hover = el.getAttribute("hoverImage");
       const down = el.getAttribute("downImage");
@@ -337,7 +385,7 @@ const SkinLoader = (() => {
       buttons.push({
         id: el.getAttribute("id"), kind, action: act ? act.toUpperCase() : null,
         param: el.getAttribute("param"),
-        x, y, w: intAttr(el, "w", 0) || null, h: intAttr(el, "h", 0) || null,
+        x, y, w: relSize(el, "w", pw) || null, h: relSize(el, "h", ph) || null,
         image, imageFile: resolveImageRef(image),
         hoverImage: hover, hoverFile: hover ? resolveImageRef(hover) : null,
         downImage: down, downFile: down ? resolveImageRef(down) : null,
@@ -346,32 +394,46 @@ const SkinLoader = (() => {
         _imageId: image, _hoverId: hover, _downId: down, _activeId: active
       });
     }
-    function addLayer(el, x, y) {
+    function addLayer(el, x, y, pw, ph) {
       const image = el.getAttribute("image");
       layers.push({
         id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
-        x, y, w: intAttr(el, "w", 0) || null, h: intAttr(el, "h", 0) || null,
+        x, y, w: relSize(el, "w", pw) || null, h: relSize(el, "h", ph) || null,
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
         _imageId: image
       });
     }
-    function resolveGroup(gid, ox, oy, depth) {
+    // Positions inside a groupdef are relative to the group origin;
+    // relatx/relaty resolve against the ENCLOSING group's size (parentW/H).
+    // Offsets are added by walkGroupChildren, not here.
+    function resolveGroup(gid, parentW, parentH) {
       const out = [];
       const kids = groupdefs[gid] || [];
       for (const el of kids) {
-        out.push({ el, x: intAttr(el, "x", 0) + ox, y: intAttr(el, "y", 0) + oy });
+        out.push({ el, x: relPos(el, "x", parentW), y: relPos(el, "y", parentH) });
       }
       return out;
     }
     // Elements with visible="0" are hidden in Winamp (alternate vis modes,
     // inactive states). The old code rendered them anyway.
     function isVisible(el) { return el.getAttribute("visible") !== "0"; }
-    function walkGroupChildren(items, depth) {
+    function walkGroupChildren(items, ox, oy, depth, parentW, parentH) {
       for (const { el, x, y } of items) {
         if (!isVisible(el)) continue;
-        if (el.tagName === "button") addButton(el, x, y, "button");
-        else if (el.tagName === "togglebutton") addButton(el, x, y, "togglebutton");
-        else if (el.tagName === "layer") addLayer(el, x, y);
+        const ax = x + ox, ay = y + oy;
+        const content = el.getAttribute("content");
+        if (content && groupdefs[content]) {
+          // MainFrame content="..." (Winamp 5 base skin): the layout's real
+          // content lives in that groupdef, not in the layout itself.
+          if (depth < 3) {
+            const [gw, gh] = groupSize(content, parentW, parentH);
+            walkGroupChildren(resolveGroup(content, gw, gh), ax, ay, depth + 1, gw, gh);
+          } else unresolved.push("nested group quá sâu: " + content);
+          continue;
+        }
+        if (el.tagName === "button") addButton(el, ax, ay, "button", parentW, parentH);
+        else if (el.tagName === "togglebutton") addButton(el, ax, ay, "togglebutton", parentW, parentH);
+        else if (el.tagName === "layer") addLayer(el, ax, ay, parentW, parentH);
         else if (el.tagName === "text" || el.tagName.toLowerCase() === "songticker") {
           // Ticker/timer often live inside a groupdef (Nebular: Songticker
           // and timer are in boombox-lcd-group), not as direct layout kids.
@@ -380,7 +442,7 @@ const SkinLoader = (() => {
           const isSongTicker = el.tagName.toLowerCase() === "songticker";
           texts.push({
             id: el.getAttribute("id"), display: el.getAttribute("display") || (isSongTicker ? "songname" : null),
-            x, y, w: intAttr(el, "w", 0), h: intAttr(el, "h", 0),
+            x: ax, y: ay, w: relSize(el, "w", parentW), h: relSize(el, "h", parentH),
             font: el.getAttribute("font"), color: el.getAttribute("color"),
             fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
             ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: el.getAttribute("showlen")
@@ -388,10 +450,21 @@ const SkinLoader = (() => {
         }
         else if (el.tagName === "slider") {
           sliders.push({ id: el.getAttribute("id"), action: el.getAttribute("action"),
-            x, y, w: el.getAttribute("w"), h: el.getAttribute("h"), group: "(group)", note: "slider inside groupdef" });
+            x: ax, y: ay, w: el.getAttribute("w"), h: el.getAttribute("h"), group: "(group)", note: "slider inside groupdef" });
         } else if (el.tagName === "group") {
-          if (depth < 3) walkGroupChildren(resolveGroup(el.getAttribute("id"), x, y, depth + 1), depth + 1);
-          else unresolved.push("nested group quá sâu: " + el.getAttribute("id"));
+          const gid = el.getAttribute("id");
+          if (el.getAttribute("move") === "1") {
+            // Slide-out panel (config drawer): hidden until a MAKI script
+            // moves it — rendering it at its rest position would paint it
+            // over the player. Same rule as Copperdeck's drawer.
+            unresolved.push("bỏ qua nhóm trượt (move=1): " + gid + " — cần MAKI để mở");
+            continue;
+          }
+          if (depth < 3) {
+            const [gw, gh] = groupSize(gid, parentW, parentH);
+            walkGroupChildren(resolveGroup(gid, gw, gh), ax, ay, depth + 1, gw, gh);
+          }
+          else unresolved.push("nested group quá sâu: " + gid);
         } else {
           unresolved.push(el.tagName + " id=" + el.getAttribute("id") + " trong group chưa xử lý");
         }
@@ -427,6 +500,11 @@ const SkinLoader = (() => {
           if ((el.tagName === "button" || el.tagName === "togglebutton") &&
               (el.getAttribute("action") || "").toUpperCase() === "PLAY" &&
               resolveImageRef(el.getAttribute("image"))) return true;
+          const content = el.getAttribute("content");
+          if (content && !seen.has(content)) {
+            seen.add(content);
+            if (checkEls(groupdefs[content] || [])) return true;
+          }
           if (el.tagName === "group") {
             const gid = el.getAttribute("id");
             if (gid && !seen.has(gid)) {
@@ -489,26 +567,39 @@ const SkinLoader = (() => {
       }
       for (const child of elChildren(layoutEl)) {
         if (!isVisible(child)) continue;
+        const content = child.getAttribute("content");
+        if (content && groupdefs[content]) {
+          const [gw, gh] = groupSize(content, layout.w, layout.h);
+          walkGroupChildren(resolveGroup(content, gw, gh),
+            relPos(child, "x", layout.w), relPos(child, "y", layout.h), 0, gw, gh);
+          continue;
+        }
         if (child.tagName === "group") {
-          walkGroupChildren(resolveGroup(child.getAttribute("id"),
-            intAttr(child, "x", 0), intAttr(child, "y", 0), 0), 0);
+          const gid = child.getAttribute("id");
+          if (child.getAttribute("move") === "1") {
+            unresolved.push("bỏ qua nhóm trượt (move=1): " + gid + " — cần MAKI để mở");
+            continue;
+          }
+          const [gw, gh] = groupSize(gid, layout.w, layout.h);
+          walkGroupChildren(resolveGroup(gid, gw, gh),
+            relPos(child, "x", layout.w), relPos(child, "y", layout.h), 0, gw, gh);
         } else if (child.tagName === "button" || child.tagName === "togglebutton") {
-          addButton(child, intAttr(child, "x", 0), intAttr(child, "y", 0), child.tagName);
+          addButton(child, relPos(child, "x", layout.w), relPos(child, "y", layout.h), child.tagName, layout.w, layout.h);
         } else if (child.tagName === "layer") {
-          addLayer(child, intAttr(child, "x", 0), intAttr(child, "y", 0));
+          addLayer(child, relPos(child, "x", layout.w), relPos(child, "y", layout.h), layout.w, layout.h);
         } else if (child.tagName === "text" || child.tagName.toLowerCase() === "songticker") {
           const isSongTicker = child.tagName.toLowerCase() === "songticker";
           texts.push({
             id: child.getAttribute("id"), display: child.getAttribute("display") || (isSongTicker ? "songname" : null),
-            x: intAttr(child, "x", 0), y: intAttr(child, "y", 0),
-            w: intAttr(child, "w", 0), h: intAttr(child, "h", 0),
+            x: relPos(child, "x", layout.w), y: relPos(child, "y", layout.h),
+            w: relSize(child, "w", layout.w), h: relSize(child, "h", layout.h),
             font: child.getAttribute("font"), color: child.getAttribute("color"),
             fontsize: child.getAttribute("fontsize"), align: child.getAttribute("align"),
             ticker: child.getAttribute("ticker") || (isSongTicker ? "1" : null), showlen: child.getAttribute("showlen")
           });
         } else if (child.tagName === "slider") {
           sliders.push({ id: child.getAttribute("id"), action: child.getAttribute("action"),
-            x: intAttr(child, "x", 0), y: intAttr(child, "y", 0),
+            x: relPos(child, "x", layout.w), y: relPos(child, "y", layout.h),
             w: child.getAttribute("w"), h: child.getAttribute("h") });
         } else {
           unresolved.push("layout child <" + child.tagName + "> id=" + child.getAttribute("id") + " chưa xử lý");
@@ -541,6 +632,26 @@ const SkinLoader = (() => {
         buttons.splice(pauseIdx, 1);
         report.notes.push("gộp nút Play/Pause cùng vị trí (" + playBtn.x + "," + playBtn.y + ") thành 1 nút chuyển đổi");
       }
+      // --- trim empty space below the content ---
+      // Some skins (Winamp 5.66 base skin) declare a tall layout (354x280)
+      // whose lower part is only the hidden config-drawer area: nothing is
+      // painted there, so the window would show a big empty black strip
+      // below the player (the real skin's window is ~150 tall). When the
+      // layout has NO background image to preserve, crop the height to the
+      // lowest painted element — but only when the content clearly ends
+      // well above the layout bottom, so skins with full-height content
+      // are untouched. Skins WITH a background image are never cropped
+      // here (Copperdeck's case is handled by the alpha crop below).
+      if (!layout.backgroundFile) {
+        let maxBottom = 0;
+        for (const b of buttons) if (b.imageFile) maxBottom = Math.max(maxBottom, (b.y || 0) + (b.h || 0));
+        for (const l of layers) if (l.imageFile) maxBottom = Math.max(maxBottom, (l.y || 0) + (l.h || 0));
+        for (const t of texts) maxBottom = Math.max(maxBottom, (t.y || 0) + (t.h || 14));
+        if (maxBottom > 0 && maxBottom < layout.h * 0.8) {
+          report.notes.push("cắt chiều cao cửa sổ theo nội dung: " + layout.w + "x" + layout.h + " -> " + layout.w + "x" + maxBottom + " (không có ảnh nền, phần dưới là vùng drawer ẩn)");
+          layout.h = maxBottom;
+        }
+      }
       // --- visible-window crop from the background image alpha ---
       // Some skins (Copperdeck II) declare a 645px layout but the background
       // PNG is only opaque in the middle 289px (178..467): the rest is the
@@ -552,46 +663,100 @@ const SkinLoader = (() => {
       // it is clearly smaller than the layout (40%..95% of the size) and
       // shift every element by the same offset. BLAKK/DDTank (fully opaque)
       // and Nebular (98.9% opaque) are unaffected.
+      //
+      // This block runs INSIDE loadSkinFile() and is awaited before the skin
+      // object is returned, so buildSkin() can never render the uncropped
+      // layout first. A measurement failure is recorded in report.crop /
+      // report.cropError and the page shows it in the status line — it is
+      // never swallowed into an invisible note (v4 did exactly that: a
+      // failed alpha scan left a 645px layout with no visible reason).
+      //
+      // Measure the opaque bounding box of a PNG blob. Tries
+      // createImageBitmap first, then an <img> + canvas (some mobile
+      // browsers fail the first path). Throws with the reason on failure.
+      async function alphaBBox(blob) {
+        let w, h, data;
+        try {
+          const bmp = await createImageBitmap(blob);
+          const cv = document.createElement("canvas");
+          cv.width = bmp.width; cv.height = bmp.height;
+          const cx = cv.getContext("2d", { willReadFrequently: true });
+          cx.drawImage(bmp, 0, 0);
+          // NOTE: read width/height BEFORE bmp.close() — after close()
+          // an ImageBitmap reports 0x0, which made this whole scan a
+          // no-op (bbox stayed empty) in the first v4 build.
+          w = bmp.width; h = bmp.height;
+          data = cx.getImageData(0, 0, w, h).data;
+          bmp.close();
+        } catch (e1) {
+          const d = await new Promise(resolve => {
+            const url = URL.createObjectURL(blob);
+            const im = new Image();
+            im.onload = () => {
+              try {
+                const cv = document.createElement("canvas");
+                cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+                const cx = cv.getContext("2d", { willReadFrequently: true });
+                cx.drawImage(im, 0, 0);
+                resolve({ w: cv.width, h: cv.height,
+                  data: cx.getImageData(0, 0, cv.width, cv.height).data });
+              } catch (e2) { resolve({ error: e2.message || String(e2) }); }
+              URL.revokeObjectURL(url);
+            };
+            im.onerror = () => { URL.revokeObjectURL(url); resolve({ error: "không tải được ảnh nền" }); };
+            im.src = url;
+          });
+          if (d.error) throw new Error("createImageBitmap lỗi (" + (e1.message || e1) + "), đo bằng <img> cũng lỗi (" + d.error + ")");
+          w = d.w; h = d.h; data = d.data;
+        }
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        for (let yy = 0; yy < h; yy++) {
+          for (let xx = 0; xx < w; xx++) {
+            if (data[(yy * w + xx) * 4 + 3] > 10) {
+              if (xx < minX) minX = xx; if (xx > maxX) maxX = xx;
+              if (yy < minY) minY = yy; if (yy > maxY) maxY = yy;
+            }
+          }
+        }
+        return { minX, minY, maxX, maxY, w, h };
+      }
+      report.crop = { attempted: false, applied: false };
       try {
         if (layout.backgroundFile) {
           const blob = await blobFor(layout.backgroundFile);
           if (blob) {
-            const bmp = await createImageBitmap(blob);
-            const cv = document.createElement("canvas");
-            cv.width = bmp.width; cv.height = bmp.height;
-            const cx = cv.getContext("2d", { willReadFrequently: true });
-            cx.drawImage(bmp, 0, 0);
-            // NOTE: read width/height BEFORE bmp.close() — after close()
-            // an ImageBitmap reports 0x0, which made this whole scan a
-            // no-op (bbox stayed empty) in the first v4 build.
-            const bw0 = bmp.width, bh0 = bmp.height;
-            const data = cx.getImageData(0, 0, bw0, bh0).data;
-            bmp.close();
-            let minX = bw0, minY = bh0, maxX = -1, maxY = -1;
-            for (let yy = 0; yy < bh0; yy++) {
-              for (let xx = 0; xx < bw0; xx++) {
-                if (data[(yy * bw0 + xx) * 4 + 3] > 10) {
-                  if (xx < minX) minX = xx; if (xx > maxX) maxX = xx;
-                  if (yy < minY) minY = yy; if (yy > maxY) maxY = yy;
-                }
-              }
-            }
-            if (maxX >= 0) {
-              const bw = maxX + 1 - minX, bh = maxY + 1 - minY;
+            report.crop.attempted = true;
+            const bb = await alphaBBox(blob);
+            if (bb.maxX < 0) {
+              report.crop.error = "ảnh nền hoàn toàn trong suốt";
+              report.cropError = report.crop.error;
+              report.notes.push("ảnh nền hoàn toàn trong suốt — không cắt cửa sổ");
+            } else {
+              const bw = bb.maxX + 1 - bb.minX, bh = bb.maxY + 1 - bb.minY;
+              report.crop.bbox = { x: bb.minX, y: bb.minY, w: bw, h: bh };
               if ((bw < layout.w * 0.95 || bh < layout.h * 0.95) && bw >= layout.w * 0.4 && bh >= layout.h * 0.4) {
-                const ox = minX, oy = minY;
+                const ox = bb.minX, oy = bb.minY;
                 for (const b of buttons) { b.x -= ox; b.y -= oy; }
                 for (const l of layers) { l.x -= ox; l.y -= oy; }
                 for (const t of texts) { t.x -= ox; t.y -= oy; }
                 for (const s of sliders) { if (typeof s.x === "number") s.x -= ox; if (typeof s.y === "number") s.y -= oy; }
                 layout.bgCrop = { x: ox, y: oy, fullW: layout.w, fullH: layout.h };
                 layout.w = bw; layout.h = bh;
+                report.crop.applied = true;
+                report.crop.from = layout.bgCrop.fullW + "x" + layout.bgCrop.fullH;
+                report.crop.to = bw + "x" + bh;
                 report.notes.push("cắt cửa sổ theo vùng mờ của ảnh nền: " + layout.bgCrop.fullW + "x" + layout.bgCrop.fullH + " -> " + bw + "x" + bh + " (dịch -" + ox + ",-" + oy + ")");
+              } else {
+                report.crop.note = "vùng mờ gần bằng layout (" + bw + "x" + bh + " / " + layout.w + "x" + layout.h + ") — không cần cắt";
               }
             }
           }
         }
-      } catch (e) { report.notes.push("không tính được vùng mờ của ảnh nền: " + e.message); }
+      } catch (e) {
+        report.crop.error = e.message || String(e);
+        report.cropError = report.crop.error;
+        report.notes.push("không tính được vùng mờ của ảnh nền: " + report.crop.error);
+      }
     } else {
       // --- ClassicPro fallback (AyonPlayer): no <layout> in the skin ---
       report.notes.push("không thấy <layout> trong XML — thử kiểu ClassicPro (mainframe + sendparams).");
@@ -747,5 +912,5 @@ const SkinLoader = (() => {
     return { skin, resolve, report: { ...report, unresolved: skin.unresolved } };
   }
 
-  return { loadSkinFile, ensureJSZip };
+  return { loadSkinFile, ensureJSZip, VERSION: LOADER_VERSION };
 })();
