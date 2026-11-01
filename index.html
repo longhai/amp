@@ -161,8 +161,11 @@ async function buildSkin(){
     if(src) scaler.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
   }
   // texts: songticker + timer (by id first, then by display/ticker attr)
+  // Prefer the real songname ticker: some skins (DDTank) also have a
+  // ticker="1" songinfo line, which is not the song name.
   const tick = SKIN.texts.find(t=>t.id==="Songticker")
-    || SKIN.texts.find(t=>t.display==="songname" || t.ticker==="1");
+    || SKIN.texts.find(t=>t.display==="songname")
+    || SKIN.texts.find(t=>t.ticker==="1");
   const tim = SKIN.texts.find(t=>t.id==="timer")
     || SKIN.texts.find(t=>t.display==="time");
   if(tick){
@@ -251,6 +254,8 @@ async function buildButton(b){
   b._src = await resolveImg(b.image, b.imageFile);
   b._hoverSrc = b.hoverImage ? await resolveImg(b.hoverImage, b.hoverFile) : null;
   b._downSrc = b.downImage ? await resolveImg(b.downImage, b.downFile) : null;
+  // Merged Play/Pause button (DDTank): show the pause icon while playing.
+  b._pauseSrc = b.pauseImage ? await resolveImg(b.pauseImage, b.pauseFile) : null;
   const im = document.createElement("img");
   im.src = b._src || ""; im.draggable = false; im.alt = b.id||"";
   d.appendChild(im);
@@ -268,7 +273,7 @@ async function buildButton(b){
 function updatePlayState(){
   if(!SKIN) return; // no skin loaded yet (e.g. default zip failed)
   const play = SKIN.buttons.find(b=>b.action==="PLAY");
-  if(play && play._img) play._img.src = playing ? (play._downSrc || play._src) : play._src;
+  if(play && play._img) play._img.src = playing ? (play._pauseSrc || play._downSrc || play._src) : play._src;
 }
 
 /* ---------- load a skin file directly (.wal/.zip) ---------- */
@@ -280,7 +285,8 @@ async function applySkinFile(file){
     const res = await SkinLoader.loadSkinFile(file);
     const prevSkin = SKIN, prevResolver = resolver;
     SKIN = res.skin; resolver = res.resolve;
-    try { await buildSkin(); }
+    try { await buildSkin(); renderTicker();
+      setTimer(mode === "file" && isFinite(au.duration) && au.duration > 0 ? fmt(au.currentTime) : "LIVE"); }
     catch(e){ SKIN = prevSkin; resolver = prevResolver; await buildSkin(); throw e; }
     $("#skinname").textContent = SKIN.skin.name || file.name;
     $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h;
@@ -407,6 +413,8 @@ au.addEventListener("ended", ()=>{ if(mode==="file"){ playing=false; updatePlayS
 
 function onButton(b){
   const a = b.action, p = b.param;
+  // Merged Play/Pause button (DDTank): tap toggles, like Winamp's MAKI.
+  if(a==="PLAY" && b.mergedPause && playing){ au.pause(); return; }
   if(a==="PLAY"){ if(mode==="file" && au.src){ au.play(); } else loadChannel(idx, true); }
   else if(a==="PAUSE"){ au.pause(); }
   else if(a==="STOP"){ au.pause(); try{ au.currentTime=0; }catch(e){}

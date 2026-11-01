@@ -289,12 +289,28 @@ const SkinLoader = (() => {
 
     async function bitmapSize(id) {
       const entry = bitmaps[id];
-      if (!entry) return [null, null];
-      if (entry.crop) return [entry.crop.w, entry.crop.h];
-      const s = await pngSize(zip, pathMap, entry.file);
-      return s ? [s.w, s.h] : [null, null];
+      if (entry) {
+        if (entry.crop) return [entry.crop.w, entry.crop.h];
+        const s = await pngSize(zip, pathMap, entry.file);
+        return s ? [s.w, s.h] : [null, null];
+      }
+      // Not a bitmap id — it may be a direct zip path (DDTank writes
+      // image="buttons/play.png" instead of a bitmap id). Size that file.
+      if (id && findPath(pathMap, id)) {
+        const s = await pngSize(zip, pathMap, id);
+        return s ? [s.w, s.h] : [null, null];
+      }
+      return [null, null];
     }
     const imgFile = id => bitmaps[id] ? bitmaps[id].file : null;
+    // Resolve an image reference the way Wasabi skins actually use it:
+    // either a <bitmap> id (BLAKK/Nebular) or a direct zip path
+    // (DDTank: image="buttons/play.png", background="images/mainbg.png").
+    function resolveImageRef(ref) {
+      if (!ref) return null;
+      if (bitmaps[ref]) return bitmaps[ref].file;
+      return findPath(pathMap, ref) ? ref : null;
+    }
 
     // --- walk a layout (BLAKK style) ---
     const buttons = [], layers = [], texts = [], sliders = [];
@@ -312,10 +328,10 @@ const SkinLoader = (() => {
         id: el.getAttribute("id"), kind, action: act ? act.toUpperCase() : null,
         param: el.getAttribute("param"),
         x, y, w: null, h: null,
-        image, imageFile: imgFile(image),
-        hoverImage: hover, hoverFile: hover ? imgFile(hover) : null,
-        downImage: down, downFile: down ? imgFile(down) : null,
-        activeImage: active, activeFile: active ? imgFile(active) : null,
+        image, imageFile: resolveImageRef(image),
+        hoverImage: hover, hoverFile: hover ? resolveImageRef(hover) : null,
+        downImage: down, downFile: down ? resolveImageRef(down) : null,
+        activeImage: active, activeFile: active ? resolveImageRef(active) : null,
         tooltip: el.getAttribute("tooltip") || el.getAttribute("Tooltip") || null,
         _imageId: image, _hoverId: hover, _downId: down, _activeId: active
       });
@@ -323,7 +339,7 @@ const SkinLoader = (() => {
     function addLayer(el, x, y) {
       const image = el.getAttribute("image");
       layers.push({
-        id: el.getAttribute("id"), image, imageFile: imgFile(image),
+        id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
         x, y, w: null, h: null,
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
         _imageId: image
@@ -367,42 +383,91 @@ const SkinLoader = (() => {
 
     // Layout size: some skins (Nebular) give no w/h at all — only
     // minimum_w/minimum_h (== maximum_*) or default_w/default_h.
-    const layoutSize = (lay) => ({
+    // Others (DDTank "normal") give no size at all — the background
+    // image IS the size (mainbg.png 360x320).
+    const layoutSizeAttrs = (lay) => ({
       w: intAttr(lay, "w", 0) || intAttr(lay, "minimum_w", 0) || intAttr(lay, "maximum_w", 0) || intAttr(lay, "default_w", 0),
       h: intAttr(lay, "h", 0) || intAttr(lay, "minimum_h", 0) || intAttr(lay, "maximum_h", 0) || intAttr(lay, "default_h", 0)
     });
+    async function layoutSize(lay) {
+      const a = layoutSizeAttrs(lay);
+      if (a.w > 0 && a.h > 0) return a;
+      const bgFile = resolveImageRef(lay.getAttribute("background") || lay.getAttribute("alphabackground"));
+      if (bgFile) {
+        const s = await pngSize(zip, pathMap, bgFile);
+        if (s) return { w: s.w, h: s.h };
+      }
+      return a;
+    }
+    // Does this layout contain a PLAY button (direct child or inside a
+    // referenced groupdef, nested groups included)? Used to pick the real
+    // main window when a skin ships several layouts (DDTank ships a
+    // "modal" frame layout 360x150 with no buttons at all).
+    function layoutHasPlay(lay) {
+      const seen = new Set();
+      const checkEls = (els) => {
+        for (const el of els) {
+          if ((el.tagName === "button" || el.tagName === "togglebutton") &&
+              (el.getAttribute("action") || "").toUpperCase() === "PLAY" &&
+              resolveImageRef(el.getAttribute("image"))) return true;
+          if (el.tagName === "group") {
+            const gid = el.getAttribute("id");
+            if (gid && !seen.has(gid)) {
+              seen.add(gid);
+              if (checkEls(groupdefs[gid] || [])) return true;
+            }
+          }
+        }
+        return false;
+      };
+      return checkEls(elChildren(lay));
+    }
+    function containerIdOf(el) {
+      let p = el.parentElement;
+      while (p) {
+        if (p.tagName === "container") return p.getAttribute("id") || "";
+        p = p.parentElement;
+      }
+      return "";
+    }
 
+    // Pick the main layout by score, not by "first sized one": the old
+    // code took DDTank's "modal" frame layout (360x150, no buttons)
+    // because the real "normal" layout has no w/h attributes at all.
     let layout = null;
     let layoutEl = null;
+    let bestScore = -1;
     for (const { doc } of docs) {
       for (const lay of elList(doc, "layout")) {
-        const { w, h } = layoutSize(lay);
-        if (w > 0 && h > 0) {
-          const id = lay.getAttribute("id") || "";
-          // Prefer a main/boombox layout; otherwise take the first sized one.
-          if (!layoutEl || /boombox|main/i.test(id)) { layoutEl = lay; }
-          if (/boombox|main/i.test(id)) break;
-        }
+        const { w, h } = await layoutSize(lay);
+        if (w <= 0 || h <= 0) continue;
+        const id = lay.getAttribute("id") || "";
+        let score = 0;
+        if (/boombox/i.test(id)) score += 5;
+        if (/^main$/i.test(id)) score += 5;
+        if (id === "normal") score += 3;
+        if (/^main$/i.test(containerIdOf(lay))) score += 10;
+        if (layoutHasPlay(lay)) score += 20;
+        if (score > bestScore) { bestScore = score; layoutEl = lay; }
       }
-      if (layoutEl && /boombox|main/i.test(layoutEl.getAttribute("id") || "")) break;
     }
 
     if (layoutEl) {
       let bg = layoutEl.getAttribute("background");
       // If the plain background bitmap is missing from the zip, fall back
       // to alphabackground (Nebular-style skins ship the alpha image).
-      if (bg && !findPath(pathMap, imgFile(bg) || "")) {
+      if (bg && !resolveImageRef(bg)) {
         const ab = layoutEl.getAttribute("alphabackground");
-        if (ab && findPath(pathMap, imgFile(ab) || "")) bg = ab;
+        if (ab && resolveImageRef(ab)) bg = ab;
       }
-      const { w: lw, h: lh } = layoutSize(layoutEl);
+      const { w: lw, h: lh } = await layoutSize(layoutEl);
       layout = {
         id: layoutEl.getAttribute("id"), w: lw, h: lh,
-        background: bg, backgroundFile: bg ? imgFile(bg) : null,
+        background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
         backgroundSize: null, note: "Layout lấy từ <layout> trong XML."
       };
       if (bg) {
-        const s = await pngSize(zip, pathMap, imgFile(bg));
+        const s = await pngSize(zip, pathMap, resolveImageRef(bg));
         if (s) layout.backgroundSize = s;
       }
       for (const child of elChildren(layoutEl)) {
@@ -438,6 +503,21 @@ const SkinLoader = (() => {
       for (const l of layers) {
         const [w, h] = await bitmapSize(l._imageId);
         l.w = w; l.h = h;
+      }
+      // Play/Pause sharing one spot (DDTank: both at 156,217, a MAKI
+      // script swaps them in Winamp). Rendered as two stacked divs the
+      // Pause one would cover Play and make it unclickable — merge them
+      // into one toggle button; the renderer swaps the icon while playing.
+      const playBtn = buttons.find(b => b.action === "PLAY");
+      const pauseIdx = buttons.findIndex(b => b.action === "PAUSE" && playBtn &&
+        b.x === playBtn.x && b.y === playBtn.y);
+      if (pauseIdx >= 0) {
+        const pauseBtn = buttons[pauseIdx];
+        playBtn.pauseImage = pauseBtn.image;
+        playBtn.pauseFile = pauseBtn.imageFile;
+        playBtn.mergedPause = true;
+        buttons.splice(pauseIdx, 1);
+        report.notes.push("gộp nút Play/Pause cùng vị trí (" + playBtn.x + "," + playBtn.y + ") thành 1 nút chuyển đổi");
       }
     } else {
       // --- ClassicPro fallback (AyonPlayer): no <layout> in the skin ---
