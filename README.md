@@ -1,19 +1,103 @@
-# Amp v7.1 — Winamp Modern (.wal) + Classic (.wsz) trong một trình
+# Amp v7.3 — Winamp Modern (.wal) + Classic (.wsz) trong một trình
 
 Amp là trình phát nhạc web nạp skin Winamp trực tiếp từ file gốc của skin,
-vẽ bằng HTML/CSS theo đúng kích thước ảnh trong skin. v7.1 sửa 13 mục theo
-báo lỗi của bạn trên điện thoại thật (test v7 ngày 1–2/11), giữ nguyên mọi
-tính năng v7.
+vẽ bằng HTML/CSS theo đúng kích thước ảnh trong skin. v7.3 sửa 2 mục theo
+báo lỗi của bạn trên điện thoại thật (test v7.2 ngày 2/11), giữ nguyên mọi
+tính năng v7.2. Boot JS 156.204 byte (inline 89.447 + loader 66.757),
+không ghi chú trong code, thư viện qua CDN (JSZip, hls.js).
 
 ## Mở trang
 
 Mở `index.html`. Skin mặc định là WinampModern566.wal (skin Modern gốc của
 Winamp 5.66). Bấm **Nạp skin** để chọn file `.wal`, `.zip` hoặc `.wsz` trên máy.
 Kéo-thả file skin vào trang cũng được. Skin đã nạp được lưu vào bộ nhớ đệm
-(IndexedDB) để lần sau mở nhanh, không tải lại. **Mới ở v7.1:** khóa bộ nhớ
-đệm giờ gắn với phiên bản loader (`tên file|7.1`) nên lên bản mới là parse
-lại skin từ đầu — bản v7 cũ dùng khóa `|7` nên parse cũ không còn dùng được
-nữa (trước đây lên bản mới vẫn đọc nhầm parse cũ đã lưu).
+(IndexedDB) để lần sau mở nhanh, không tải lại. Khóa bộ nhớ đệm gắn với
+phiên bản loader (`tên file|7.3`) nên lên bản mới là parse lại skin từ đầu
+— bản v7.1 dùng khóa `|7.1` nên parse cũ không còn dùng được nữa (trước
+đây lên bản mới vẫn đọc nhầm parse cũ đã lưu).
+
+## Mới ở v7.3 (theo báo lỗi trên điện thoại thật)
+
+1. **Chữ trong bảng thông báo (notifier) không còn bị cắt.** Bấm play thì
+   bảng hiện tên kênh/nghệ sĩ bị cắt thành từng mảnh ("Năng", "ục tiế…")
+   vì nhóm chữ của notifier trong skin chỉ rộng 33px (XML `x=75, w=-95
+   relatw=1` trong cửa sổ 128px); Winamp thật có notifier.maki nới rộng
+   nhóm chữ khi không có bìa album, Amp không chạy MAKI nên chữ cuộn và
+   chỉ thấy đoạn giữa. Giờ khi notifier không có bìa album hiện (nhóm
+   albumart ẩn — trường hợp thường gặp với radio), các dòng chữ được nới
+   ra: trái 8px, rộng hết cửa sổ trừ 2 mép (128-16=112px), giữ nguyên vị
+   trí dọc/cỡ chữ. Khi có bìa thì giữ nguyên vị trí theo skin. Kiểm
+   headless 28/28: "Đà Nẵng" / "Trực tiếp" / "1/41" hiện đủ, không cuộn,
+   không trôi sau 1,2 giây.
+2. **Đổi skin thì notifier cũng đổi theo.** Trước đây đổi từ skin Modern
+   sang Classic rồi bấm play vẫn hiện notifier TRẮNG 128x80 của skin
+   Modern, vì `notEl` trong notifier.js không được reset khi đổi skin
+   (Classic không có notifier, phải hiện hộp dự phòng tối 260x64). Giờ
+   `applySkinFile` gọi `resetNotifier()` trước khi vẽ skin mới: gỡ bảng
+   cũ khỏi trang, xóa timer ẩn/timer cuộn, `notEl=null`. Bấm play sau đó
+   vẽ lại notifier của skin đang dùng: Classic → hộp tối 260x64 đủ chữ;
+   quay lại Modern → lại là notifier bạc 128x80 của skin. Kiểm headless:
+   Modern → Classic → Modern, mỗi lần chỉ có đúng 1 `#notifier` trong
+   trang. Không đổi thời gian tự ẩn (vẫn 4 giây); chuyện để lại 1 mẩu
+   thò ra hay hiện tới khi bấm vào sẽ làm ở bản sau khi bạn chọn.
+
+## Mới ở v7.2 (theo báo lỗi trên điện thoại thật)
+
+1. **Chỉ còn 1 cái EQ (sửa chính).** Mở ngăn CONFIG ở tab EQ thì cửa sổ EQ
+   độc lập tự ẩn đi (nhớ nó đang mở hay không); đóng ngăn kéo hoặc chuyển
+   sang tab Options/Color Themes thì cửa sổ EQ hiện lại đúng trạng thái cũ;
+   bấm nút EQ hoặc link "EQ đầy đủ ›" trong tab EQ thì ngăn kéo đóng lại
+   và cửa sổ EQ mở ra. Lúc nào cũng chỉ có đúng 1 bảng EQ hiện. Hai bảng
+   dùng chung một `eqState` nên thanh trượt đồng bộ. Kiểm headless 34/34
+   (xem "Kiểm tra" cuối file): mở ngăn EQ khi EQ đang mở → đúng 1 panel;
+   bấm link "EQ đầy đủ ›" → ngăn đóng, EQ hiện, đúng 1 panel; đóng ngăn
+   → EQ khôi phục; chuyển tab Options → EQ khôi phục; quay lại tab EQ
+   → EQ ẩn.
+2. **Nhãn "16K" trong cửa sổ EQ không còn bị cắt.** Nhãn tần số là lớp
+   ảnh `eq_labels.png` (kết thúc ở x=309 trong cửa sổ 318px, vừa đủ) nhưng
+   tay kéo đổi kích thước (20x20 ở góc dưới-phải) đè lên chữ "16K" (x
+   299–308). Giờ lớp nhãn nào có chữ "label" được vẽ trên tay kéo
+   (z-index 6 > 5, không chặn chuột) nên chữ hiện đủ trên vạch chéo của
+   tay kéo, tay kéo vẫn kéo được. Tất cả 11 nhãn (PREAMP, 31.5, 63, 125,
+   250, 500, 1K, 2K, 4K, 8K, 16K) đều nằm gọn trong cửa sổ.
+3. **Playlist của skin Classic (.wsz) hết lỗi.** Hai lỗi: (a) nền playlist
+   là nguyên tấm `PLEDIT.bg` (280x186) chứa cả lưới nút menu (ADD URL,
+   ADD DIR, ...) và vùng đệm xanh dương (0,198,255) nên lưới menu lộ ra
+   dưới nút thật và vệt xanh lộ ở mép phải/dưới; giờ vẽ khung playlist
+   từ 9 mảnh cắt theo bảng sprite của Webamp (góc trên/trái/phải, ô lát
+   trên/dưới/trái/phải, nền đen `#000000`) như Webamp làm, không dùng
+   nguyên tấm nữa; (b) 5 nút bấm chính (ADD/REM/SEL/MISC/LIST) trước đây
+   dùng nhầm ảnh sprite ở y=111 — đó là ảnh của các MỤC MENU (ADD URL,
+   REM ALL, INV SEL, SORT LIST, NEW LIST), không phải nút chính; nút
+   chính trong Winamp 2 không có ảnh riêng mà là mặt nút vẽ sẵn trong
+   ảnh nền thanh dưới, nên giờ 5 nút là vùng bấm trong suốt đặt đúng vị
+   trí cũ (14/43/72/101/236, y=156, 22x18), bấm vẫn chạy, nhấn xuống
+   tối đi 30% làm phản hồi. Đo headless: playlist mặc định và sau khi
+   kéo cao thêm 100px đều 0 dòng bị nút đè, 0 điểm ảnh xanh dương, 5 nút
+   không còn ảnh (mặt nút gốc hiện ra). Mục (b) đã kiểm lại bằng trình
+   duyệt thật sau khi môi trường hồi (03:09–03:11) và kiểm lại ở v7.3
+   (xem "Kiểm tra").
+4. **Ngăn CONFIG trượt đúng chiều.** Trước đây ngăn trượt LÊN từ dưới
+   vào ("từ ngoài vào trong"). Giờ ngăn trượt XUỐNG từ sau cửa sổ chính
+   ra ("từ trong ra ngoài"): mở thì từ translateY(-100%) về 0, đóng thì
+   ngược lại rồi mới ẩn. Ngăn xếp DƯỚI cửa sổ chính (z-index 1 < 2) nên
+   lúc trượt không bao giờ che cửa sổ chính, nút CONFIG luôn nhìn thấy
+   và bấm được trong suốt lúc mở/đóng và sau khi thụt vào. Kiểm headless:
+   lúc mở, mép trên của ngăn bắt đầu tại/trên mép dưới cửa sổ chính rồi
+   đi xuống tới đúng vị trí; lúc đóng, ngăn đi lên thấy rõ rồi mới ẩn;
+   `elementFromPoint` tại nút CONFIG luôn trả về nút bấm trong suốt quá
+   trình.
+5. **Tab ngăn kéo dùng đúng ảnh tab của skin.** Trước đây 3 tab (Equalizer
+   / Options / Color Themes) là viên thuốc HTML tối chữ sáng. Giờ mỗi tab
+   vẽ bằng 3 lát ảnh thật của skin (`config_tabs.png`: lát trái 15px +
+   lát giữa căng ngang + lát phải 15px, bộ on khi tab đang mở, bộ off khi
+   không), chữ vẽ bằng font bitmap nhỏ của skin, màu chữ tối
+   (`drawer.color.text.dark`, đen) trên nền bạc, đúng vị trí x=11 trong
+   tab 19px, chiều rộng theo độ dài chữ. Hàng tab nằm sát đáy ngăn (cách
+   5px), link "EQ đầy đủ ›" vẫn ở góc phải. Skin nào không có ảnh tab
+   thì giữ viên thuốc HTML cũ. Kiểm headless: 3 tab đủ 3 lát, tab đang
+   mở dùng lát on, tab kia dùng lát off, bấm tab đổi cả nội dung lẫn lát
+   ảnh; chữ tab đọc được bằng font bitmap của skin.
 
 ## Mới ở v7.1 (theo báo lỗi trên điện thoại thật)
 
@@ -253,6 +337,10 @@ theo nhạc như ảnh bạn gửi.
   (kênh hiện thẳng) và ML có file gắn thẻ (mở cấp).
 - `proof-v71-durations.png` — playlist có cột thời lượng.
 - `proof-v71-play-lit.png` — nút Play sáng lúc đang phát.
+- `proof-v73-notifier-modern.png` — notifier skin Modern: "1/41",
+  "Đà Nẵng", "Trực tiếp" hiện đủ, không cắt.
+- `proof-v73-notifier-classic.png` — notifier khi đổi sang Classic:
+  hộp tối 260x64, "Đà Nẵng" / "Trực tiếp" hiện đủ.
 
 ## Kết quả từng skin
 
@@ -284,4 +372,62 @@ theo nhạc như ảnh bạn gửi.
 - Menu File / Play / ... trên thanh menu vẫn là hình trang trí.
 - Bật EQ trên đài radio thì đèn ON cập nhật chậm vài giây (do phải chờ
   gắn lại luồng HLS) — tiếng vẫn đổi đúng, chỉ đèn báo chậm.
-- Chưa test trên điện thoại thật — cần bạn test lại các mục v7.1 trên.
+- Chưa test trên điện thoại thật — cần bạn test lại các mục v7.3 trên
+  (notifier hiện đủ chữ chưa, đổi sang Classic rồi bấm play có còn hiện
+  notifier trắng của Modern không) và các mục v7.2 còn lại (2 cái EQ,
+  nhãn 16K, chiều trượt ngăn kéo, tab bạc).
+- Nút playlist Classic (vùng bấm trong suốt) đã kiểm bằng trình duyệt
+  thật ở v7.2/v7.3 nhưng chưa bấm thử trên máy thật: bấm ADD/REM/SEL/
+  MISC/LIST xem menu có mở không, mặt nút có hiện đúng không.
+
+## Kiểm tra (headless, Chrome 123)
+
+Chạy kiểm tra đầy đủ `check72.js` (34 mục: boot, 5 mục sửa v7.2, hồi quy
+v7.1) bằng Chrome headless + máy chủ local, thư viện CDN được chặn và
+phục vụ từ bản local: **34/34 PASS** — gồm 2 EQ loại trừ nhau, nhãn 16K,
+playlist Classic (khung 9 mảnh, 0 điểm xanh, list không bị nút đè, ở cỡ
+mặc định và sau khi kéo cao +100px), trượt ngăn kéo, tab bạc 3 lát, khóa
+cache `|7.2`, nút CONFIG. Kiểm tra bằng pixel: playlist Classic 0 điểm
+ảnh xanh (0,198,255); tab bạc có hơn 10.000 điểm ảnh sáng ở nửa dưới.
+Sau lần kiểm đó, môi trường làm việc bị lỗi (Chrome mới không khởi động
+được renderer, tiến trình con không ghi được file) nên mục 3(b) — 5 nút
+playlist Classic thành vùng bấm không ảnh — lúc đó chỉ mới kiểm bằng đọc
+code. Môi trường hồi lại sau khi máy chủ khởi động lại (03:09): đã chạy
+lại kiểm tra tập trung cho mục 3(b) bằng trình duyệt thật: 5 nút không
+ảnh, đúng vị trí skin (14/43/72/101/236, y=156, 22x18; trên màn hình đo
+được đã nhân tỉ lệ hiển thị), đúng tác vụ PE_ADD/PE_REM/PE_SEL/PE_MISC/
+PE_LIST, cửa sổ không còn nền nguyên tấm, khung 9 mảnh + nền riêng của
+vùng danh sách, list không bị nút đè ở cỡ mặc định và sau khi kéo cao
++100px; mục 1 (2 EQ loại trừ nhau) và boot cũng đạt lại. Ảnh bằng chứng
+trong thư mục `proof/` hiện chỉ còn 2 ảnh playlist Classic chụp lại sau
+khi sửa 3(b) (mặc định + kéo cao); 4 ảnh kia (ngăn EQ, tab bạc, EQ 16K,
+midopen) đã kiểm đạt ở lần 34/34 nhưng file ảnh mất khi máy chủ khởi
+động lại.
+
+Chạy kiểm tra `check73.js` (28 mục: boot, 2 mục sửa v7.3, hồi quy v7.2)
+bằng Chrome headless + máy chủ local, thư viện CDN được chặn và phục vụ
+từ bản local: **28/28 PASS**. Notifier Modern: `SKIN.notifier.listRect`
+null (không có bìa → đi đường nới rộng), 5 dòng chữ đều trái 8px rộng
+112px, "Đà Nẵng" / "Trực tiếp" / "1/41" hiện đủ không cuộn, không trôi
+sau 1,2 giây. Đổi sang Classic: `notifier: null`, `resetNotifier` có
+mặt, đúng 1 `#notifier` trong trang, hộp dự phòng tối đúng 260x64
+(`box-sizing: border-box`), chữ đủ. Quay lại Modern: lại là notifier
+bạc 128x80, chữ vẫn rộng đủ. Hồi quy: ngăn EQ loại trừ nhau, playlist
+Classic 5 nút không ảnh đúng vị trí/tác vụ, khóa cache `|7.3`. Ảnh bằng
+chứng: `proof-v73-notifier-modern.png`, `proof-v73-notifier-classic.png`
+trong thư mục `proof/`.
+
+## Đóng gói
+
+Zip `amp-v7-3.zip` chỉ chứa 18 file chạy (không kèm ảnh bằng chứng):
+`index.html`, `skin-loader.js`, `drawer.js`, `eq.js`, `playlist.js`,
+`classic-skin.js`, `about.js`, `albumart.js`, `avs.js`, `ml.js`,
+`notifier.js`, `remote.js`, `video.js`, `radio.m3u`, `base-2.91.wsz`,
+`blakk.zip`, `winampmodern566.wal`, `README.md`. Ảnh bằng chứng ở trong
+thư mục `proof/` của thư mục bản này, không có trong zip. Cách đóng gói
+(chạy từ thư mục bản này):
+`zip amp-v7-3.zip index.html skin-loader.js drawer.js eq.js playlist.js
+classic-skin.js about.js albumart.js avs.js ml.js notifier.js remote.js
+video.js radio.m3u base-2.91.wsz blakk.zip winampmodern566.wal
+README.md && unzip -t amp-v7-3.zip && ln -sf "$PWD/amp-v7-3.zip"
+~/workspace/your_files/amp-v7-3.zip`.

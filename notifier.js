@@ -26,6 +26,13 @@ function hideNotifier(){
   if (notEl) notEl.style.display = "none";
   if (notHideTimer) { clearTimeout(notHideTimer); notHideTimer = null; }
 }
+function resetNotifier(){
+  stopNotifierScroll();
+  if (notHideTimer) { clearTimeout(notHideTimer); notHideTimer = null; }
+  if (notEl) { notEl.remove(); notEl = null; }
+  notTexts = [];
+}
+window.resetNotifier = resetNotifier;
 function showNotifier(title, artist){
   if (!SKIN) return;
   ensureNotifierJs().then(async () => {
@@ -98,11 +105,13 @@ async function buildNotifierWindow(skin, res){
       if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
     }
     notTexts = [];
+    const wide = !nt.listRect;
     for (const t of nt.texts) {
       const el = document.createElement("div");
       el.className = "nt";
-      el.style.left = t.x + "px"; el.style.top = t.y + "px";
-      el.style.width = (t.w || 60) + "px"; el.style.height = (t.h || 12) + "px";
+      if (wide) { el.style.left = "8px"; el.style.width = (nt.w - 16) + "px"; }
+      else { el.style.left = t.x + "px"; el.style.width = (t.w || 60) + "px"; }
+      el.style.top = t.y + "px"; el.style.height = (t.h || 12) + "px";
       el.style.fontSize = (t.fontsize ? Math.min(13, +t.fontsize) : 11) + "px";
       el.style.lineHeight = (t.h || 12) + "px";
       el.textContent = compName(t.default || "", (skin.skin && skin.skin.name) || "");
@@ -112,6 +121,7 @@ async function buildNotifierWindow(skin, res){
     for (const b of nt.buttons) await buildButton(b, win, res, onNotifierButton);
   } else {
     win.style.width = "260px"; win.style.height = "64px";
+    win.style.boxSizing = "border-box";
     win.style.background = "#1c2733"; win.style.border = "1px solid #557";
     win.style.borderRadius = "6px"; win.style.padding = "8px 10px";
     const t1 = document.createElement("div");

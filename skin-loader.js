@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "7.2";
+  const LOADER_VERSION = "7.3";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {

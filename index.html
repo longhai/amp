@@ -11,7 +11,7 @@
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=7.2"></script>
+<script defer src="skin-loader.js?v=7.3"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -141,7 +141,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v7.2 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
+<h1><b id="skinname">WinampModern566</b> — Amp v7.3 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
 <div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <div id="panel">
@@ -184,7 +184,7 @@ let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "7.2";
+const EXPECTED_LOADER_VERSION = "7.3";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -495,14 +495,14 @@ let curRes = null;
 let eqJsPromise = null, plJsPromise = null;
 let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
 let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
-function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=6"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.2"); return videoJsPromise; }
-function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=6"); return avsJsPromise; }
-function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=6"); return aaJsPromise; }
-function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=6"); return aboutJsPromise; }
-function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=6"); return drawerJsPromise; }
-function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=6"); return remoteJsPromise; }
-function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=6"); return notifierJsPromise; }
+function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=7.3"); return mlJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.3"); return videoJsPromise; }
+function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=7.3"); return avsJsPromise; }
+function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=7.3"); return aaJsPromise; }
+function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=7.3"); return aboutJsPromise; }
+function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=7.3"); return drawerJsPromise; }
+function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=7.3"); return remoteJsPromise; }
+function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=7.3"); return notifierJsPromise; }
 async function ensureMlWindow(){
   if (mlWin) return mlWin;
   await ensureMlJs();
@@ -580,16 +580,16 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.2");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.3");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.2");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.3");
   return plJsPromise;
 }
 let classicJsPromise = null;
 function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.2");
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.3");
   return classicJsPromise;
 }
 async function detectSkinKind(file){
@@ -1474,6 +1474,7 @@ async function applySkinFile(file){
       }
     }
     setStatus("Đang đọc skin: " + file.name + "… (đang vẽ giao diện)");
+    if (window.resetNotifier) window.resetNotifier();
     const built = await buildSkinInto(res.skin, res.resolve);
     await new Promise(r => setTimeout(r, 0));
     stage.replaceChildren(built.main);
