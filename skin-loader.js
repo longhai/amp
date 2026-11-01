@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "7";
+  const LOADER_VERSION = "7.1";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -399,10 +399,8 @@ const SkinLoader = (() => {
           ? rootRel
           : (findPath(pathMap, normPath(dirOf(path), f)) || rootRel) };
         if (b.getAttribute("x") !== null) {
-          entry.crop = {
-            x: intAttr(b, "x", 0), y: intAttr(b, "y", 0),
-            w: intAttr(b, "w", 0), h: intAttr(b, "h", 0)
-          };
+          const cw = intAttr(b, "w", 0), ch = intAttr(b, "h", 0);
+          if (cw > 0 && ch > 0) entry.crop = { x: intAttr(b, "x", 0), y: intAttr(b, "y", 0), w: cw, h: ch };
         }
         bitmaps[id] = entry;
       }
@@ -1093,7 +1091,7 @@ const SkinLoader = (() => {
         if (bg && !resolveImageRef(bg)) bg = null;
         walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: true, keepFrameClose: true });
         await fillSizes(out);
-        if (out.frame) await fillSizes(out.frame);
+        if (out.frame) { await fillSizes(out.frame); layoutMenuLabels(out.frame); }
         mergePlayPause(out);
         const win = winFromOut(out, sz.w, sz.h, bg, bg ? resolveImageRef(bg) : null,
           found.container.getAttribute("default_visible") !== "0",
@@ -1167,6 +1165,7 @@ const SkinLoader = (() => {
         if (!gd) return null;
         const w = layout.w, h = intAttr(gd, "h", 129) || 129;
         const shell = newOut();
+        const contentPos = {};
         const items = resolveGroup("player.normal.drawer", w, h);
         for (const { el, x, y } of items) {
           const id = el.getAttribute("id") || "";
@@ -1174,6 +1173,7 @@ const SkinLoader = (() => {
             for (const c of resolveGroup("player.normal.drawer.content", 326, 127)) {
               const cid = c.el.getAttribute("id") || "";
               if (cid === "config.tabs") continue;
+              if (cid === "player.normal.drawer.eq" || cid === "player.normal.drawer.options" || cid === "player.normal.drawer.colorthemes") contentPos[cid.split(".").pop()] = { x: c.x + x, y: c.y + y };
               if (/player\.normal\.drawer\.(eq|options|colorthemes)$/.test(cid)) continue;
               dispatchEl(c.el, c.x + x, c.y + y, 0, 326, 127, shell, {});
             }
@@ -1210,7 +1210,8 @@ const SkinLoader = (() => {
           const cout = newOut();
           walkGroupChildren(resolveGroup(cgid, cw, ch), 0, 0, 0, cw, ch, cout, {});
           await fillSizes(cout);
-          contents[key] = { w: cw, h: ch, layers: cout.layers, buttons: cout.buttons,
+          contents[key] = { w: cw, h: ch, x: (contentPos[key] || {}).x || 0, y: (contentPos[key] || {}).y || 0,
+            layers: cout.layers, buttons: cout.buttons,
             sliders: cout.sliders, texts: cout.texts, vis: cout.vis,
             backgrounds: cout.backgrounds, listRect: cout.listRects[0] || null };
         }

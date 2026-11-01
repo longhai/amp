@@ -160,12 +160,16 @@ function setEQOn(on){
   return run;
 }
 
-let eqToggleBtns = [], eqSliderEls = [];
+let eqToggleBtns = [], eqSliderEls = [], drawerEqSliderEls = [];
+function refreshEQSliders(){
+  for (const sl of eqSliderEls) sl.place();
+  for (const sl of drawerEqSliderEls) sl.place();
+}
 function isEqFillLayer(lay){
   const img = (lay.image || "").toLowerCase();
   return img.includes("full");
 }
-async function buildEQSlider(s, bandIndex, win, res, eq){
+async function buildEQSlider(s, bandIndex, win, res, eq, isDrawer){
   const track = document.createElement("div");
   track.className = "eqsl";
   track.style.left = s.x + "px"; track.style.top = s.y + "px";
@@ -230,7 +234,7 @@ async function buildEQSlider(s, bandIndex, win, res, eq){
     if (bandIndex < 0) eqState.preamp = v; else eqState.bands[bandIndex] = v;
     saveEQState();
     if (eqState.on) applyEQGains();
-    place();
+    refreshEQSliders();
     eqStateHook();
   };
   track.addEventListener("pointerdown", e => {
@@ -250,7 +254,7 @@ async function buildEQSlider(s, bandIndex, win, res, eq){
   });
   win.appendChild(track);
   place();
-  eqSliderEls.push({ bandIndex, place, setVal });
+  (isDrawer ? drawerEqSliderEls : eqSliderEls).push({ bandIndex, place, setVal });
 }
 function applyEQPreset(name){
   const p = EQ_PRESETS[name]; if (!p) return;
@@ -258,7 +262,7 @@ function applyEQPreset(name){
   eqState.bands = p.bands.slice();
   saveEQState();
   if (eqState.on) applyEQGains();
-  for (const sl of eqSliderEls) sl.place();
+  refreshEQSliders();
   eqStateHook();
   setStatus("EQ preset: " + name);
 }
@@ -290,8 +294,17 @@ async function buildEQWindow(skin, res){
     const sz = getWinSize("eq", eq.w, eq.h);
     win.dataset.w = sz.w; win.dataset.h = sz.h;
     win.style.width = sz.w + "px"; win.style.height = sz.h + "px";
+    if (eq.backgroundFile) {
+      const bg = await resolveImg(res, eq.background, eq.backgroundFile);
+      if (bg) {
+        win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
+        win.style.backgroundSize = sz.w + "px " + sz.h + "px";
+        win._bgImg = true;
+      }
+    }
     for (const lay of eq.layers) {
       if (isEqFillLayer(lay)) continue;
+      if (eq.background && lay.image === eq.background) continue;
       if (!lay.imageFile) continue;
       const src = await resolveImg(res, lay.image, lay.imageFile);
       if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
@@ -346,7 +359,7 @@ async function buildEQWindow(skin, res){
   return win;
 }
 function updateEQToggleVisual(){
-  const all = eqToggleBtns.concat((SKIN && SKIN.buttons || []).filter(b => b.action === "EQ_TOGGLE" && b._img && eqToggleBtns.indexOf(b) < 0));
+  const all = eqToggleBtns.concat((SKIN && SKIN.buttons || []).filter(b => b.action === "EQ_TOGGLE" && b._img && eqToggleBtns.indexOf(b) < 0)).concat(window.drawerEqToggleBtns || []);
   for (const b of all) {
     if (!b._img) continue;
     b._img.src = b._base ? b._base() : b._src;
@@ -364,6 +377,7 @@ async function onEQButton(b){
   else if (a === "MINIMIZE") toggleWindow("eq");
 }
 
+let visState = { disp: null, peak: null, peakFall: null };
 function drawVis(){
   requestAnimationFrame(drawVis);
   if (!visCanvas || !visCtx) return;
@@ -376,13 +390,8 @@ function drawVis(){
   an.getByteFrequencyData(data);
   const w = visCanvas.width, h = visCanvas.height;
   visCtx.clearRect(0, 0, w, h);
-  const bars = 24, bw = w / bars;
-  for (let i = 0; i < bars; i++) {
-    const v = data[Math.floor(i * data.length / bars)] / 255;
-    const bh = Math.max(1, v * h);
-    visCtx.fillStyle = v > 0.75 ? "#e33" : v > 0.5 ? "#ec3" : "#4c4";
-    visCtx.fillRect(i * bw + 1, h - bh, bw - 2, bh);
-  }
+  const r = visRamp();
+  paintVisBars(visCtx, data, w, h, visState, 24, r.ramp, r.peak);
   visCanvas._hadVis = true;
 }
 requestAnimationFrame(drawVis);

@@ -1,5 +1,5 @@
 "use strict";
-let avsCanvas = null, avsCtx = null, avsRaf = null, avsMode = 0;
+let avsCanvas = null, avsCtx = null, avsRaf = null, avsMode = 0, avsState = { disp: null, peak: null, peakFall: null };
 const AVS_COLORS = [["#4c4", "#ec3", "#e33"], ["#6cf", "#36c", "#c6f"], ["#f80", "#fc0", "#f40"]];
 function onAVSButton(b){
   const a = b.action;
@@ -21,13 +21,11 @@ function drawAVS(){
   }
   const data = new Uint8Array(an.frequencyBinCount);
   an.getByteFrequencyData(data);
-  const bars = 32, bw = w / bars, cols = AVS_COLORS[avsMode];
-  for (let i = 0; i < bars; i++) {
-    const v = data[Math.floor(i * data.length / bars)] / 255;
-    const bh = Math.max(1, v * h);
-    avsCtx.fillStyle = v > 0.75 ? cols[2] : v > 0.5 ? cols[1] : cols[0];
-    avsCtx.fillRect(i * bw + 1, h - bh, bw - 2, bh);
-  }
+  const bars = 32;
+  let ramp, peakColor;
+  if (avsMode === 0) { const r = visRamp(); ramp = r.ramp; peakColor = r.peak; }
+  else { const c = AVS_COLORS[avsMode]; ramp = [[0, c[2]], [0.5, c[1]], [1, c[0]]]; peakColor = "#ffffff"; }
+  paintVisBars(avsCtx, data, w, h, avsState, bars, ramp, peakColor);
 }
 async function openAVSMonitor(){
   visMonitor = true;
@@ -80,12 +78,18 @@ async function buildAVSWindow(skin, res){
       if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
     }
     let r = null;
-    if (av.listRect && av.listRect.w > 20 && av.listRect.h > 20) r = av.listRect;
-    else if (av.vis && av.vis[0]) r = { x: av.vis[0].x, y: av.vis[0].y, w: av.vis[0].w || 72, h: av.vis[0].h || 25 };
+    let rNative = false;
+    if (av.listRect && av.listRect.w > 20 && av.listRect.h > 20) { r = av.listRect; rNative = true; }
+    else if (av.vis && av.vis[0]) { r = { x: av.vis[0].x, y: av.vis[0].y, w: av.vis[0].w || 72, h: av.vis[0].h || 25 }; rNative = true; }
     else r = { x: 6, y: 24, w: sz.w - 12, h: sz.h - 30 };
     mkCanvas(r);
     win._flexInsetR = sz.w - (r.x + r.w); win._flexInsetB = sz.h - (r.y + r.h);
     for (const b of av.buttons) await buildButton(b, win, res, onAVSButton);
+    if (rNative) {
+      win._pin = buildPinRecord(win, av.w, av.h, r);
+      if (sz.h < win._pin.minH) { sz.h = win._pin.minH; win.dataset.h = sz.h; win.style.height = sz.h + "px"; }
+      applyWinLayout(win, sz.w, sz.h);
+    }
   } else {
     const sz = getWinSize("avs", 354, 200);
     win.dataset.w = sz.w; win.dataset.h = sz.h;

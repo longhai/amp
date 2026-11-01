@@ -11,7 +11,7 @@
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=7"></script>
+<script defer src="skin-loader.js?v=7.1"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -75,11 +75,18 @@
     text-align:left;scrollbar-width:thin;}
   .eqlist .row{padding:0 6px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;cursor:pointer;}
+  .eqlist .row.plrow{display:flex;align-items:baseline;}
+  .eqlist .row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .eqlist .row .dur{flex:none;margin-left:8px;color:#888;}
+  .eqlist .row.cur .dur{color:#cde;}
   .eqlist .row.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
   .eqlist .row.sel{background:#2c4a6a;color:#fff;}
   .resize-grip{position:absolute;right:0;bottom:0;width:20px;height:20px;
     cursor:nwse-resize;touch-action:none;z-index:5;
     background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.65) 50%,rgba(255,255,255,.65) 60%,transparent 60%,transparent 70%,rgba(255,255,255,.65) 70%,rgba(255,255,255,.65) 80%,transparent 80%);}
+  #confighit{position:absolute;cursor:pointer;z-index:6;background:transparent;}
+  #confighit:hover{background:rgba(255,255,255,.10);}
+  #confighit:active{background:rgba(255,255,255,.22);}
   .eqlist .row .num{color:#888;margin-right:6px;}
   .eqlist .row.cur .num{color:#cde;}
   .plfallback{background:#181818;border:1px solid #333;}
@@ -131,7 +138,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v7 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
+<h1><b id="skinname">WinampModern566</b> — Amp v7.1 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
 <div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <div id="panel">
@@ -166,13 +173,15 @@ let hls = null, failCount = 0, failTimer = null, playing = false;
 let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
 let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
 let fileBlobURL = null;
+let fileBlob = null, fileSize = 0, fileSampleRate = 0;
+let siBitrate = null, siFreq = null;
 let plItems = [];
 let plVisible = null, eqVisible = null;
 let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "7";
+const EXPECTED_LOADER_VERSION = "7.1";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -347,15 +356,20 @@ async function drawBitmapFontText(t, font, skinName){
   const img = await bitmapFontImage(font);
   if (!img) return null;
   const text = compName(t.default || "", skinName || "WINAMP");
-  const cw = font.charwidth, ch = font.charheight;
-  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
   const cv = document.createElement("canvas");
   cv.className = "wtext";
+  cv.style.left = t.x + "px"; cv.style.top = t.y + "px";
+  paintBitmapText(cv, img, font, text);
+  return cv;
+}
+function paintBitmapText(cv, img, font, text){
+  const cw = font.charwidth, ch = font.charheight;
+  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
   cv.width = Math.max(1, text.length * cw);
   cv.height = ch;
-  cv.style.left = t.x + "px"; cv.style.top = t.y + "px";
   cv.style.width = cv.width + "px"; cv.style.height = ch + "px";
   const cx = cv.getContext("2d");
+  cx.clearRect(0, 0, cv.width, cv.height);
   for (let i = 0; i < text.length; i++) {
     let idx = bitmapCharIndex(font, text[i]);
     if (idx < 0) idx = font.charset.indexOf(" ");
@@ -365,7 +379,31 @@ async function drawBitmapFontText(t, font, skinName){
     else { col = idx; rowPx = (font.glyphRow || 0) * ch; }
     cx.drawImage(img, col * cw, rowPx, cw, ch, i * cw, 0, cw, ch);
   }
-  return cv;
+}
+const VISCLASSIC = ["rgb(239,49,16)","rgb(206,41,16)","rgb(214,90,0)","rgb(214,102,0)","rgb(214,115,0)","rgb(198,123,8)","rgb(222,165,24)","rgb(214,181,33)","rgb(189,222,41)","rgb(148,222,33)","rgb(41,206,16)","rgb(50,190,16)","rgb(57,181,16)","rgb(49,156,8)","rgb(41,148,0)","rgb(24,132,8)"];
+function visRamp(){
+  const vc = (typeof SKIN !== "undefined" && SKIN && SKIN.visColors) || null;
+  if (vc && vc.length >= 24) return { ramp: vc.slice(2, 18), peak: vc[23] || "rgb(150,150,150)" };
+  return { ramp: VISCLASSIC, peak: "rgb(150,150,150)" };
+}
+function paintVisBars(ctx, data, w, h, st, bars, ramp, peakColor){
+  if (!st.disp || st.disp.length !== bars) { st.disp = new Array(bars).fill(0); st.peak = new Array(bars).fill(0); st.peakFall = new Array(bars).fill(0); }
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  if (typeof ramp[0] === "string") { for (let i = 0; i < ramp.length; i++) g.addColorStop(i / (ramp.length - 1), ramp[i]); }
+  else { for (const s of ramp) g.addColorStop(s[0], s[1]); }
+  const bw = w / bars;
+  for (let i = 0; i < bars; i++) {
+    const v = data[Math.floor(i * data.length / bars)] / 255;
+    const target = v * h;
+    let d = Math.max(target, st.disp[i] - h * 0.05);
+    st.disp[i] = d;
+    let pk = st.peak[i];
+    if (target > pk) { pk = target; st.peakFall[i] = 0.5; }
+    else { st.peakFall[i] *= 1.12; pk -= st.peakFall[i]; if (pk < 0) pk = 0; }
+    st.peak[i] = pk;
+    if (d >= 1) { ctx.fillStyle = g; ctx.fillRect(i * bw + 1, h - d, bw - 2, d); }
+    if (pk > 2) { ctx.fillStyle = peakColor; ctx.fillRect(i * bw + 1, h - pk - 2, bw - 2, 2); }
+  }
 }
 setInterval(updateTimerDisplay, 250);
 </script>
@@ -455,7 +493,7 @@ let eqJsPromise = null, plJsPromise = null;
 let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
 let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
 function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=6"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7"); return videoJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.1"); return videoJsPromise; }
 function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=6"); return avsJsPromise; }
 function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=6"); return aaJsPromise; }
 function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=6"); return aboutJsPromise; }
@@ -539,16 +577,16 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.1");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.1");
   return plJsPromise;
 }
 let classicJsPromise = null;
 function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7");
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.1");
   return classicJsPromise;
 }
 async function detectSkinKind(file){
@@ -602,6 +640,64 @@ function saveWinSize(kind, w, h){
     localStorage.setItem("amp-winsize-v5.1", JSON.stringify(all));
   } catch (e) {}
 }
+function buildPinRecord(win, nativeW, nativeH, rect){
+  const contentBottom = rect.y + rect.h;
+  const els = [];
+  for (const c of win.children) {
+    if (c.classList.contains("resize-grip")) continue;
+    if (c.classList.contains("aaname")) continue;
+    if (c === win._plList || c === win._flexBox) continue;
+    const top = parseFloat(c.style.top || "");
+    if (!isFinite(top)) continue;
+    const h = parseFloat(c.style.height || "") || c.offsetHeight || 0;
+    if (!h) continue;
+    const bot = top + h;
+    const x = parseFloat(c.style.left || "0") || 0;
+    const w = parseFloat(c.style.width || "") || c.offsetWidth || 0;
+    if (top >= contentBottom - 2) els.push({ el: c, mode: "move", top });
+    else if (bot > contentBottom - 2 && Math.abs(nativeH - bot) <= 2)
+      els.push({ el: c, mode: "stretch", top, h, x, w, touchL: x <= 2, touchR: nativeW - (x + w) <= 2 });
+  }
+  const moves = els.filter(e => e.mode === "move");
+  const barTop = moves.length ? Math.min(...moves.map(e => e.top)) : null;
+  const gap = barTop != null ? barTop - contentBottom : null;
+  const minH = barTop != null ? rect.y + 40 + gap + (nativeH - barTop) : 80;
+  return { nativeW, nativeH, rect, insetR: nativeW - (rect.x + rect.w), insetB: nativeH - contentBottom, els, barTop, gap, minH };
+}
+function applyWinLayout(win, w, h){
+  const p = win._pin;
+  const box = win._plList || win._flexBox;
+  if (p && box) {
+    const dy = h - p.nativeH, dw = w - p.nativeW;
+    box.style.width = Math.max(40, w - p.rect.x - p.insetR) + "px";
+    const bh = p.barTop != null ? Math.max(40, p.barTop + dy - p.gap - p.rect.y) : Math.max(40, h - p.rect.y - p.insetB);
+    box.style.height = bh + "px";
+    if (box.tagName === "CANVAS") { const cw = box.clientWidth, ch = box.clientHeight; if (cw > 0 && ch > 0) { box.width = cw; box.height = ch; } }
+    if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
+    const newContentBottom = p.rect.y + bh;
+    for (const e of p.els) {
+      if (e.mode === "move") e.el.style.top = (e.top + dy) + "px";
+      else if (e.mode === "follow") e.el.style.top = (newContentBottom - e.off) + "px";
+      else {
+        e.el.style.height = Math.max(4, e.h + dy) + "px";
+        if (e.touchL && e.touchR) e.el.style.width = Math.max(4, e.w + dw) + "px";
+        else if (e.touchR) e.el.style.left = (e.x + dw) + "px";
+        else if (!e.touchL) e.el.style.width = Math.max(4, e.w + dw) + "px";
+      }
+    }
+    return;
+  }
+  if (win._plList && win._plRect) {
+    win._plList.style.width = Math.max(40, w - win._plRect.x - (win._plInsetR || 6)) + "px";
+    win._plList.style.height = Math.max(40, h - win._plRect.y - (win._plInsetB || 6)) + "px";
+  }
+  if (win._flexBox && win._flexRect) {
+    win._flexBox.style.width = Math.max(40, w - win._flexRect.x - (win._flexInsetR || 6)) + "px";
+    win._flexBox.style.height = Math.max(40, h - win._flexRect.y - (win._flexInsetB || 6)) + "px";
+    if (win._flexBox.tagName === "CANVAS") { const cw = win._flexBox.clientWidth, ch = win._flexBox.clientHeight; if (cw > 0 && ch > 0) { win._flexBox.width = cw; win._flexBox.height = ch; } }
+    if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
+  }
+}
 function addResizeHandle(win, kind){
   const g = document.createElement("div");
   g.className = "resize-grip";
@@ -615,19 +711,10 @@ function addResizeHandle(win, kind){
     const scale = win.getBoundingClientRect().width / startW;
     const mv = ev => {
       const w = Math.min(900, Math.max(200, startW + (ev.clientX - startX) / scale));
-      const h = Math.min(800, Math.max(80, startH + (ev.clientY - startY) / scale));
+      const h = Math.min(800, Math.max(win._pin ? win._pin.minH : 80, startH + (ev.clientY - startY) / scale));
       win.dataset.w = w; win.dataset.h = h;
       win.style.width = w + "px"; win.style.height = h + "px";
-      if (win._plList && win._plRect) {
-        win._plList.style.width = Math.max(40, w - win._plRect.x - (win._plInsetR || 6)) + "px";
-        win._plList.style.height = Math.max(40, h - win._plRect.y - (win._plInsetB || 6)) + "px";
-      }
-      if (win._flexBox && win._flexRect) {
-        win._flexBox.style.width = Math.max(40, w - win._flexRect.x - (win._flexInsetR || 6)) + "px";
-        win._flexBox.style.height = Math.max(40, h - win._flexRect.y - (win._flexInsetB || 6)) + "px";
-        if (win._flexBox.tagName === "CANVAS") { win._flexBox.width = win._flexBox.clientWidth; win._flexBox.height = win._flexBox.clientHeight; }
-        if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
-      }
+      applyWinLayout(win, w, h);
       if (win._bgImg) win.style.backgroundSize = w + "px " + h + "px";
       applyScale();
     };
@@ -794,6 +881,8 @@ async function buildButton(b, container, res, onClick){
   b._downSrc = b.downImage ? await resolveImg(res, b.downImage, b.downFile) : null;
   b._pauseSrc = b.pauseImage ? await resolveImg(res, b.pauseImage, b.pauseFile) : null;
   b._activeSrc = b.activeImage ? await resolveImg(res, b.activeImage, b.activeFile) : null;
+  if (b.action === "PLAY" && !b.mergedPause) b._stateBase = () => playing ? (b._activeSrc || b._downSrc || b._src) : b._src;
+  else if (b.action === "PAUSE") b._stateBase = () => (!playing && mode === "file" && au && au.currentTime > 0) ? (b._activeSrc || b._downSrc || b._src) : b._src;
   if (!b._src) return null;
   const im = document.createElement("img");
   im.src = b._src; im.draggable = false; im.alt = "";
@@ -809,6 +898,8 @@ function updatePlayState(){
   if (!SKIN) return;
   const play = SKIN.buttons.find(b => b.action === "PLAY");
   if (play && play._img) play._img.src = play._base ? play._base() : play._src;
+  const pause = SKIN.buttons.find(b => b.action === "PAUSE");
+  if (pause && pause._img) pause._img.src = pause._base ? pause._base() : pause._src;
   const ind = SKIN.layers && SKIN.layers.find(l => l.id === "playIndicator");
   if (ind && ind._img && resolver && resolver.bitmapURL) {
     const id = playing ? "PLAYPAUS.playing" : ((mode === "file" && au && au.currentTime > 0) ? "PLAYPAUS.paused" : "PLAYPAUS.stopped");
@@ -822,6 +913,7 @@ function updatePlayState(){
 async function buildMainWindow(skin, res, win){
   const L = skin.layout;
   hiddenGroups = {};
+  siBitrate = null; siFreq = null;
   const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
   if (bgSrc) {
     win.style.backgroundImage = "url(" + JSON.stringify(bgSrc) + ")";
@@ -873,6 +965,29 @@ async function buildMainWindow(skin, res, win){
       const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h); lay._img = im; win.appendChild(im);
       const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
     }
+  }
+  const cfgLay = skin.layers.find(l => /config/i.test((l.imageFile || "") + " " + (l.image || "")));
+  if (cfgLay && skin.drawer) {
+    const hit = document.createElement("div");
+    hit.id = "confighit";
+    const hw = 40, hh = 24;
+    const cx = cfgLay.x + (cfgLay.w || 25) / 2, cy = cfgLay.y + (cfgLay.h || 5) / 2;
+    hit.style.left = Math.max(0, Math.min(L.w - hw, Math.round(cx - hw / 2))) + "px";
+    hit.style.top = Math.max(0, Math.min(L.h - hh, Math.round(cy - hh / 2))) + "px";
+    hit.style.width = hw + "px"; hit.style.height = hh + "px";
+    hit.title = "Cài đặt (Config)";
+    const cfgImg = cfgLay._img || null;
+    const press = on => {
+      if (cfgImg) { cfgImg.style.transform = on ? "translate(1px,1px)" : ""; cfgImg.style.filter = on ? "brightness(0.8)" : ""; }
+      hit.style.background = on ? "rgba(0,0,0,.15)" : "";
+    };
+    hit.addEventListener("pointerdown", () => press(true));
+    hit.addEventListener("pointerup", () => press(false));
+    hit.addEventListener("pointerleave", () => press(false));
+    hit.addEventListener("pointercancel", () => press(false));
+    hit.addEventListener("click", () => { press(false); toggleDrawer(); });
+    const hid = isHiddenEl(skin, cfgLay); if (hid) registerHidden(hid, hit);
+    win.appendChild(hit);
   }
   const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
     || skin.texts.find(t => t.display === "songname")
@@ -938,6 +1053,9 @@ async function buildMainWindow(skin, res, win){
       const cv = await drawBitmapFontText(t, tfont, skin.name);
       if (cv) {
         win.appendChild(cv);
+        const lid = (t.id || "").toLowerCase();
+        if (lid === "bitrate") siBitrate = { cv, font: tfont, def: t.default || "(___)" };
+        else if (lid === "frequency") siFreq = { cv, font: tfont, def: t.default || "(__)" };
         const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, cv);
         continue;
       }
@@ -1138,6 +1256,20 @@ function isCurrentPlItem(it){
   if (it.kind === "radio") return mode === "radio" && idx === it.ch;
   return mode === "file" && fileBlobURL === it.blobURL;
 }
+function fmtDur(s){
+  if (!isFinite(s) || s <= 0) return "";
+  const m = Math.floor(s / 60), ss = Math.floor(s % 60);
+  return m + ":" + (ss < 10 ? "0" : "") + ss;
+}
+function probeFileDuration(entry){
+  if (!entry || entry.duration > 0 || entry._durProbing) return;
+  entry._durProbing = true;
+  const a = new Audio();
+  a.preload = "metadata";
+  a.src = entry.blobURL;
+  a.addEventListener("loadedmetadata", () => { if (isFinite(a.duration) && a.duration > 0) { entry.duration = a.duration; renderPlaylist(false); } a.src = ""; }, { once: true });
+  a.addEventListener("error", () => { a.src = ""; }, { once: true });
+}
 function renderPlaylist(scrollToCur){
   if (window.refreshML) { try { window.refreshML(); } catch (e) {} }
   const list = plListEl; if (!list) return;
@@ -1146,12 +1278,17 @@ function renderPlaylist(scrollToCur){
   plItems.forEach((it, i) => {
     const row = document.createElement("div");
     const cur = isCurrentPlItem(it);
-    row.className = "row" + (cur ? " cur" : "") + (selectedPl === it ? " sel" : "");
+    row.className = "row plrow" + (cur ? " cur" : "") + (selectedPl === it ? " sel" : "");
     if (pc) {
       row.style.color = cur ? pc.current : pc.normal;
       row.style.background = (cur || selectedPl === it) ? pc.selectedBg : pc.bg;
     }
-    row.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
+    let durHtml = "";
+    if (it.kind === "file") {
+      const lf = localFiles.find(l => l.blobURL === it.blobURL);
+      if (lf && lf.duration > 0) durHtml = "<span class='dur'>" + fmtDur(lf.duration) + "</span>";
+    }
+    row.innerHTML = "<span class='num'>" + (i + 1) + ".</span><span class='nm'>" + escapeHtml(it.name) + "</span>" + durHtml;
     row.addEventListener("click", () => selectPlItem(it));
     list.appendChild(row);
   });
@@ -1225,11 +1362,12 @@ async function idbPut(key, val){
     return true;
   } catch (e) { return false; }
 }
-function skinCacheKey(name){ return name + "|7"; }
+function skinCacheKey(name){ return name + "|" + (typeof SkinLoader !== "undefined" && SkinLoader.VERSION ? SkinLoader.VERSION : EXPECTED_LOADER_VERSION); }
 async function tryCachedSkin(file){
   if (typeof SkinLoader === "undefined" || typeof SkinLoader.loadSkinFromCache !== "function") return null;
   const c = await idbGet(skinCacheKey(file.name));
   if (!c || !c.skin || !c.bitmaps || !c.files) return null;
+  if (c.version && c.version !== (SkinLoader.VERSION || EXPECTED_LOADER_VERSION)) return null;
   if (file.size && c.size && c.size !== file.size) return null;
   try {
     if (c.kind === "classic" || (c.skin && c.skin.kind === "classic")) {
@@ -1244,7 +1382,7 @@ async function cacheSkin(file, res){
   if (!res || !res.skin || !res.bitmaps || !res.files) return;
   const skinCopy = JSON.parse(JSON.stringify(res.skin));
   for (const f of Object.values(skinCopy.fonts || {})) { delete f.imageURL; delete f.imageW; delete f.imageH; }
-  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: "7", kind: res.kind || (res.skin && res.skin.kind) || "modern", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
+  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: (typeof SkinLoader !== "undefined" && SkinLoader.VERSION ? SkinLoader.VERSION : EXPECTED_LOADER_VERSION), kind: res.kind || (res.skin && res.skin.kind) || "modern", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
 }
 async function headValidate(name, cached){
   try {
@@ -1299,6 +1437,7 @@ async function applySkinFile(file){
     applyWindowVisibility();
     renderPlaylist(true);
     updateTimerDisplay();
+    updateSonginfo();
     if (window.updateEQToggleVisual) updateEQToggleVisual();
     updatePlayState();
     if (SKIN.sliders) for (const s of SKIN.sliders) if (s._placeThumb) s._placeThumb();
@@ -1614,12 +1753,14 @@ function loadChannel(i, autoplay){
   if (!channels.length) return;
   idx = ((i % channels.length) + channels.length) % channels.length;
   mode = "radio";
+  fileBlob = null; fileSize = 0; fileSampleRate = 0; updateSonginfo();
   const c = channels[idx];
   $("#chan").value = idx;
   tickerText = c.name + " — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
   setFill("seek", 0);
   setStatus("Kênh " + (idx + 1) + "/" + channels.length + ": " + c.name);
   destroyHls(); au.pause();
+  updatePlayState();
   resetTimer();
   renderPlaylist(true);
   showNotifierFor(c);
@@ -1694,6 +1835,13 @@ function bindAudio(el){
     if (mode === "file") { setStatus("File lỗi — không phát được", true); return; }
     handleFail("audio error");
   });
+  el.addEventListener("loadedmetadata", () => {
+    updateSonginfo();
+    if (mode === "file" && fileBlobURL) {
+      const lf = localFiles.find(l => l.blobURL === fileBlobURL);
+      if (lf && isFinite(el.duration) && el.duration > 0 && lf.duration !== el.duration) { lf.duration = el.duration; renderPlaylist(false); }
+    }
+  });
   el.addEventListener("timeupdate", () => {
     if (mode === "file" && isFinite(el.duration) && el.duration > 0) {
       setFill("seek", el.currentTime / el.duration);
@@ -1714,21 +1862,150 @@ document.addEventListener("pointerdown", () => {
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
 }, { passive: true });
 
+function parseAudioHeader(d){
+  if (d.length > 12 && d[0] === 0x66 && d[1] === 0x4c && d[2] === 0x61 && d[3] === 0x43) {
+    let p = 4;
+    while (p + 4 <= d.length) {
+      const last = d[p] & 0x80, type = d[p] & 0x7f, len = (d[p+1] << 16) | (d[p+2] << 8) | d[p+3];
+      if (type === 0 && len >= 18 && p + 4 + 18 <= d.length) { const q = p + 4; return (d[q+10] << 12) | (d[q+11] << 4) | (d[q+12] >> 4); }
+      if (last || len <= 0) break;
+      p += 4 + len;
+    }
+    return 0;
+  }
+  if (d.length > 12 && d[0] === 0x52 && d[1] === 0x49 && d[2] === 0x46 && d[3] === 0x46) {
+    let p = 12;
+    while (p + 8 <= d.length) {
+      const sz = d[p+4] | (d[p+5] << 8) | (d[p+6] << 16) | (d[p+7] << 24);
+      if (d[p] === 0x66 && d[p+1] === 0x6d && d[p+2] === 0x74 && d[p+3] === 0x20 && sz >= 16) return d[p+12] | (d[p+13] << 8) | (d[p+14] << 16) | (d[p+15] << 24);
+      if (sz <= 0) break;
+      p += 8 + sz;
+    }
+    return 0;
+  }
+  let s = 0;
+  if (d.length > 10 && d[0] === 0x49 && d[1] === 0x44 && d[2] === 0x33) s = 10 + (((d[6] & 0x7f) << 21) | ((d[7] & 0x7f) << 14) | ((d[8] & 0x7f) << 7) | (d[9] & 0x7f));
+  const srTable = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+  for (let i = s; i + 3 < d.length; i++) {
+    if (d[i] !== 0xff || (d[i+1] & 0xe0) !== 0xe0) continue;
+    const ver = (d[i+1] >> 3) & 3, layer = (d[i+1] >> 1) & 3, si = (d[i+2] >> 2) & 3;
+    if (ver === 1 || layer !== 1 || si === 3 || !srTable[ver]) continue;
+    return srTable[ver][si];
+  }
+  return 0;
+}
+async function updateSonginfo(){
+  if (!siBitrate && !siFreq) return;
+  let br = "", fr = "";
+  if (mode === "file" && fileSize > 0 && fileSampleRate > 0 && isFinite(au.duration) && au.duration > 0) {
+    br = String(Math.round(fileSize * 8 / au.duration / 1000));
+    fr = String(Math.round(fileSampleRate / 1000));
+  }
+  window.__songinfo = { bitrate: br, freq: fr, sampleRate: fileSampleRate, size: fileSize, duration: au.duration || 0, mode };
+  if (siBitrate) { const img = await bitmapFontImage(siBitrate.font); if (img) paintBitmapText(siBitrate.cv, img, siBitrate.font, br || siBitrate.def); }
+  if (siFreq) { const img = await bitmapFontImage(siFreq.font); if (img) paintBitmapText(siFreq.cv, img, siFreq.font, fr || siFreq.def); }
+}
+async function readFileTags(f){
+  const out = {};
+  try {
+    const head = new Uint8Array(await f.slice(0, 1048576).arrayBuffer());
+    const isFlac = head[0] === 0x66 && head[1] === 0x4C && head[2] === 0x61 && head[3] === 0x43;
+    if (isFlac) {
+      let p = 4;
+      while (p + 4 <= head.length) {
+        const last = head[p] >> 7, type = head[p] & 0x7F;
+        const len = (head[p + 1] << 16) | (head[p + 2] << 8) | head[p + 3];
+        p += 4;
+        if (type === 4 && p + len <= head.length) {
+          const dv = new DataView(head.buffer, head.byteOffset + p, len);
+          let q = 4;
+          const n = dv.getUint32(q, true); q += 4;
+          for (let i = 0; i < n && q + 4 <= len; i++) {
+            const cl = dv.getUint32(q, true); q += 4;
+            if (q + cl > len) break;
+            const s = new TextDecoder().decode(head.subarray(p + q, p + q + cl));
+            q += cl;
+            const eq = s.indexOf("=");
+            if (eq > 0) {
+              const k = s.slice(0, eq).toUpperCase(), v = s.slice(eq + 1).trim();
+              if (k === "ARTIST" && !out.artist) out.artist = v;
+              if (k === "ALBUM" && !out.album) out.album = v;
+            }
+          }
+          break;
+        }
+        p += len;
+        if (last) break;
+      }
+      return out;
+    }
+    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) {
+      const ver = head[3];
+      const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
+      let p = 10;
+      const end = Math.min(head.length, 10 + tagSize);
+      const dec = (bytes, enc) => {
+        try {
+          if (enc === 1) return new TextDecoder("utf-16").decode(bytes);
+          if (enc === 2) return new TextDecoder("utf-16be").decode(bytes);
+          if (enc === 3) return new TextDecoder().decode(bytes);
+          return new TextDecoder("iso-8859-1").decode(bytes);
+        } catch (e) { return ""; }
+      };
+      while (p + 10 <= end) {
+        const id = String.fromCharCode(head[p], head[p + 1], head[p + 2], head[p + 3]);
+        if (id === "\0\0\0\0") break;
+        const size = ver >= 4 ? ((head[p + 4] & 0x7F) << 21) | ((head[p + 5] & 0x7F) << 14) | ((head[p + 6] & 0x7F) << 7) | (head[p + 7] & 0x7F)
+          : (head[p + 4] << 24) | (head[p + 5] << 16) | (head[p + 6] << 8) | head[p + 7];
+        if (size <= 0 || p + 10 + size > head.length) break;
+        if (id === "TPE1" || id === "TALB") {
+          const v = dec(head.subarray(p + 11, p + 10 + size), head[p + 10]).replace(/\0.*$/, "").trim();
+          if (v) { if (id === "TPE1" && !out.artist) out.artist = v; if (id === "TALB" && !out.album) out.album = v; }
+        }
+        p += 10 + size;
+        if (out.artist && out.album) break;
+      }
+      if (out.artist || out.album) return out;
+    }
+    if (head.length >= 128) {
+      const tail = new Uint8Array(await f.slice(Math.max(0, f.size - 128)).arrayBuffer());
+      if (tail[0] === 0x54 && tail[1] === 0x41 && tail[2] === 0x47) {
+        const t = (a, b) => new TextDecoder("iso-8859-1").decode(tail.subarray(a, b)).replace(/\0.*$/, "").trim();
+        if (!out.artist) out.artist = t(33, 63);
+        if (!out.album) out.album = t(63, 93);
+      }
+    }
+  } catch (e) {}
+  return out;
+}
 function playLocalFile(blobURL, name){
   destroyHls();
   mode = "file"; fileName = name; fileBlobURL = blobURL;
+  const lf = localFiles.find(l => l.blobURL === blobURL);
+  fileBlob = (lf && lf.file) || null; fileSize = (lf && lf.size) || 0; fileSampleRate = 0;
   au.src = blobURL;
+  updatePlayState();
   resetTimer();
   tickerText = name; tickerNoteUntil = 0; renderTicker();
   setFill("seek", 0);
   setStatus("File local: " + name);
   renderPlaylist(true);
+  updateAlbumArtForCurrent();
+  updateSonginfo();
+  if (fileBlob) fileBlob.slice(0, 262144).arrayBuffer().then(b => { fileSampleRate = parseAudioHeader(new Uint8Array(b)); updateSonginfo(); }).catch(() => {});
   au.play().catch(() => {});
 }
 $("#filepick").addEventListener("change", e => {
   const f = e.target.files[0]; if (!f) return;
   const blobURL = URL.createObjectURL(f);
-  localFiles.push({ name: f.name, blobURL });
+  const entry = { name: f.name, blobURL, file: f, size: f.size };
+  localFiles.push(entry);
+  probeFileDuration(entry);
+  readFileTags(f).then(t => {
+    if (t.artist) entry.artist = t.artist;
+    if (t.album) entry.album = t.album;
+    if (mlWin && typeof renderML === "function") renderML();
+  });
   rebuildPlItems();
   playLocalFile(blobURL, f.name);
   e.target.value = "";
@@ -1743,6 +2020,7 @@ function onMainButton(b){
     au.pause(); try { au.currentTime = 0; } catch (e) {}
     resetTimer();
     if (mode === "file") setFill("seek", 0);
+    updatePlayState();
   }
   else if (a === "NEXT") stepPlItem(1);
   else if (a === "PREV") stepPlItem(-1);

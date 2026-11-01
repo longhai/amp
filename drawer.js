@@ -1,5 +1,6 @@
 "use strict";
 let drawerTab = "eq", drawerThemeFilter = null;
+window.drawerEqToggleBtns = [];
 function onDrawerButton(b){
   const a = b.action;
   if (a === "CLOSE") toggleDrawer();
@@ -42,11 +43,13 @@ function applySavedColorTheme(){
   if (saved) applyColorTheme(saved);
 }
 window.applySavedColorTheme = applySavedColorTheme;
-function renderDrawerTab(win){
+async function renderDrawerTab(win){
   const d = SKIN.drawer;
   const content = win._drawerContent;
   if (!content) return;
   content.innerHTML = "";
+  if (win._drawerEqPanel) { win._drawerEqPanel.remove(); win._drawerEqPanel = null; }
+  if (win._drawerEqLink) win._drawerEqLink.style.display = "none";
   const tab = d.tabs.find(t => t.name === drawerTab) || d.tabs[0];
   for (const t of d.tabs) {
     const el = win._drawerTabs[t.name];
@@ -56,28 +59,10 @@ function renderDrawerTab(win){
     el.style.fontWeight = on ? "bold" : "normal";
   }
   if (drawerTab === "eq") {
-    const c = d.contents.eq;
-    if (c) {
-      for (const lay of c.layers) {
-        if (!lay.imageFile) continue;
-        resolveImg(curRes, lay.image, lay.imageFile).then(src => {
-          if (src && drawerTab === "eq" && content.isConnected) content.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
-        });
-      }
-    }
-    const btn = document.createElement("div");
-    btn.className = "optrow";
-    btn.style.top = "0px"; btn.style.zIndex = "5"; btn.style.background = "rgba(0,0,0,.55)";
-    btn.innerHTML = "Mở cửa sổ EQ đầy đủ <span class='st'>›</span>";
-    btn.addEventListener("click", async () => { await toggleWindow("eq"); });
-    content.appendChild(btn);
-    const st = document.createElement("div");
-    st.className = "optrow";
-    st.style.top = "24px"; st.style.zIndex = "5"; st.style.background = "rgba(0,0,0,.55)";
-    st.innerHTML = "EQ: <span class='st'>" + (eqState.on ? "BẬT" : "TẮT") + "</span>";
-    st.addEventListener("click", async () => { await setEQOn(!eqState.on); renderDrawerTab(win); });
-    content.appendChild(st);
+    content.style.display = "none";
+    await renderDrawerEQTab(win);
   } else if (drawerTab === "options") {
+    content.style.display = "";
     const rows = [
       ["Repeat", () => ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode], () => {
         repeatMode = (repeatMode + 1) % 3;
@@ -99,6 +84,7 @@ function renderDrawerTab(win){
       content.appendChild(r);
     });
   } else if (drawerTab === "colorthemes") {
+    content.style.display = "";
     const presets = (SKIN.colorPresets || []);
     const list = document.createElement("div");
     list.className = "themelist";
@@ -119,6 +105,59 @@ function renderDrawerTab(win){
     }
     if (!presets.length) list.textContent = "Skin này không có bảng màu (color presets).";
     content.appendChild(list);
+  }
+}
+async function renderDrawerEQTab(win){
+  const d = SKIN.drawer, eq = d.contents && d.contents.eq;
+  const link = win._drawerEqLink;
+  if (link) link.style.display = "";
+  const bands = eq ? (eq.sliders || []).filter(s => s.action === "EQ_BAND") : [];
+  if (!eq || !bands.length) {
+    const st = document.createElement("div");
+    st.className = "optrow";
+    st.style.top = "0px"; st.style.zIndex = "5"; st.style.background = "rgba(0,0,0,.55)";
+    st.textContent = "Skin này không có EQ trong ngăn kéo";
+    win._drawerContent.style.display = "";
+    win._drawerContent.appendChild(st);
+    return;
+  }
+  try { await ensureEqJs(); } catch (e) {
+    const st = document.createElement("div");
+    st.className = "optrow";
+    st.style.top = "0px"; st.style.zIndex = "5"; st.style.background = "rgba(0,0,0,.55)";
+    st.textContent = "Không tải được EQ: " + e.message;
+    win._drawerContent.style.display = "";
+    win._drawerContent.appendChild(st);
+    return;
+  }
+  const panel = document.createElement("div");
+  panel.style.cssText = "position:absolute;left:" + (eq.x || 0) + "px;top:" + (eq.y || 0) + "px;width:" + eq.w + "px;height:" + eq.h + "px;z-index:2;";
+  win._inner.appendChild(panel);
+  win._drawerEqPanel = panel;
+  drawerEqSliderEls.length = 0;
+  window.drawerEqToggleBtns.length = 0;
+  for (const lay of eq.layers) {
+    const img = lay.image || "";
+    if (!(img.endsWith("eq.bg") || img.endsWith("eq.txtoverlay.dark") || img.endsWith("eq.txtoverlay.bright") || lay.id === "equalizer.band.label")) continue;
+    if (!lay.imageFile) continue;
+    const src = await resolveImg(curRes, lay.image, lay.imageFile);
+    if (src) panel.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+  }
+  bands.sort((a, b) => (a.param === "preamp" ? -1 : b.param === "preamp" ? 1 : (+a.param || 0) - (+b.param || 0)));
+  for (const s of bands) {
+    const bi = s.param === "preamp" ? -1 : parseInt(s.param, 10) - 1;
+    if (bi < -1 || bi > 9) continue;
+    await buildEQSlider(s, bi, panel, curRes, eq, true);
+  }
+  for (const b of eq.buttons) {
+    if (b.action !== "EQ_TOGGLE" && b.action !== "EQ_AUTO" && !(b.action === "MENU" && b.param === "presets")) continue;
+    if (!b.imageFile && !b.hoverFile && !b.downFile) continue;
+    const built = await buildButton(b, panel, curRes, onEQButton);
+    if (built && b.action === "EQ_TOGGLE") {
+      b._stateBase = () => eqState.on ? (b._activeSrc || b._downSrc || b._src) : b._src;
+      window.drawerEqToggleBtns.push(b);
+      if (b._img) b._img.src = b._base();
+    }
   }
 }
 async function buildDrawerWindow(skin, res){
@@ -158,22 +197,29 @@ async function buildDrawerWindow(skin, res){
   }
   for (const b of d.buttons) await buildButton(b, inner, res, onDrawerButton);
   const tabsEl = document.createElement("div");
-  tabsEl.style.cssText = "position:absolute;left:8px;top:4px;display:flex;gap:6px;z-index:3;";
+  tabsEl.style.cssText = "position:absolute;left:8px;bottom:5px;display:flex;gap:6px;z-index:3;";
   inner.appendChild(tabsEl);
   wrap._drawerTabs = {};
   for (const t of d.tabs) {
     const el = document.createElement("div");
     el.textContent = t.label;
     el.style.cssText = "color:#ddd;font-size:12px;padding:2px 8px;cursor:pointer;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
-    el.addEventListener("click", () => { drawerTab = t.name; renderDrawerTab(wrap); });
+    el.addEventListener("click", () => { drawerTab = t.name; renderDrawerTab(wrap).catch(e => setStatus("không mở được tab: " + e.message, true)); });
     tabsEl.appendChild(el);
     wrap._drawerTabs[t.name] = el;
   }
+  const eqLink = document.createElement("div");
+  eqLink.textContent = "EQ đầy đủ ›";
+  eqLink.style.cssText = "color:#9cf;font-size:12px;padding:2px 8px;cursor:pointer;margin-left:auto;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
+  eqLink.addEventListener("click", async () => { await toggleWindow("eq"); });
+  tabsEl.appendChild(eqLink);
+  wrap._drawerEqLink = eqLink;
+  eqLink.style.display = "none";
   const content = document.createElement("div");
-  content.style.cssText = "position:absolute;left:8px;right:8px;top:26px;bottom:8px;";
+  content.style.cssText = "position:absolute;left:8px;right:8px;top:13px;bottom:28px;overflow-y:auto;";
   inner.appendChild(content);
   wrap._drawerContent = content;
-  renderDrawerTab(wrap);
+  await renderDrawerTab(wrap);
   applySavedColorTheme();
   return wrap;
 }

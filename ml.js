@@ -8,7 +8,7 @@ function mlTree(){
     artists[artist][album].push(item);
   };
   for (const c of channels) add(c.group || "Radio", c.group || "Kênh radio", { kind: "radio", ch: channels.indexOf(c), name: c.name });
-  for (const f of localFiles) add("Không rõ", "File local", { kind: "file", name: f.name, blobURL: f.blobURL });
+  for (const f of localFiles) add(f.artist || "Không rõ", f.album || "File local", { kind: "file", name: f.name, blobURL: f.blobURL });
   return artists;
 }
 function mlCount(tree){
@@ -28,6 +28,18 @@ function renderML(winArg){
     r.addEventListener("click", fn);
     list.appendChild(r);
   };
+  const songRow = (it, i) => {
+    const cur = it.kind === "radio" ? (mode === "radio" && idx === it.ch)
+      : (mode === "file" && fileBlobURL === it.blobURL);
+    const r = document.createElement("div");
+    r.className = "row" + (cur ? " cur" : "");
+    r.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
+    r.addEventListener("click", () => {
+      if (it.kind === "radio") loadChannel(it.ch, true);
+      else playLocalFile(it.blobURL, it.name);
+    });
+    list.appendChild(r);
+  };
   if (mlState.level === "artists") {
     nav.style.display = "none";
     const names = Object.keys(tree).sort();
@@ -35,9 +47,15 @@ function renderML(winArg){
       mlState = { level: "songs", artist: null, album: null };
       renderML();
     });
-    for (const a of names) {
-      let n = 0; for (const s of Object.values(tree[a])) n += s.length;
-      row(a, n + " bài", () => { mlState = { level: "albums", artist: a, album: null }; renderML(); });
+    if (names.length === 1) {
+      let songs = [];
+      for (const s of Object.values(tree[names[0]])) songs = songs.concat(s);
+      songs.forEach((it, i) => songRow(it, i));
+    } else {
+      for (const a of names) {
+        let n = 0; for (const s of Object.values(tree[a])) n += s.length;
+        row(a, n + " bài", () => { mlState = { level: "albums", artist: a, album: null }; renderML(); });
+      }
     }
   } else if (mlState.level === "albums") {
     nav.style.display = "";
@@ -56,18 +74,7 @@ function renderML(winArg){
     } else {
       for (const a of Object.values(tree)) for (const s of Object.values(a)) songs = songs.concat(s);
     }
-    songs.forEach((it, i) => {
-      const cur = it.kind === "radio" ? (mode === "radio" && idx === it.ch)
-        : (mode === "file" && fileBlobURL === it.blobURL);
-      const r = document.createElement("div");
-      r.className = "row" + (cur ? " cur" : "");
-      r.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
-      r.addEventListener("click", () => {
-        if (it.kind === "radio") loadChannel(it.ch, true);
-        else playLocalFile(it.blobURL, it.name);
-      });
-      list.appendChild(r);
-    });
+    songs.forEach((it, i) => songRow(it, i));
   }
 }
 window.refreshML = renderML;
@@ -138,6 +145,11 @@ async function buildMLWindow(skin, res){
       win.appendChild(el);
     }
     for (const b of ml.buttons) await buildButton(b, win, res, onMLButton);
+    if (ml.listRect && ml.listRect.w > 20 && ml.listRect.h > 20) {
+      win._pin = buildPinRecord(win, ml.w, ml.h, r);
+      if (sz.h < win._pin.minH) { sz.h = win._pin.minH; win.dataset.h = sz.h; win.style.height = sz.h + "px"; }
+      applyWinLayout(win, sz.w, sz.h);
+    }
   } else {
     const sz = getWinSize("ml", 320, 300);
     win.dataset.w = sz.w; win.dataset.h = sz.h;

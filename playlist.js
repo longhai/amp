@@ -46,7 +46,7 @@ async function buildPlaylistWindow(skin, res){
       const src = await resolveImg(res, lay.image, lay.imageFile);
       if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
     }
-    const rect = playlistListRect({ ...pl, w: sz.w, h: sz.h });
+    const rect = playlistListRect(pl);
     const list = document.createElement("div");
     list.className = "eqlist";
     list.style.left = rect.x + "px"; list.style.top = rect.y + "px";
@@ -67,6 +67,9 @@ async function buildPlaylistWindow(skin, res){
       win.appendChild(el);
     }
     for (const b of pl.buttons) await buildButton(b, win, res, onPLButton);
+    win._pin = buildPinRecord(win, pl.w, pl.h, rect);
+    if (sz.h < win._pin.minH) { sz.h = win._pin.minH; win.dataset.h = sz.h; win.style.height = sz.h + "px"; }
+    applyWinLayout(win, sz.w, sz.h);
   } else {
     const sz = getWinSize("pl", 320, 300);
     win.dataset.w = sz.w; win.dataset.h = sz.h;

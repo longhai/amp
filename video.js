@@ -87,11 +87,17 @@ async function buildVideoWindow(skin, res){
       const src = await resolveImg(res, lay.image, lay.imageFile);
       if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
     }
-    const r = (vd.listRect && vd.listRect.w > 20 && vd.listRect.h > 20) ? vd.listRect
+    const rNative = !!(vd.listRect && vd.listRect.w > 20 && vd.listRect.h > 20);
+    const r = rNative ? vd.listRect
       : { x: 6, y: 24, w: sz.w - 12, h: sz.h - 30 };
     mkVideo(r);
     win._flexInsetR = sz.w - (r.x + r.w); win._flexInsetB = sz.h - (r.y + r.h);
     for (const b of vd.buttons) await buildButton(b, win, res, onVideoButton);
+    if (rNative) {
+      win._pin = buildPinRecord(win, vd.w, vd.h, r);
+      if (sz.h < win._pin.minH) { sz.h = win._pin.minH; win.dataset.h = sz.h; win.style.height = sz.h + "px"; }
+      applyWinLayout(win, sz.w, sz.h);
+    }
   } else {
     const sz = getWinSize("video", 354, 220);
     win.dataset.w = sz.w; win.dataset.h = sz.h;
