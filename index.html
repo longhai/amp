@@ -7,11 +7,11 @@
      Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
      200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
 <meta name="referrer" content="no-referrer">
-<title>Amp — v5 (Playlist + EQ · skin mặc định WinampModern566)</title>
+<title>Amp — v5.1 (Playlist + EQ · skin mặc định WinampModern566)</title>
 <link rel="icon" href="data:,">
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="skin-loader.js?v=5"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script defer src="skin-loader.js?v=5.1"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -28,6 +28,14 @@
   #viewport{position:relative;margin:10px auto 0;}
   #viewport.dragover{outline:2px dashed #6a0;outline-offset:4px;}
   #stage{position:relative;margin:0 auto;}
+  #shell{position:relative;width:354px;max-width:96vw;height:161px;margin:0 auto;
+    background:#0a0a12;border:1px solid #2a2a3a;color:#9fb7d6;text-align:center;
+    padding-top:50px;box-sizing:border-box;}
+  #shell .shell-t{font-size:20px;color:#dfe8ff;letter-spacing:2px;}
+  #shell .shell-s{font-size:12px;margin-top:8px;color:#8fa3c0;}
+  #shell .shell-bar{width:200px;max-width:70%;height:4px;background:#1c2436;margin:14px auto 0;overflow:hidden;}
+  #shell .shell-bar i{display:block;height:100%;width:40%;background:#6a8fd0;animation:shellslide 1.2s linear infinite;}
+  @keyframes shellslide{from{margin-left:-40%;}to{margin-left:100%;}}
   .win{position:absolute;left:0;top:0;transform-origin:top left;
     background:#000 no-repeat 0 0;overflow:hidden;}
   .win img{position:absolute;display:block;border:0;padding:0;
@@ -67,6 +75,10 @@
   .eqlist .row{padding:0 6px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;cursor:pointer;}
   .eqlist .row.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
+  .eqlist .row.sel{background:#2c4a6a;color:#fff;}
+  .resize-grip{position:absolute;right:0;bottom:0;width:20px;height:20px;
+    cursor:nwse-resize;touch-action:none;z-index:5;
+    background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.65) 50%,rgba(255,255,255,.65) 60%,transparent 60%,transparent 70%,rgba(255,255,255,.65) 70%,rgba(255,255,255,.65) 80%,transparent 80%);}
   .eqlist .row .num{color:#888;margin-right:6px;}
   .eqlist .row.cur .num{color:#cde;}
   .plfallback{background:#181818;border:1px solid #333;}
@@ -96,8 +108,8 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v5 · Playlist + EQ · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip</span></h1>
-<div id="viewport"><div id="stage"></div></div>
+<h1><b id="skinname">WinampModern566</b> — Amp v5.1 · Playlist + EQ · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip</span></h1>
+<div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <div id="panel">
   <select id="chan" title="Chọn kênh"></select><br>
@@ -116,15 +128,6 @@
 
 <script>
 "use strict";
-/* v5: Playlist + EQ windows, WinampModern566 as the default skin, atomic
-   skin swap, the silver MainFrame chrome, a live spectrum vis, a running
-   bitmap timer, and Pointer-Events buttons (no more sticky hover on touch).
-   Same loader path for the default skin and a picked skin; same rule as
-   before: nothing is hand-measured — x/y/w/h come from the skin XML.
-   The renderer builds a new skin into a DETACHED container first and only
-   swaps it into the visible #stage once it is complete (see buildSkinInto
-   / applySkinFile): a photo taken mid-load can no longer catch the player
-   half-drawn, and a failed load leaves the old skin completely untouched. */
 const $ = s => document.querySelector(s);
 const stage = $("#stage"), viewport = $("#viewport"), statusEl = $("#status");
 let au = $("#au");
@@ -132,15 +135,14 @@ let SKIN = null, channels = [], idx = 0, mode = "radio";
 let hls = null, failCount = 0, failTimer = null, playing = false;
 let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
 let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
-let fileBlobURL = null; // the local file's blob URL (kept across EQ bypass swaps)
-let plItems = []; // [{kind:'radio', ch:i, name, url} | {kind:'file', name, blobURL}]
-let plVisible = null, eqVisible = null; // null = use the skin's default_visible
+let fileBlobURL = null;
+let plItems = [];
+let plVisible = null, eqVisible = null;
 let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-/* ---------- loader version stamp (v5) ---------- */
-const EXPECTED_LOADER_VERSION = "5";
+const EXPECTED_LOADER_VERSION = "5.1";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -158,7 +160,6 @@ function loaderLabel(){
 }
 showLoaderVersion();
 
-/* ---------- asset resolver ---------- */
 const stubResolver = {
   hasCrop: () => false,
   bitmapURL: async () => null,
@@ -172,27 +173,6 @@ function setStatus(msg, isErr){
 function fmt(t){ if(!isFinite(t)) return "--:--";
   t=Math.max(0,Math.floor(t)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); }
 
-/* ---------- EQ state + Web Audio graph (true bypass) ----------
-   EQ bands: standard Winamp 60/170/310/600/1000/3000/6000/12000/14000/
-   16000 Hz, peaking filters Q=1.0, preamp -12..+12 dB (centre 0).
-   EQ ON  -> audio goes through the chain (MediaElementSource -> preamp
-             GainNode -> 10 peaking BiquadFilters -> AnalyserNode ->
-             destination). The chain is measurably quieter than direct
-             playback, exactly like the Webamp fork.
-   EQ OFF -> TRUE BYPASS: the AudioContext is closed and the audio element
-             is swapped for a fresh one wired straight to the output — no
-             AudioContext anywhere in the path, so the sound is loud again.
-   The context is created lazily, only on the first EQ-ON (it needs a user
-   gesture to start). State persists in localStorage "amp-eq-v5". */
-const EQ_FREQS = [60,170,310,600,1000,3000,6000,12000,14000,16000];
-const EQ_PRESETS = {
-  "Flat":        { preamp: 0, bands: [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  "Rock":        { preamp: 0, bands: [ 4, 3,-1,-2,-1, 1, 3, 4, 5, 5] },
-  "Pop":         { preamp: 0, bands: [ 2, 3, 3, 2,-1,-1, 1, 2, 3, 4] },
-  "Classical":   { preamp: 0, bands: [ 3, 2, 0,-1,-1, 0, 2, 3, 4, 5] },
-  "Full Bass":   { preamp: 0, bands: [ 6, 5, 4, 2, 0,-1,-2,-3,-3,-4] },
-  "Full Treble": { preamp: 0, bands: [-4,-3,-2,-1, 0, 2, 4, 5, 6, 6] }
-};
 let eqState = { on: false, preamp: 0, bands: [0,0,0,0,0,0,0,0,0,0] };
 try {
   const saved = JSON.parse(localStorage.getItem("amp-eq-v5") || "null");
@@ -201,11 +181,11 @@ try {
     eqState.preamp = Math.max(-12, Math.min(12, +saved.preamp || 0));
     eqState.bands = saved.bands.map(v => Math.max(-12, Math.min(12, +v || 0)));
   }
-} catch (e) { /* corrupted saved EQ: keep defaults */ }
+} catch (e) {  }
 function saveEQState(){
   try { localStorage.setItem("amp-eq-v5", JSON.stringify(eqState)); } catch (e) {}
 }
-let audioCtx = null, eqNodes = null; // {src, preamp, filters[], analyser}
+let audioCtx = null, eqNodes = null;
 function eqStateHook(){
   window.__eqState = { on: eqState.on, bypass: !eqState.on,
     ctxState: audioCtx ? audioCtx.state : null,
@@ -213,101 +193,12 @@ function eqStateHook(){
     preamp: eqState.preamp, bands: eqState.bands.slice() };
 }
 eqStateHook();
-function applyEQGains(){
-  if (!eqNodes) return;
-  eqNodes.preamp.gain.value = eqState.preamp;
-  eqNodes.filters.forEach((f, i) => { f.gain.value = eqState.bands[i]; });
-}
-async function enableEQ(){
-  // Route the CURRENT audio element through the EQ chain.
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") { try { await audioCtx.resume(); } catch (e) {} }
-  } else if (audioCtx.state === "suspended") {
-    try { await audioCtx.resume(); } catch (e) {}
-  }
-  if (eqNodes && eqNodes.el === au) { applyEQGains(); eqStateHook(); return; }
-  const src = audioCtx.createMediaElementSource(au);
-  const preamp = audioCtx.createGain();
-  const filters = EQ_FREQS.map(f => {
-    const b = audioCtx.createBiquadFilter();
-    b.type = "peaking"; b.frequency.value = f; b.Q.value = 1.0; b.gain.value = 0;
-    return b;
-  });
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.7;
-  let node = src;
-  node.connect(preamp); node = preamp;
-  for (const f of filters) { node.connect(f); node = f; }
-  node.connect(analyser); analyser.connect(audioCtx.destination);
-  eqNodes = { el: au, src, preamp, filters, analyser };
-  applyEQGains();
-  eqStateHook();
-}
-async function disableEQ(){
-  // True bypass: close the context and swap in a FRESH audio element
-  // wired straight to the output. The old element (and its
-  // MediaElementSource) is discarded, so no AudioContext stays in the
-  // path. Playback state, position and volume are preserved.
-  if (eqNodes) { try { eqNodes.src.disconnect(); } catch (e) {} eqNodes = null; }
-  if (audioCtx) { try { await audioCtx.close(); } catch (e) {} audioCtx = null; }
-  await swapAudioElement();
-  eqStateHook();
-}
-async function setEQOn(on){
-  on = !!on;
-  if (on === eqState.on && (on ? !!eqNodes : !audioCtx)) { eqStateHook(); return; }
-  eqState.on = on; saveEQState();
-  if (on) await enableEQ(); else await disableEQ();
-  updateEQToggleVisual();
-  eqStateHook();
-}
-/* Swap the <audio> element for a fresh one (bypass) and re-attach the
-   media + all listeners, preserving playing state / position / volume. */
-async function swapAudioElement(){
-  const wasPlaying = playing, wasTime = au.currentTime || 0, wasVol = au.volume;
-  const old = au, oldHls = hls;
-  if (oldHls) { try { oldHls.destroy(); } catch (e) {} hls = null; }
-  try { old.pause(); } catch (e) {}
-  const el = document.createElement("audio");
-  el.id = "au"; el.preload = "none"; el.volume = wasVol;
-  old.replaceWith(el);
-  au = el;
-  bindAudio(au);
-  if (mode === "file" && fileBlobURL) {
-    au.src = fileBlobURL;
-    try { au.currentTime = wasTime; } catch (e) {}
-  } else if (mode === "radio" && channels[idx]) {
-    const url = channels[idx].url;
-    if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30 });
-      hls.loadSource(url); hls.attachMedia(au);
-      hls.on(Hls.Events.ERROR, (ev, data) => {
-        if (data && data.fatal) handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
-      });
-    } else {
-      au.src = url;
-    }
-  }
-  if (wasPlaying) { try { await au.play(); } catch (e) {} }
-  // The seek/volume fills follow the new element.
-  setFill("seek", (mode === "file" && isFinite(au.duration) && au.duration > 0) ? au.currentTime / au.duration : 0);
-  setFill("vol", wasVol);
-}
 
-/* ---------- running timer (elapsed clock, m:ss) ----------
-   The skin's timer text element (display="time") shows ELAPSED playback
-   time, counting up once per second, for local files AND live radio.
-   It resets to 0:00 on channel/track change or Stop. For live radio there
-   is no total duration, so only the elapsed time is shown — the word
-   "LIVE" never overwrites the clock (the ticker already says "Trực
-   tiếp"). The skin's bitmap digit font is used when it provides one
-   (player.BIGNUM), falling back to monospace text. */
 let playStartAt = 0, elapsedBase = 0;
 function elapsedSecs(){
   return elapsedBase + (playStartAt ? (performance.now() - playStartAt) / 1000 : 0);
 }
-function resetTimer(){ elapsedBase = 0; playStartAt = 0; updateTimerDisplay(); } // the "playing" event sets playStartAt when sound actually starts
+function resetTimer(){ elapsedBase = 0; playStartAt = 0; updateTimerDisplay(); }
 function onPlayStart(){ if (!playStartAt) playStartAt = performance.now(); updateTimerDisplay(); }
 function onPlayPause(){ if (playStartAt) { elapsedBase = elapsedSecs(); playStartAt = 0; } updateTimerDisplay(); }
 function updateTimerDisplay(){
@@ -322,34 +213,68 @@ function updateTimerDisplay(){
     timEl.textContent = t;
   }
 }
+/* đồng hồ: cắt số theo charwidth, ":" đo từ ảnh font */
 function drawTimerBitmap(cv, text){
   const ctx = cv.getContext("2d");
   const f = timerFont, img = timerFontImg;
   const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
   const row = f.glyphRow || 0;
+  const colonCol = (f.colonCol === undefined || f.colonCol === null) ? 12 : f.colonCol;
   ctx.clearRect(0, 0, cv.width, cv.height);
   const totalW = text.length * step - (f.hspacing || 0);
   const align = (cv.dataset.align || "left");
-  let x = align === "center" ? Math.max(0, (cv.width - totalW) / 2) : 0;
+  let x = align === "center" ? Math.round(Math.max(0, (cv.width - totalW) / 2)) : 0;
   const y = Math.max(0, (cv.height - ch) / 2);
   for (const chr of text) {
     let col = -1;
     if (chr >= "0" && chr <= "9") col = chr.charCodeAt(0) - 48;
-    else if (chr === ":") col = 13;
-    if (col >= 0) ctx.drawImage(img, col * step, row * ch, cw, ch, x, y, cw, ch);
+    else if (chr === ":") col = colonCol;
+    if (col >= 0) ctx.drawImage(img, col * cw, row * ch, cw, ch, x, y, cw, ch);
     x += step;
   }
+}
+const bitmapFontImgs = new Map();
+async function bitmapFontImage(font){
+  if (bitmapFontImgs.has(font.file)) return bitmapFontImgs.get(font.file);
+  const im = await new Promise(resolve => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => resolve(null);
+    i.src = font.imageURL;
+  });
+  bitmapFontImgs.set(font.file, im);
+  return im;
+}
+async function drawBitmapFontText(t, font, skinName){
+  const img = await bitmapFontImage(font);
+  if (!img) return null;
+  const text = compName(t.default || "", skinName || "WINAMP");
+  const cw = font.charwidth, ch = font.charheight;
+  const row = (font.glyphRow || 0) * ch;
+  const cv = document.createElement("canvas");
+  cv.className = "wtext";
+  cv.width = Math.max(1, text.length * cw);
+  cv.height = ch;
+  cv.style.left = t.x + "px"; cv.style.top = t.y + "px";
+  cv.style.width = cv.width + "px"; cv.style.height = ch + "px";
+  const cx = cv.getContext("2d");
+  for (let i = 0; i < text.length; i++) {
+    let col = font.charset.indexOf(text[i]);
+    if (col < 0) col = font.charset.indexOf(" ");
+    if (col < 0) col = 0;
+    cx.drawImage(img, col * cw, row, cw, ch, i * cw, 0, cw, ch);
+  }
+  return cv;
 }
 setInterval(updateTimerDisplay, 250);
 </script>
 
 <script>
-/* ---------- scaling: the stage holds main + EQ + Playlist stacked ---------- */
 let mainWin = null, eqWin = null, plWin = null;
 function winVisible(kind){
   if (kind === "eq") {
     if (eqVisible !== null) return eqVisible;
-    return !!(SKIN && SKIN.eq && SKIN.eq.defaultVisible);
+    return true;
   }
   if (kind === "pl") {
     if (plVisible !== null) return plVisible;
@@ -357,35 +282,41 @@ function winVisible(kind){
   }
   return true;
 }
+/* cả 3 cửa sổ cùng chiều rộng trên màn hình */
 function applyScale(){
   if (!SKIN || !mainWin) return;
   const wins = [{ el: mainWin, w: SKIN.layout.w, h: SKIN.layout.h }];
   if (eqWin && winVisible("eq")) wins.push({ el: eqWin, w: +eqWin.dataset.w, h: +eqWin.dataset.h });
   if (plWin && winVisible("pl")) wins.push({ el: plWin, w: +plWin.dataset.w, h: +plWin.dataset.h });
-  const maxW = Math.max(...wins.map(w => w.w));
-  const totalH = wins.reduce((a, w) => a + w.h, 0);
+  const mainW = SKIN.layout.w;
+  const ratioSum = wins.reduce((a, w) => a + w.h / w.w, 0);
   let s;
   if (scaleMode === "1x") s = 1;
   else {
-    const availH = Math.max(120, window.innerHeight - 130);
-    s = Math.min(window.innerWidth * 0.98 / maxW, availH / totalH, 3);
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    const vh = document.documentElement.clientHeight || window.innerHeight;
+    const availH = Math.max(120, vh - 130);
+    s = Math.min(vw * 0.98 / mainW, availH / (mainW * ratioSum), 3);
   }
-  stage.style.width = (maxW * s) + "px";
-  stage.style.height = (totalH * s) + "px";
-  let y = 0;
+  const targetW = mainW * s;
+  stage.style.width = targetW + "px";
+  let yPx = 0;
   for (const w of wins) {
+    const si = targetW / w.w;
+    const hPx = w.h * si;
     w.el.style.display = "";
-    w.el.style.transform = "scale(" + s + ")";
+    w.el.style.transform = "scale(" + si + ")";
     w.el.style.left = "0px";
-    w.el.style.top = (y * s) + "px";
-    y += w.h;
+    w.el.style.top = yPx + "px";
+    yPx += hPx;
   }
+  stage.style.height = yPx + "px";
   if (eqWin && !winVisible("eq")) eqWin.style.display = "none";
   if (plWin && !winVisible("pl")) plWin.style.display = "none";
   $("#btn-fit").classList.toggle("on", scaleMode === "fit");
   $("#btn-1x").classList.toggle("on", scaleMode === "1x");
   $("#btn-list").classList.toggle("on", !!(plWin && winVisible("pl")));
-  $("#btn-eq").classList.toggle("on", !!(eqWin && winVisible("eq")));
+  $("#btn-eq").classList.toggle("on", eqState.on);
 }
 function setScaleMode(m){
   scaleMode = m; localStorage.setItem("webamp-modern-scale", m); applyScale();
@@ -394,9 +325,113 @@ $("#btn-fit").onclick = () => setScaleMode("fit");
 $("#btn-1x").onclick = () => setScaleMode("1x");
 window.addEventListener("resize", applyScale);
 function applyWindowVisibility(){ applyScale(); }
-function toggleWindow(kind){
-  if (kind === "pl") { plVisible = !winVisible("pl"); try { localStorage.setItem("amp-pl-visible-v5", plVisible ? "1" : "0"); } catch (e) {} }
-  else { eqVisible = !winVisible("eq"); try { localStorage.setItem("amp-eq-visible-v5", eqVisible ? "1" : "0"); } catch (e) {} }
+/* nạp chậm: eq.js / playlist.js chỉ tải khi mở cửa sổ đó */
+let curRes = null;
+let eqJsPromise = null, plJsPromise = null;
+function loadScriptFile(src){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("không tải được " + src));
+    document.head.appendChild(s);
+  });
+}
+function ensureEqJs(){
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=5.1");
+  return eqJsPromise;
+}
+function ensurePlJs(){
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=5.1");
+  return plJsPromise;
+}
+async function ensureEqWindow(){
+  if (eqWin) return eqWin;
+  await ensureEqJs();
+  eqWin = await buildEQWindow(SKIN, curRes);
+  stage.appendChild(eqWin);
+  applyScale();
+  return eqWin;
+}
+async function ensurePlWindow(){
+  if (plWin) return plWin;
+  await ensurePlJs();
+  plWin = await buildPlaylistWindow(SKIN, curRes);
+  stage.appendChild(plWin);
+  renderPlaylist(true);
+  applyScale();
+  return plWin;
+}
+function skinKey(){
+  return (SKIN && SKIN.skin && SKIN.skin.name) || "skin";
+}
+function getWinSize(kind, defW, defH){
+  try {
+    const all = JSON.parse(localStorage.getItem("amp-winsize-v5.1") || "{}");
+    const s = all[skinKey()] && all[skinKey()][kind];
+    if (s && +s.w >= 200 && +s.h >= 80) return { w: +s.w, h: +s.h };
+  } catch (e) {}
+  return { w: defW, h: defH };
+}
+function saveWinSize(kind, w, h){
+  try {
+    const all = JSON.parse(localStorage.getItem("amp-winsize-v5.1") || "{}");
+    const k = skinKey();
+    all[k] = all[k] || {};
+    all[k][kind] = { w: Math.round(w), h: Math.round(h) };
+    localStorage.setItem("amp-winsize-v5.1", JSON.stringify(all));
+  } catch (e) {}
+}
+function addResizeHandle(win, kind){
+  const g = document.createElement("div");
+  g.className = "resize-grip";
+  g.title = "Kéo để đổi cỡ cửa sổ";
+  g.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { g.setPointerCapture(e.pointerId); } catch (err) {}
+    const startX = e.clientX, startY = e.clientY;
+    const startW = +win.dataset.w, startH = +win.dataset.h;
+    const scale = win.getBoundingClientRect().width / startW;
+    const mv = ev => {
+      const w = Math.min(900, Math.max(200, startW + (ev.clientX - startX) / scale));
+      const h = Math.min(800, Math.max(80, startH + (ev.clientY - startY) / scale));
+      win.dataset.w = w; win.dataset.h = h;
+      win.style.width = w + "px"; win.style.height = h + "px";
+      if (win._plList && win._plRect) {
+        win._plList.style.width = Math.max(40, w - win._plRect.x - (win._plInsetR || 6)) + "px";
+        win._plList.style.height = Math.max(40, h - win._plRect.y - (win._plInsetB || 6)) + "px";
+      }
+      if (win._bgImg) win.style.backgroundSize = w + "px " + h + "px";
+      applyScale();
+    };
+    const up = ev => {
+      g.removeEventListener("pointermove", mv);
+      g.removeEventListener("pointerup", up);
+      g.removeEventListener("pointercancel", up);
+      saveWinSize(kind, +win.dataset.w, +win.dataset.h);
+      applyScale();
+    };
+    g.addEventListener("pointermove", mv);
+    g.addEventListener("pointerup", up);
+    g.addEventListener("pointercancel", up);
+  });
+  win.appendChild(g);
+}
+async function toggleWindow(kind){
+  if (kind === "pl") {
+    if (!plWin) {
+      try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); return; }
+    }
+    plVisible = !winVisible("pl");
+    try { localStorage.setItem("amp-pl-visible-v5", plVisible ? "1" : "0"); } catch (e) {}
+  } else {
+    if (!eqWin) {
+      try { await ensureEqWindow(); } catch (e) { setStatus("không mở được EQ: " + e.message, true); return; }
+    }
+    eqVisible = !winVisible("eq");
+    try { localStorage.setItem("amp-eq-visible-v5", eqVisible ? "1" : "0"); } catch (e) {}
+  }
   applyWindowVisibility();
 }
 try {
@@ -408,7 +443,6 @@ try {
 $("#btn-list").onclick = () => toggleWindow("pl");
 $("#btn-eq").onclick = () => toggleWindow("eq");
 
-/* ---------- asset resolution (per skin, via its own resolver) ---------- */
 async function resolveImg(res, imageId, imageFile){
   if (imageId && res.hasCrop(imageId)) {
     const u = await res.bitmapURL(imageId);
@@ -420,23 +454,12 @@ async function resolveImg(res, imageId, imageFile){
 function imgElSrc(src, x, y, w, h){
   const im = document.createElement("img");
   im.src = src; im.draggable = false; im.alt = "";
-  // A skin image that fails to load must vanish, never show a broken-image
-  // icon + alt text over the skin (the D-Reliction bug).
   im.onerror = () => { im.style.display = "none"; };
   im.style.left = x + "px"; im.style.top = y + "px";
   if (w) im.style.width = w + "px"; if (h) im.style.height = h + "px";
   return im;
 }
 
-/* ---------- buttons: Pointer Events only (the sticky-button fix) ----------
-   v4.1 used mouseenter/mouseleave/mousedown/mouseup/touchstart/touchend.
-   On Android Chrome a tap's synthetic mouse events re-applied hover/down
-   and mouseleave never fired until the user tapped elsewhere, so a
-   transport button stayed stuck on its pressed/hover image (the user's
-   20:02 photo: Next stuck as a dark hollow ring). Pointer Events replace
-   all of that: the hover image is applied ONLY when e.pointerType is
-   "mouse", and pointerup/pointercancel/pointerleave ALWAYS restore the
-   base image, whatever the pointer type. */
 function wireButtonPointer(d, im, b){
   const base = () => {
     if (b._stateBase) return b._stateBase();
@@ -461,7 +484,8 @@ async function buildButton(b, container, res, onClick){
   b._hoverSrc = b.hoverImage ? await resolveImg(res, b.hoverImage, b.hoverFile) : null;
   b._downSrc = b.downImage ? await resolveImg(res, b.downImage, b.downFile) : null;
   b._pauseSrc = b.pauseImage ? await resolveImg(res, b.pauseImage, b.pauseFile) : null;
-  if (!b._src) return null; // no image: hide entirely, never a broken <img>
+  b._activeSrc = b.activeImage ? await resolveImg(res, b.activeImage, b.activeFile) : null;
+  if (!b._src) return null;
   const im = document.createElement("img");
   im.src = b._src; im.draggable = false; im.alt = "";
   im.onerror = () => { d.style.display = "none"; };
@@ -478,7 +502,6 @@ function updatePlayState(){
   if (play && play._img) play._img.src = play._base ? play._base() : play._src;
 }
 
-/* ---------- main window: layers, frame, texts, strip, sliders, vis ---------- */
 async function buildMainWindow(skin, res, win){
   const L = skin.layout;
   const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
@@ -492,8 +515,6 @@ async function buildMainWindow(skin, res, win){
       win.style.backgroundPosition = "0 0";
     }
   }
-  // Frame chrome (silver title bar + menu bar) first, so the content
-  // layers paint over it where they overlap.
   if (skin.frame) {
     for (const lay of skin.frame.layers) {
       if (!lay.imageFile) continue;
@@ -508,8 +529,6 @@ async function buildMainWindow(skin, res, win){
       el.style.width = (t.w || 50) + "px"; el.style.height = (t.h || 14) + "px";
       el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 11) + "px";
       el.style.lineHeight = (t.h || 14) + "px";
-      // The title ("WINAMP") is wider than its 50px XML box — let it
-      // overflow instead of clipping to "WINAMI".
       el.style.overflow = "visible";
       el.textContent = compName(t.default, (skin.name || "WINAMP"));
       win.appendChild(el);
@@ -526,7 +545,6 @@ async function buildMainWindow(skin, res, win){
     const src = await resolveImg(res, lay.image, lay.imageFile);
     if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
   }
-  // Texts: songticker + timer + small display labels.
   const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
     || skin.texts.find(t => t.display === "songname")
     || skin.texts.find(t => t.ticker === "1");
@@ -540,7 +558,6 @@ async function buildMainWindow(skin, res, win){
     tickEl.innerHTML = "<span id='tickerspan'></span>";
     win.appendChild(tickEl);
   }
-  // Timer: a canvas when the skin gives a bitmap digit font, else text.
   timerFont = null; timerFontImg = null;
   if (tim) {
     const timEl = document.createElement("div");
@@ -568,6 +585,11 @@ async function buildMainWindow(skin, res, win){
   for (const t of skin.texts) {
     if (t === tick || t === tim) continue;
     if (!t.default && !t.display) continue;
+    const tfont = t.font && skin.fonts ? skin.fonts[t.font] : null;
+    if (tfont && tfont.tag === "bitmapfont" && tfont.imageURL && tfont.charset && tfont.charwidth) {
+      const cv = await drawBitmapFontText(t, tfont, skin.name);
+      if (cv) { win.appendChild(cv); continue; }
+    }
     const el = document.createElement("div");
     el.className = "wtext";
     el.style.left = t.x + "px"; el.style.top = t.y + "px";
@@ -577,11 +599,6 @@ async function buildMainWindow(skin, res, win){
     el.dataset.display = t.display || "";
     win.appendChild(el);
   }
-  // Spectrum vis: a canvas over the skin's <vis> rect. It draws the live
-  // AnalyserNode spectrum while the EQ chain is on; with EQ off (true
-  // bypass) there is no analyser in the path, so the canvas stays clear
-  // and the blue display shows through. A live vis without the audio
-  // chain would cost the bypass — that trade is stated in the README.
   visCanvas = null; visCtx = null;
   if (skin.vis && skin.vis[0]) {
     const v = skin.vis[0];
@@ -603,8 +620,7 @@ async function buildMainWindow(skin, res, win){
     if (s.action === "VOLUME" || s.action === "SEEK") await buildMainSlider(s, win, res);
   }
   for (const b of skin.buttons) await buildButton(b, win, res, onMainButton);
-  // The Play/Pause merge (DDTank): the loader marks the merged button;
-  // updatePlayState() already swaps its icon while playing.
+  for (const b of skin.buttons) if (b.action === "EQ_TOGGLE" && b._img) b._stateBase = () => eqState.on ? (b._activeSrc || b._downSrc || b._src) : b._src;
 }
 async function buildStrip(skin, res, win){
   const s = skin.seek, v = skin.volume;
@@ -654,7 +670,6 @@ function setFill(kind, frac){
   const el = $("#fill-" + kind);
   if (el && rect) el.style.width = Math.round(rect.w * frac) + "px";
 }
-/* A skin <slider> (Volume/Seeker): a draggable thumb over the track rect. */
 async function buildMainSlider(s, win, res){
   const track = document.createElement("div");
   track.className = "eqsl";
@@ -694,7 +709,7 @@ async function buildMainSlider(s, win, res){
     else thumb.style.top = Math.round((1 - f) * (s.h - th)) + "px";
   };
   track.addEventListener("pointerdown", e => {
-    try { track.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event: no active pointer */ }
+    try { track.setPointerCapture(e.pointerId); } catch (err) {  }
     const r = track.getBoundingClientRect();
     const frac = horiz ? (e.clientX - r.left) / r.width : 1 - (e.clientY - r.top) / r.height;
     setFrac(frac);
@@ -715,379 +730,55 @@ async function buildMainSlider(s, win, res){
 </script>
 
 <script>
-/* ---------- Playlist window ---------- */
 let plListEl = null, localFiles = [];
+let selectedPl = null, lastTapAt = 0, lastTapItem = null;
 function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function rebuildPlItems(){
   plItems = channels.map((c, i) => ({ kind: "radio", ch: i, name: c.name, url: c.url }));
   for (const f of localFiles) plItems.push({ kind: "file", name: f.name, blobURL: f.blobURL });
+  selectedPl = null; lastTapItem = null; lastTapAt = 0;
   window.__plItems = plItems.map(it => ({ kind: it.kind, name: it.name }));
 }
 function isCurrentPlItem(it){
   if (it.kind === "radio") return mode === "radio" && idx === it.ch;
   return mode === "file" && fileBlobURL === it.blobURL;
 }
-function renderPlaylist(){
+function renderPlaylist(scrollToCur){
   const list = plListEl; if (!list) return;
   list.innerHTML = "";
   plItems.forEach((it, i) => {
     const row = document.createElement("div");
-    row.className = "row" + (isCurrentPlItem(it) ? " cur" : "");
+    row.className = "row" + (isCurrentPlItem(it) ? " cur" : "") + (selectedPl === it ? " sel" : "");
     row.innerHTML = "<span class='num'>" + (i + 1) + ".</span>" + escapeHtml(it.name);
-    row.addEventListener("click", () => playPlItem(it));
+    row.addEventListener("click", () => selectPlItem(it));
     list.appendChild(row);
   });
-  const cur = list.querySelector(".cur");
-  if (cur) cur.scrollIntoView({ block: "nearest" });
+  if (scrollToCur) {
+    const cur = list.querySelector(".cur");
+    if (cur) cur.scrollIntoView({ block: "nearest" });
+  }
+}
+/* chạm 1 = chọn dòng, chạm 2 lần = phát */
+function selectPlItem(it){
+  const now = Date.now();
+  if (lastTapItem === it && now - lastTapAt < 350) {
+    lastTapAt = 0; lastTapItem = null;
+    playPlItem(it);
+    return;
+  }
+  lastTapAt = now; lastTapItem = it;
+  selectedPl = it;
+  renderPlaylist();
+  setStatus("Đã chọn: " + it.name + " — chạm 2 lần để phát");
 }
 function playPlItem(it){
+  selectedPl = it;
   if (it.kind === "radio") loadChannel(it.ch, true);
   else playLocalFile(it.blobURL, it.name);
 }
-function playlistListRect(pl){
-  // Native rect when usable; otherwise compute it from the window size
-  // and the bottom buttons. (Copperdeck's <component> covers the whole
-  // window; Nebular has no <component> at all.)
-  const r = pl.listRect;
-  if (r && r.w > 20 && r.h > 20 && !(r.x <= 0 && r.y <= 0 && r.w >= pl.w && r.h >= pl.h)) return r;
-  const bottomBtns = (pl.buttons || []).filter(b => b.y > pl.h * 0.6);
-  const bottomY = bottomBtns.length ? Math.min(...bottomBtns.map(b => b.y)) : pl.h;
-  const top = 24;
-  return { x: 6, y: top, w: pl.w - 12, h: Math.max(40, bottomY - 6 - top) };
-}
-async function buildPlaylistWindow(skin, res){
-  const win = document.createElement("div");
-  win.className = "win"; win.id = "plwin";
-  const pl = skin.playlist;
-  if (pl) {
-    win.dataset.w = pl.w; win.dataset.h = pl.h;
-    win.style.width = pl.w + "px"; win.style.height = pl.h + "px";
-    // Window background: the layout's background image (BLAKK), else the
-    // skin's frame texture tiled (WM566's basetexture). Either way the
-    // title-bar strip above the list (which the frame would paint, and
-    // which no layer covers) reads as silver, not black.
-    win.style.backgroundColor = "#a8adb5";
-    if (pl.backgroundFile) {
-      const bg = await resolveImg(res, pl.background, pl.backgroundFile);
-      if (bg) {
-        win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
-        win.style.backgroundSize = pl.w + "px " + pl.h + "px";
-      }
-    } else if (pl.backgrounds && pl.backgrounds[0] && pl.backgrounds[0].imageFile) {
-      const bg = await resolveImg(res, pl.backgrounds[0].image, pl.backgrounds[0].imageFile);
-      if (bg) win.style.backgroundImage = "url(" + JSON.stringify(bg) + ")";
-    }
-    for (const bg of (pl.backgrounds || [])) {
-      if (!bg.imageFile) continue;
-      const src = await resolveImg(res, bg.image, bg.imageFile);
-      if (src) win.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h));
-    }
-    // Title in the strip (the original window title bar shows "Playlist").
-    const ptitle = document.createElement("div");
-    ptitle.className = "wtext";
-    ptitle.style.left = "8px"; ptitle.style.top = "3px";
-    ptitle.style.width = "120px"; ptitle.style.height = "14px";
-    // White with a dark shadow: readable on a silver frame (WM566/BLAKK)
-    // and on a dark title bar (Nebular).
-    ptitle.style.color = "#fff"; ptitle.style.textShadow = "0 1px 2px rgba(0,0,0,.8)";
-    ptitle.style.fontSize = "12px"; ptitle.style.lineHeight = "14px";
-    ptitle.textContent = "Playlist";
-    win.appendChild(ptitle);
-    for (const lay of pl.layers) {
-      if (!lay.imageFile) continue;
-      const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
-    }
-    const rect = playlistListRect(pl);
-    const list = document.createElement("div");
-    list.className = "eqlist";
-    list.style.left = rect.x + "px"; list.style.top = rect.y + "px";
-    list.style.width = rect.w + "px"; list.style.height = rect.h + "px";
-    win.appendChild(list);
-    plListEl = list;
-    for (const t of pl.texts) {
-      if (!t.default && t.display !== "PE_Info") continue;
-      const el = document.createElement("div");
-      el.className = "wtext";
-      el.style.left = t.x + "px"; el.style.top = t.y + "px";
-      el.style.width = (t.w || 55) + "px"; el.style.height = (t.h || 8) + "px";
-      el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
-      el.dataset.display = t.display || "";
-      win.appendChild(el);
-    }
-    for (const b of pl.buttons) await buildButton(b, win, res, onPLButton);
-  } else {
-    // Fallback: a plain dark window (the skin has no playlist layout).
-    win.dataset.w = 320; win.dataset.h = 300;
-    win.classList.add("plfallback");
-    win.style.width = "320px"; win.style.height = "300px";
-    const title = document.createElement("div");
-    title.className = "title"; title.textContent = "Playlist";
-    win.appendChild(title);
-    const x = document.createElement("button");
-    x.className = "x"; x.textContent = "✕";
-    x.addEventListener("click", () => toggleWindow("pl"));
-    win.appendChild(x);
-    const list = document.createElement("div");
-    list.className = "eqlist";
-    list.style.left = "6px"; list.style.top = "24px";
-    list.style.width = "308px"; list.style.height = "270px";
-    win.appendChild(list);
-    plListEl = list;
-  }
-  return win;
-}
-function onPLButton(b){
-  const a = b.action;
-  if (a === "PE_ADD") { $("#filepick").click(); }
-  else if (a === "PE_REM") {
-    const cur = plItems.find(isCurrentPlItem);
-    if (cur && cur.kind === "file") {
-      localFiles = localFiles.filter(f => f.blobURL !== cur.blobURL);
-      rebuildPlItems(); renderPlaylist();
-      setStatus("Đã bỏ file khỏi playlist: " + cur.name);
-    } else setStatus("PE_REM: chỉ bỏ được file local đang phát (kênh radio nằm trong radio.m3u)");
-  }
-  else if (a === "PE_SEL") setStatus("PE_SEL: menu chọn chưa làm trong bản này");
-  else if (a === "PE_MISC") setStatus("PE_MISC: menu phụ chưa làm trong bản này");
-  else if (a === "PE_LIST") { const s = $("#chan"); s.focus(); s.size = s.size ? 0 : 8; }
-  else if (a === "CLOSE") toggleWindow("pl");
-  else if (a === "SWITCH") setStatus("Nút winshade chưa làm trong bản này");
-  else setStatus("Nút playlist này chưa có tác dụng trong bản này");
-}
-
-/* ---------- EQ window ---------- */
-let eqToggleBtns = [], eqSliderEls = [];
-function isEqFillLayer(lay){
-  const img = (lay.image || "").toLowerCase();
-  return img.includes("full");
-}
-async function buildEQSlider(s, bandIndex, win, res, eq){
-  const track = document.createElement("div");
-  track.className = "eqsl";
-  track.style.left = s.x + "px"; track.style.top = s.y + "px";
-  track.style.width = s.w + "px"; track.style.height = s.h + "px";
-  const horiz = s.orientation === "horizontal";
-  // Fill: the skin's "full" bar image at this slider's spot, clipped by
-  // value; a plain coloured bar when the skin has none (WM566).
-  let fillEl = null;
-  const fillLay = (eq.layers || []).find(l => isEqFillLayer(l) && Math.abs((l.x || 0) - s.x) < 6 && Math.abs((l.y || 0) - s.y) < 6);
-  let fillImg = null;
-  if (fillLay && fillLay.imageFile) fillImg = await resolveImg(res, fillLay.image, fillLay.imageFile);
-  fillEl = document.createElement("div");
-  fillEl.className = "fill";
-  fillEl.style.width = "100%"; fillEl.style.height = "0px";
-  if (fillImg) {
-    const im = document.createElement("img");
-    im.src = fillImg; im.draggable = false; im.alt = "";
-    im.style.width = s.w + "px"; im.style.height = s.h + "px";
-    fillEl.appendChild(im);
-  } else {
-    fillEl.style.background = "rgba(120,180,90,.55)";
-  }
-  track.appendChild(fillEl);
-  const thumbSrc = s.thumb ? await resolveImg(res, s.thumb, s.thumbFile) : null;
-  const tw = s.thumbW || 13, th = s.thumbH || 23;
-  const thumb = document.createElement("div");
-  thumb.className = "thumb";
-  thumb.style.width = tw + "px"; thumb.style.height = th + "px";
-  if (thumbSrc) {
-    const im = document.createElement("img");
-    im.src = thumbSrc; im.draggable = false; im.alt = "";
-    thumb.appendChild(im);
-  } else {
-    track.style.background = "#222"; track.style.border = "1px solid #444";
-    thumb.style.background = "#888"; thumb.style.border = "1px solid #bbb";
-  }
-  thumb.style.left = Math.round((s.w - tw) / 2) + "px";
-  track.appendChild(thumb);
-  const getVal = () => bandIndex < 0 ? eqState.preamp : eqState.bands[bandIndex];
-  const place = () => {
-    const v = getVal();
-    const frac = (v + 12) / 24; // 0 = -12 (bottom), 1 = +12 (top)
-    if (horiz) {
-      thumb.style.left = Math.round(frac * (s.w - tw)) + "px";
-      fillEl.style.width = Math.round(frac * s.w) + "px";
-    } else {
-      thumb.style.top = Math.round((1 - frac) * (s.h - th)) + "px";
-      fillEl.style.height = Math.round(frac * s.h) + "px";
-    }
-  };
-  const setVal = v => {
-    v = Math.max(-12, Math.min(12, Math.round(v * 10) / 10));
-    if (bandIndex < 0) eqState.preamp = v; else eqState.bands[bandIndex] = v;
-    saveEQState();
-    if (eqState.on) applyEQGains();
-    place();
-    eqStateHook();
-  };
-  track.addEventListener("pointerdown", e => {
-    try { track.setPointerCapture(e.pointerId); } catch (err) { /* synthetic event: no active pointer */ }
-    const valFromEvent = ev => {
-      const r = track.getBoundingClientRect();
-      const f = horiz ? (ev.clientX - r.left) / r.width : 1 - (ev.clientY - r.top) / r.height;
-      return -12 + Math.min(1, Math.max(0, f)) * 24;
-    };
-    setVal(valFromEvent(e));
-    const mv = ev => setVal(valFromEvent(ev));
-    const up = () => { track.removeEventListener("pointermove", mv); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up); };
-    track.addEventListener("pointermove", mv);
-    track.addEventListener("pointerup", up);
-    track.addEventListener("pointercancel", up);
-    e.preventDefault();
-  });
-  win.appendChild(track);
-  place();
-  eqSliderEls.push({ bandIndex, place, setVal });
-}
-function applyEQPreset(name){
-  const p = EQ_PRESETS[name]; if (!p) return;
-  eqState.preamp = p.preamp;
-  eqState.bands = p.bands.slice();
-  saveEQState();
-  if (eqState.on) applyEQGains();
-  for (const sl of eqSliderEls) sl.place();
-  eqStateHook();
-  setStatus("EQ preset: " + name);
-}
-function showPresetMenu(anchorBtn){
-  const old = document.querySelector(".preset-menu");
-  if (old) { old.remove(); return; }
-  const menu = document.createElement("div");
-  menu.className = "preset-menu";
-  for (const name of Object.keys(EQ_PRESETS)) {
-    const b = document.createElement("button");
-    b.textContent = name;
-    b.addEventListener("click", () => { applyEQPreset(name); menu.remove(); });
-    menu.appendChild(b);
-  }
-  // Position it in viewport coordinates (the EQ window has
-  // overflow:hidden, so a menu inside it would be clipped).
-  const r = anchorBtn && anchorBtn._el ? anchorBtn._el.getBoundingClientRect() : null;
-  menu.style.position = "fixed";
-  menu.style.left = (r ? r.left : 8) + "px";
-  menu.style.top = (r ? r.bottom + 4 : 8) + "px";
-  document.body.appendChild(menu);
-  const close = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener("pointerdown", close); } };
-  setTimeout(() => document.addEventListener("pointerdown", close), 0);
-}
-async function buildEQWindow(skin, res){
-  const win = document.createElement("div");
-  win.className = "win"; win.id = "eqwin";
-  eqToggleBtns = []; eqSliderEls = [];
-  const eq = skin.eq;
-  if (eq) {
-    win.dataset.w = eq.w; win.dataset.h = eq.h;
-    win.style.width = eq.w + "px"; win.style.height = eq.h + "px";
-    for (const lay of eq.layers) {
-      if (isEqFillLayer(lay)) continue; // rendered as a value-clipped fill
-      if (!lay.imageFile) continue;
-      const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
-    }
-    if (eq.preamp) await buildEQSlider(eq.preamp, -1, win, res, eq);
-    for (let i = 0; i < eq.bands.length; i++) await buildEQSlider(eq.bands[i], i, win, res, eq);
-    for (const b of eq.buttons) {
-      if (!b.imageFile && !b.hoverFile && !b.downFile) continue; // text labels (+12/0/-12)
-      const d = await buildButton(b, win, res, onEQButton);
-      if (d && b.action === "EQ_TOGGLE") {
-        eqToggleBtns.push(b);
-        if (/led/i.test(b.id || "")) b._isLed = true;
-        else b._stateBase = () => eqState.on ? (b._downSrc || b._src) : b._src;
-      }
-    }
-    for (const t of eq.texts) {
-      if (!t.default) continue;
-      const el = document.createElement("div");
-      el.className = "wtext";
-      el.style.left = t.x + "px"; el.style.top = t.y + "px";
-      el.style.width = (t.w || 12) + "px"; el.style.height = (t.h || 8) + "px";
-      el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
-      el.textContent = compName(t.default, "Equalizer");
-      win.appendChild(el);
-    }
-  } else {
-    // Fallback: a plain EQ window (the skin has no equalizer layout).
-    win.dataset.w = 300; win.dataset.h = 220;
-    win.classList.add("plfallback");
-    win.style.width = "300px"; win.style.height = "220px";
-    const title = document.createElement("div");
-    title.className = "title"; title.textContent = "Equalizer";
-    win.appendChild(title);
-    const x = document.createElement("button");
-    x.className = "x"; x.textContent = "✕";
-    x.addEventListener("click", () => toggleWindow("eq"));
-    win.appendChild(x);
-    const fakeEq = { layers: [] };
-    const mk = (x0, bandIndex) => ({ x: x0, y: 40, w: 16, h: 120, orientation: "vertical", thumb: null, thumbW: 16, thumbH: 14 });
-    await buildEQSlider(mk(12, -1), -1, win, res, fakeEq);
-    for (let i = 0; i < 10; i++) await buildEQSlider(mk(44 + i * 24, i), i, win, res, fakeEq);
-    const onBtn = document.createElement("button");
-    onBtn.textContent = "EQ: TẮT"; onBtn.style.cssText = "position:absolute;left:12px;top:180px;padding:5px 10px;background:#1a1a1a;color:#ddd;border:1px solid #444;cursor:pointer;";
-    onBtn.addEventListener("click", async () => { await setEQOn(!eqState.on); onBtn.textContent = eqState.on ? "EQ: BẬT" : "EQ: TẮT"; });
-    win.appendChild(onBtn);
-    const preBtn = document.createElement("button");
-    preBtn.textContent = "Preset"; preBtn.style.cssText = "position:absolute;left:110px;top:180px;padding:5px 10px;background:#1a1a1a;color:#ddd;border:1px solid #444;cursor:pointer;";
-    preBtn.addEventListener("click", () => showPresetMenu(null));
-    win.appendChild(preBtn);
-    win._fallbackOnBtn = onBtn;
-  }
-  return win;
-}
-function updateEQToggleVisual(){
-  for (const b of eqToggleBtns) {
-    if (!b._img) continue;
-    if (b._isLed) { b._img.style.opacity = eqState.on ? "1" : "0.3"; continue; }
-    b._img.src = b._base ? b._base() : b._src;
-  }
-  if (eqWin && eqWin._fallbackOnBtn) eqWin._fallbackOnBtn.textContent = eqState.on ? "EQ: BẬT" : "EQ: TẮT";
-}
-async function onEQButton(b){
-  const a = b.action, p = b.param;
-  if (a === "EQ_TOGGLE") { await setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); }
-  else if (a === "EQ_AUTO") setStatus("EQ Auto chưa làm trong bản này (giống nút Auto của Webamp fork)");
-  else if (a === "MENU" && p === "presets") showPresetMenu(b);
-  else if (a === "CLOSE") toggleWindow("eq");
-  else if (a === "MINIMIZE") toggleWindow("eq");
-  else setStatus("Nút EQ này chưa có tác dụng trong bản này");
-}
-
-/* ---------- spectrum vis draw loop (live only while the EQ chain is on) ---------- */
-function drawVis(){
-  requestAnimationFrame(drawVis);
-  if (!visCanvas || !visCtx) return;
-  if (!eqNodes || !eqNodes.analyser || !eqState.on) {
-    if (visCanvas._hadVis) { visCtx.clearRect(0, 0, visCanvas.width, visCanvas.height); visCanvas._hadVis = false; }
-    return;
-  }
-  const an = eqNodes.analyser;
-  const data = new Uint8Array(an.frequencyBinCount);
-  an.getByteFrequencyData(data);
-  const w = visCanvas.width, h = visCanvas.height;
-  visCtx.clearRect(0, 0, w, h);
-  const bars = 24, bw = w / bars;
-  for (let i = 0; i < bars; i++) {
-    const v = data[Math.floor(i * data.length / bars)] / 255;
-    const bh = Math.max(1, v * h);
-    visCtx.fillStyle = v > 0.75 ? "#e33" : v > 0.5 ? "#ec3" : "#4c4";
-    visCtx.fillRect(i * bw + 1, h - bh, bw - 2, bh);
-  }
-  visCanvas._hadVis = true;
-}
-requestAnimationFrame(drawVis);
 </script>
 
 <script>
-/* ---------- atomic skin swap ----------
-   buildSkinInto() builds ALL THREE windows into detached divs, awaiting
-   every image resolve. Only then does applySkinFile swap them into the
-   visible #stage in ONE synchronous replaceChildren — the old skin is
-   never torn down first, so a photo mid-load shows either the complete
-   old skin or the complete new skin, never a half-drawn player. On any
-   failure the live DOM and the old SKIN are left completely untouched. */
-// Skins put the literal placeholder ":componentname" in title texts;
-// Winamp replaces it at runtime (via MAKI). Substitute the window's
-// component name instead of showing the placeholder.
 function compName(txt, fallback) {
   if (typeof txt !== "string") return txt;
   return txt.replace(/:componentname/gi, fallback);
@@ -1099,27 +790,85 @@ async function buildSkinInto(skin, res){
   main.style.width = skin.layout.w + "px";
   main.style.height = skin.layout.h + "px";
   await buildMainWindow(skin, res, main);
-  const eq = await buildEQWindow(skin, res);
-  const pl = await buildPlaylistWindow(skin, res);
-  return { main, eq, pl };
+  return { main };
+}
+function shellNote(msg){ const sh = document.querySelector("#shell .shell-s"); if (sh) sh.textContent = msg; }
+let _idb = null;
+function idbOpen(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("amp-skin-cache-v5.1", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("skins");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbGet(key){
+  try {
+    if (!_idb) _idb = await idbOpen();
+    return await new Promise((res, rej) => {
+      const t = _idb.transaction("skins", "readonly").objectStore("skins").get(key);
+      t.onsuccess = () => res(t.result || null);
+      t.onerror = () => rej(t.error);
+    });
+  } catch (e) { return null; }
+}
+async function idbPut(key, val){
+  try {
+    if (!_idb) _idb = await idbOpen();
+    await new Promise((res, rej) => {
+      const t = _idb.transaction("skins", "readwrite").objectStore("skins").put(val, key);
+      t.onsuccess = () => res();
+      t.onerror = () => rej(t.error);
+    });
+    return true;
+  } catch (e) { return false; }
+}
+function skinCacheKey(name){ return name + "|5.1"; }
+async function tryCachedSkin(file){
+  if (typeof SkinLoader === "undefined" || typeof SkinLoader.loadSkinFromCache !== "function") return null;
+  const c = await idbGet(skinCacheKey(file.name));
+  if (!c || !c.skin || !c.bitmaps || !c.files) return null;
+  if (file.size && c.size && c.size !== file.size) return null;
+  try { return await SkinLoader.loadSkinFromCache(c); } catch (e) { return null; }
+}
+async function cacheSkin(file, res){
+  if (!res || !res.skin || !res.bitmaps || !res.files) return;
+  const skinCopy = JSON.parse(JSON.stringify(res.skin));
+  for (const f of Object.values(skinCopy.fonts || {})) { delete f.imageURL; delete f.imageW; delete f.imageH; }
+  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: "5.1", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
+}
+async function headValidate(name, cached){
+  try {
+    const r = await fetch(name, { method: "HEAD" });
+    if (!r.ok) return;
+    const len = +(r.headers.get("content-length") || 0);
+    if (len && cached.size && len !== cached.size) {
+      const full = await fetch(name);
+      if (!full.ok) return;
+      await applySkinFile(new File([await full.blob()], name, { type: "application/zip" }));
+    }
+  } catch (e) { }
 }
 async function applySkinFile(file){
   if (!file) return;
   setStatus("Đang đọc skin: " + file.name + "… (đang giải nén)");
   try {
     if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
-    const res = await SkinLoader.loadSkinFile(file);
+    let res = await tryCachedSkin(file);
+    let fromCache = !!res;
+    if (!res) res = await SkinLoader.loadSkinFile(file);
     setStatus("Đang đọc skin: " + file.name + "… (đang vẽ giao diện)");
     const built = await buildSkinInto(res.skin, res.resolve);
-    // Let the browser paint the progress message before the swap.
     await new Promise(r => setTimeout(r, 0));
-    stage.replaceChildren(built.main, built.eq, built.pl);
-    SKIN = res.skin; resolver = res.resolve;
-    mainWin = built.main; eqWin = built.eq; plWin = built.pl;
+    stage.replaceChildren(built.main);
+    SKIN = res.skin; resolver = res.resolve; curRes = res.resolve;
+    mainWin = built.main; eqWin = null; plWin = null;
+    if (winVisible("eq")) { try { await ensureEqWindow(); } catch (e) { setStatus("không mở được EQ: " + e.message, true); } }
+    if (winVisible("pl")) { try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); } }
     applyWindowVisibility();
-    renderPlaylist();
+    renderPlaylist(true);
     updateTimerDisplay();
-    updateEQToggleVisual();
+    if (window.updateEQToggleVisual) updateEQToggleVisual();
     updatePlayState();
     if (SKIN.sliders) for (const s of SKIN.sliders) if (s._placeThumb) s._placeThumb();
     $("#skinname").textContent = SKIN.skin.name || file.name;
@@ -1128,7 +877,8 @@ async function applySkinFile(file){
       + (SKIN.eq ? " · EQ " + (SKIN.eq.native ? "theo skin" : "dự phòng") : " · EQ dự phòng")
       + (SKIN.playlist ? " · Playlist " + (SKIN.playlist.native ? "theo skin" : "dự phòng") : " · Playlist dự phòng");
     showLoaderVersion();
-    let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "");
+    if (!fromCache) await cacheSkin(file, res);
+    let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "") + (fromCache ? " · từ bộ nhớ đệm" : "");
     if (res.report.cropError) okMsg += " · không cắt được vùng mờ của ảnh nền (" + res.report.cropError + ") — skin có thể hiện rộng hơn bình thường";
     if (loaderMismatch()) okMsg += " · CẢNH BÁO: đang chạy loader " + (lv ? "cũ v" + lv : "không rõ phiên bản") + ", tải lại trang (hoặc mở tab ẩn danh) để nạp loader v" + EXPECTED_LOADER_VERSION;
     setStatus(okMsg);
@@ -1136,7 +886,7 @@ async function applySkinFile(file){
       file: file.name, buttons: SKIN.buttons.length, layout: SKIN.layout,
       frame: !!SKIN.frame, eq: !!SKIN.eq, eqNative: !!(SKIN.eq && SKIN.eq.native),
       playlist: !!SKIN.playlist, playlistNative: !!(SKIN.playlist && SKIN.playlist.native),
-      missing: res.report.missing, notes: res.report.notes,
+      missing: res.report.missing, notes: res.report.notes, fromCache,
       loaderVersion: loaderVersion(), crop: res.report.crop || null };
   } catch (err) {
     window.__lastSkinLoad = { ok: false, file: file.name, error: err.message, loaderVersion: loaderVersion() };
@@ -1158,7 +908,6 @@ viewport.addEventListener("drop", e => {
 });
 stage.addEventListener("dblclick", () => setScaleMode(scaleMode === "fit" ? "1x" : "fit"));
 
-/* ---------- ticker ---------- */
 function resetTicker(){
   tickerText = mode === "file" ? (fileName || "File local")
     : (channels[idx] ? channels[idx].name + " — Trực tiếp" : "Amp");
@@ -1185,7 +934,6 @@ function tickTicker(){
 }
 setInterval(tickTicker, 40);
 
-/* ---------- playlist (radio.m3u) ---------- */
 function parseM3U(text){
   const lines = text.split(/\r?\n/); const out = [];
   for (let i = 0; i < lines.length; i++) {
@@ -1207,8 +955,7 @@ function fillChannelSelect(){
   sel.onchange = () => loadChannel(+sel.value, true);
 }
 
-/* ---------- playback ---------- */
-let repeatMode = 0; // 0 = tắt, 1 = lặp playlist, 2 = lặp 1 bài (chỉ file local)
+let repeatMode = 0;
 function destroyHls(){ if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 function loadChannel(i, autoplay){
   if (!channels.length) return;
@@ -1220,15 +967,18 @@ function loadChannel(i, autoplay){
   setFill("seek", 0);
   setStatus("Kênh " + (idx + 1) + "/" + channels.length + ": " + c.name);
   destroyHls(); au.pause();
-  resetTimer(); // the clock restarts on every channel change
-  renderPlaylist();
+  resetTimer();
+  renderPlaylist(true);
   const url = c.url;
   const playIt = () => { if (autoplay) au.play().catch(() => {}); };
   if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
     hls = new Hls({ maxBufferLength: 30 });
     hls.loadSource(url); hls.attachMedia(au);
     hls.on(Hls.Events.ERROR, (ev, data) => {
-      if (data && data.fatal) handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
+      if (!data || !data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { try { hls.startLoad(); } catch (e) {} return; }
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch (e) {} return; }
+      handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
     });
     hls.on(Hls.Events.MANIFEST_PARSED, playIt);
     setTimeout(() => { if (au.paused && autoplay && !au.src) playIt(); }, 3000);
@@ -1289,7 +1039,7 @@ function playLocalFile(blobURL, name){
   tickerText = name; tickerNoteUntil = 0; renderTicker();
   setFill("seek", 0);
   setStatus("File local: " + name);
-  renderPlaylist();
+  renderPlaylist(true);
   au.play().catch(() => {});
 }
 $("#filepick").addEventListener("change", e => {
@@ -1301,7 +1051,6 @@ $("#filepick").addEventListener("change", e => {
   e.target.value = "";
 });
 
-/* ---------- transport / main-window buttons ---------- */
 function onMainButton(b){
   const a = b.action, p = (b.param || "").toLowerCase();
   if (a === "PLAY" && b.mergedPause && playing) { au.pause(); return; }
@@ -1315,7 +1064,7 @@ function onMainButton(b){
   else if (a === "NEXT") loadChannel(idx + 1, true);
   else if (a === "PREV") loadChannel(idx - 1, true);
   else if (a === "EJECT") $("#filepick").click();
-  else if (a === "EQ_TOGGLE") { setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); }
+  else if (a === "EQ_TOGGLE") { (async () => { try { await ensureEqJs(); } catch (e) { setStatus("không tải được EQ: " + e.message, true); return; } await setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); })(); }
   else if (a === "CLOSE") setStatus("Nút đóng chưa có tác dụng trong bản này (tắt tab trình duyệt để đóng)");
   else if (a === "MINIMIZE") setStatus("Nút thu nhỏ chưa có tác dụng trong bản này");
   else if (a === "SYSMENU") { $("#chan").focus(); setStatus("Menu: dùng danh sách kênh bên dưới"); }
@@ -1329,20 +1078,27 @@ function onMainButton(b){
     repeatMode = (repeatMode + 1) % 3;
     const led = SKIN && SKIN.buttons.find(x => x.id === "RepeatLED");
     if (led && led._img) led._img.style.opacity = repeatMode ? "1" : "0.3";
+    const rd = SKIN && SKIN.buttons.find(x => x.id === "RepeatDisplay");
+    if (rd && rd._img && resolver && resolver.bitmapURL) {
+      resolver.bitmapURL("player.songinfo.repeat" + repeatMode).then(u => {
+        if (u) { rd._img.src = u; rd._src = u; }
+      });
+    }
     setStatus("Repeat: " + ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode] + " (chỉ áp dụng cho file local)");
   }
   else if (!a) setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
 }
 
-/* ---------- boot: default skin = winampmodern566.wal, same loader as a picked skin ----------
-   radio.m3u loads independently so the channel list works even if the
-   default skin fails; in that case the page shows the message below and
-   the "Nạp skin" button stays usable — never a dead end. */
 async function loadDefaultSkin(){
   try {
     if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
     if (loaderMismatch()) {
       setStatus("đang chạy loader cũ (" + loaderLabel() + ") trong khi trang là v" + EXPECTED_LOADER_VERSION + " — bấm tải lại trang (hoặc mở tab ẩn danh) để nạp loader mới, skin có thể hiển thị sai", true);
+    }
+    const cached = await idbGet(skinCacheKey("winampmodern566.wal"));
+    if (cached && cached.skin && cached.bitmaps && cached.files) {
+      await applySkinFile(new File([], "winampmodern566.wal", { type: "application/zip" }));
+      if (window.__lastSkinLoad && window.__lastSkinLoad.ok) { headValidate("winampmodern566.wal", cached); return true; }
     }
     const r = await fetch("winampmodern566.wal");
     if (!r.ok) throw new Error("winampmodern566.wal HTTP " + r.status);
@@ -1353,10 +1109,12 @@ async function loadDefaultSkin(){
     return true;
   } catch (err) {
     window.__lastSkinLoad = { ok: false, file: "winampmodern566.wal", error: err.message };
+    shellNote("không nạp được skin mặc định — bấm Nạp skin để chọn file .wal/.zip");
     setStatus("không nạp được skin mặc định (" + err.message + "), bấm Nạp skin để chọn file .wal/.zip", true);
     return false;
   }
 }
+window.addEventListener("DOMContentLoaded", () => {
 fetch("radio.m3u").then(r => { if (!r.ok) throw new Error("radio.m3u HTTP " + r.status); return r.text(); })
 .then(async (m3u) => {
   channels = parseM3U(m3u);
@@ -1373,13 +1131,12 @@ fetch("radio.m3u").then(r => { if (!r.ok) throw new Error("radio.m3u HTTP " + r.
     if (!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
     setStatus(msg);
   }
-  // Restore a saved EQ-ON state: the graph is built now, but the context
-  // stays suspended until the first user gesture (which resumes it — see
-  // the 'playing' handler and the document pointerdown listener).
-  if (eqState.on) { try { await enableEQ(); updateEQToggleVisual(); } catch (e) {} }
+  if (eqState.on) { try { await ensureEqJs(); await enableEQ(); if (window.updateEQToggleVisual) updateEQToggleVisual(); } catch (e) {} }
 }).catch(err => {
+  shellNote("Lỗi nạp radio.m3u — kiểm tra mạng rồi tải lại trang");
   setStatus("Lỗi nạp radio.m3u: " + err.message, true);
   console.error(err);
+});
 });
 </script>
 </body>
