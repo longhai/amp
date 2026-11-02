@@ -81,6 +81,7 @@ async function buildPlaylistWindow(skin, res){
     list.style.left = rect.x + "px"; list.style.top = rect.y + "px";
     list.style.width = rect.w + "px"; list.style.height = rect.h + "px";
     if (pl.colors) { list.style.background = pl.colors.bg; list.style.color = pl.colors.normal; }
+    else if (pl.frame === "classic") { list.style.background = "#000"; }
     win.appendChild(list);
     plListEl = list;
     win._plList = list; win._plRect = rect;
@@ -147,7 +148,7 @@ function onPLButton(b){
   }
   else if (a === "PE_SEL") setStatus("PE_SEL: menu chọn chưa làm trong bản này");
   else if (a === "PE_MISC") setStatus("PE_MISC: menu phụ chưa làm trong bản này");
-  else if (a === "PE_LIST") { const s = $("#chan"); s.focus(); s.size = s.size ? 0 : 8; }
+  else if (a === "PE_LIST") setStatus("PE_LIST: menu danh sách chưa làm trong bản này");
   else if (a === "CLOSE") toggleWindow("pl");
   else if (a === "SWITCH") setStatus("Nút winshade chưa làm trong bản này");
   else setStatus("Nút playlist này chưa có tác dụng trong bản này");

@@ -40,6 +40,12 @@ window.stopVideoPlayback = stopVideoPlayback;
 function bindVideoEl(el){
   el.addEventListener("playing", () => { playing = true; updatePlayState(); onPlayStart(); failCount = 0; });
   el.addEventListener("pause", () => { playing = false; updatePlayState(); onPlayPause(); });
+  el.addEventListener("dblclick", e => {
+    e.stopPropagation();
+    if (document.fullscreenElement) { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
+    if (el.requestFullscreen) { const p = el.requestFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
+    if (el.webkitEnterFullscreen) { try { el.webkitEnterFullscreen(); } catch (err) {} }
+  });
   el.addEventListener("error", () => {
     if (videoChan && videoEl && videoEl.error) handleFail("Video: " + (videoEl.error.message || videoEl.error.code || ""));
   });

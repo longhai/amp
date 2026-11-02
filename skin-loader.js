@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "7.3";
+  const LOADER_VERSION = "7.4";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -869,6 +869,16 @@ const SkinLoader = (() => {
       if (bg) {
         const s = await pngSize(zip, pathMap, resolveImageRef(bg));
         if (s) layout.backgroundSize = s;
+      }
+      for (const { doc } of docs) {
+        for (const g of elList(doc, "group")) {
+          const gid = (g.getAttribute("id") || "").toLowerCase();
+          if (/drawer/.test(gid) && g.getAttribute("move") === "1") {
+            layout.drawerRestY = relPos(g, "y", layout.h);
+            break;
+          }
+        }
+        if (typeof layout.drawerRestY === "number") break;
       }
       walkLayoutChildren(layoutEl, layout.w, layout.h, mainOut, { handleFrame: true });
       await fillSizes(mainOut);

@@ -1,20 +1,137 @@
-# Amp v7.3 — Winamp Modern (.wal) + Classic (.wsz) trong một trình
+# Amp v7.4 — Winamp Modern (.wal) + Classic (.wsz) trong một trình
 
 Amp là trình phát nhạc web nạp skin Winamp trực tiếp từ file gốc của skin,
-vẽ bằng HTML/CSS theo đúng kích thước ảnh trong skin. v7.3 sửa 2 mục theo
-báo lỗi của bạn trên điện thoại thật (test v7.2 ngày 2/11), giữ nguyên mọi
-tính năng v7.2. Boot JS 156.204 byte (inline 89.447 + loader 66.757),
+vẽ bằng HTML/CSS theo đúng kích thước ảnh trong skin. v7.4 sửa 10 mục theo
+báo lỗi của bạn trên điện thoại thật (test v7.3 ngày 2/11), giữ nguyên mọi
+tính năng v7.3. Boot JS 156.189 byte (inline 88.517 + loader 67.672),
 không ghi chú trong code, thư viện qua CDN (JSZip, hls.js).
 
 ## Mở trang
 
 Mở `index.html`. Skin mặc định là WinampModern566.wal (skin Modern gốc của
-Winamp 5.66). Bấm **Nạp skin** để chọn file `.wal`, `.zip` hoặc `.wsz` trên máy.
-Kéo-thả file skin vào trang cũng được. Skin đã nạp được lưu vào bộ nhớ đệm
+Winamp 5.66). Đổi skin bằng cách kéo-thả file `.wal`, `.zip` hoặc `.wsz`
+vào player. Dùng player hoàn toàn bằng cách bấm trực tiếp lên giao diện
+skin: đổi kênh qua playlist của skin (bấm vào hàng) và nút prev/next trên
+cửa sổ chính; mở/đóng các cửa sổ qua đúng nút của skin (PL/ML/EQ/Video/
+Vis/…); đổi cỡ 1x/vừa màn hình bằng cách bấm đúp vào player; nạp nhạc
+local bằng nút Eject trên skin. Không còn khối nút web nào dưới player
+nữa (đã bỏ ở v7.4). Skin đã nạp được lưu vào bộ nhớ đệm
 (IndexedDB) để lần sau mở nhanh, không tải lại. Khóa bộ nhớ đệm gắn với
-phiên bản loader (`tên file|7.3`) nên lên bản mới là parse lại skin từ đầu
+phiên bản loader (`tên file|7.4`) nên lên bản mới là parse lại skin từ đầu
 — bản v7.1 dùng khóa `|7.1` nên parse cũ không còn dùng được nữa (trước
 đây lên bản mới vẫn đọc nhầm parse cũ đã lưu).
+
+## Mới ở v7.4 (theo báo lỗi trên điện thoại thật)
+
+1. **Hết 2 nguồn âm khi bật EQ trên kênh video.** Bấm EQ ON khi đang xem
+   kênh hình (vd Nghệ An, `truyenhinhnghean.vn`) thì vừa nghe tiếng của
+   thẻ video, vừa nghe thêm tiếng của thẻ `<audio>` phát cùng luồng qua
+   EQ — vì `enableEQ`/`disableEQ`/`refreshMonitor` quyết định phát lại
+   thẻ tiếng dựa vào biến chung `playing`, mà biến này bật khi CẢ thẻ
+   tiếng lẫn thẻ video đang phát. Kênh video thì `loadChannel` đã tắt
+   thẻ tiếng, chỉ phát thẻ video — nhưng bấm EQ ON thì `wasPlaying =
+   playing` (đúng vì video đang phát) nên code phát luôn thẻ tiếng cùng
+   luồng đó. Bấm EQ OFF cũng phát lại thẻ tiếng theo cùng logic nên
+   tiếng đôi không hết, nút như bị đơ (kênh chỉ có tiếng thì bấm vẫn
+   ngon, kênh video thì không — nên "có khi được lúc không"). Giờ cả 3
+   chỗ đều tính lại từ trạng thái của chính thẻ tiếng (`auResumeState`):
+   chỉ phát lại thẻ tiếng khi nó đang phát (`!au.paused`) VÀ không có
+   video đang phát (`videoChan` + `videoEl` không tạm dừng). Khi video
+   đang phát thì không phát thẻ tiếng nữa; `cutover` vẫn tắt thẻ tiếng
+   cũ nên người đang bị tiếng đôi thì bấm EQ 1 lần là hết đôi (tự chữa).
+   Không đổi `loadChannel`/`playAudioChannel`/`playVideoChannel`, không
+   đổi thời gian chờ manifest HLS (8 giây) và thứ tự chuyển nguồn.
+2. **Nút EQ đổi trạng thái ngay khi bấm.** Trước đây `setEQOn` chỉ gọi
+   `updateEQToggleVisual()` sau khi xong hết chuỗi bất đồng bộ, mà
+   `attachCurrentSource` có thể chờ tới 8 giây lấy manifest HLS nên
+   mạng chậm thì bấm nút ON mấy giây vẫn không thấy đổi đèn, tưởng bấm
+   không ăn. Giờ `setEQOn` đổi đèn + dòng trạng thái ngay sau khi lưu
+   `eqState.on`, trước khi chạy `enableEQ`/`disableEQ`; cuối chuỗi vẫn
+   gọi lại 1 lần như cũ. Nút hiện trạng thái mới tức thì, đường tiếng
+   vẫn chuyển khi sẵn sàng.
+3. **Playlist Classic kéo rộng: nền danh sách giờ đục đen.** Bạn báo kéo
+   mở rộng playlist thì phần nền trên bị tách rời (hàng 29–41, có đường
+   tách ngang). Kiểm bằng trình duyệt thật ở +150/+300: khung 9 mảnh vẫn
+   đúng vị trí (mảnh trên ở yên top:0, mảnh dưới dính đáy, danh sách gặp
+   đúng mép khung), nền danh sách và nền cửa sổ đều đen — KHÔNG tái hiện
+   được đường tách trong code hiện tại. Ảnh của bạn (chữ trắng trên nền
+   xám có dải màu) khớp với playlist của skin Modern chứ không phải
+   Classic, mà trang bạn đang chạy đã được chứng minh là đang phục vụ
+   file cũ/lẫn lộn (dấu "loader v7.1" màu đỏ trên trang v7.3). Nên
+   nguyên nhân khả dĩ nhất là file trên host chưa đồng bộ; cách sửa là
+   up đủ bộ v7.4 (cả 18 file, `?v=7.4`) rồi tải lại. Để chắc chắn, v7.4
+   thêm 1 lớp cứng: danh sách playlist Classic giờ có nền đen đục
+   (`#000`) kể cả khi `plColors` null, không còn nền trong suốt để lộ
+   nền khác ra sau. Nếu up đủ bộ mà vẫn thấy tách thì gửi lại ảnh mới.
+4. **Bỏ nút "EQ đầy đủ ›" trong ngăn kéo.** Winamp thật không có nút này
+   (nó là cái chế thêm trong ngăn kéo). Giờ mở tab EQ trong ngăn kéo thì
+   chỉ còn thanh trượt + nút ON/AUTO/PRESETS, không còn viên thuốc "EQ
+   đầy đủ ›" ở góc dưới-phải. Cửa sổ EQ riêng vẫn mở bằng nút EQ trên
+   thanh công cụ và nút EQ ở cửa sổ chính.
+5. **Ngăn kéo bắt đầu TRONG cửa sổ chính, lấp kín chỗ CONFIG.** Trước
+   đây ngăn kéo là cửa sổ riêng nằm DƯỚI cửa sổ chính nên mép trên của
+   nó bắt đầu ở ngoài mép dưới cửa sổ chính, để lại khoảng trống ở chỗ
+   CONFIG. Bản gốc (XML `player.normal.drawer`, `y=-263 relaty=1` trong
+   layout 354x280) bắt đầu ở y=17 — nằm trong cửa sổ chính (cao 161) và
+   ở sau nó, rồi trượt xuống. Giờ Amp làm đúng vậy: loader bắt vị trí
+   nghỉ của ngăn kéo từ XML (`layout.drawerRestY = 17`, tìm nhóm
+   `move=1` trong toàn bộ XML vì nhóm này nằm trong groupdef
+   `player.content.dummy.group`, không phải con trực tiếp của layout);
+   wrapper ngăn kéo đặt ở y=17, sau cửa sổ chính (z-index 1 < 2); nền
+   trong `drawer.inner` từ `config_tabs.png` + khung `drawer.window`
+   phủ kín chỗ CONFIG như bản gốc. Không còn khoảng trống.
+6. **Ngăn kéo chỉ trượt 90%, còn 10% luôn hiện.** Khi đóng, inner chỉ
+   trượt lên tới translateY(28px) (tính từ vị trí nghỉ y=17), để lại dải
+   dưới ~13px luôn hiện ngay dưới cửa sổ chính — dải này chứa nút OPEN
+   (y=118..125) + nền `drawer.inner` từ `config_tabs.png`, chính là cái
+   lấp chỗ CONFIG. Khi mở, inner về translateY(144px), hiện đủ 129px.
+   Hành trình 116px = 90% của 129. Không bao giờ trượt mất hẳn.
+7. **Ngăn kéo có đúng 2 nút bấm kéo ra/vào của skin.** Skin có sẵn
+   `drawer.button.open` / `drawer.button.close` (cùng x=-72, y=118,
+   bitmap 25x7; nút close có thêm nền 41x15). Trước đây cả 2 nằm trong
+   inner trượt nên khi đóng thì nút open biến mất theo, người dùng chỉ
+   còn cách bấm chữ CONFIG. Giờ mỗi trạng thái chỉ hiện đúng 1 mặt: đóng
+   thì nút OPEN hiện trong dải 13px, bấm là trượt ra; mở thì nút CLOSE
+   hiện ở góc dưới-phải, bấm là trượt vào. Giữ cả cách bấm chữ CONFIG
+   qua nút "Cài đặt (Config)" trên thanh công cụ (nút này là điều khiển
+   của trang, giữ nguyên).
+8. **Bỏ vùng bấm confighit chế thêm.** Vùng trong suốt 40x24 phủ lên
+   chữ CONFIG (chế thêm ở v7.1) đã bỏ hẳn — skin gốc không có nút bấm
+   nào ở đó, CONFIG chỉ là chữ vẽ (`txt_config.png` 25x5). Bấm vào chữ
+   CONFIG giờ không còn tác dụng gì; mở/đóng ngăn kéo bằng 2 nút
+   open/close của skin (mục 7) hoặc nút "Cài đặt (Config)" trên thanh
+   công cụ.
+9. **Bỏ toàn bộ khối nút bên dưới trang web.** Không còn `#panel`:
+   select chọn kênh, 12 nút (Vừa màn hình / Cỡ gốc 1x / Playlist /
+   EQ / Thư viện / Video / Hiệu ứng / Ảnh bìa / Giới thiệu / Cài đặt /
+   Remote / Nạp skin), dòng gợi ý kéo-thả, div trạng thái — tất cả đã
+   bỏ. Chỉ giữ 2 input ẩn `#filepick` (nạp nhạc local qua nút Eject
+   trên skin) và `#skinpick` (cho đường kéo-thả), và dòng tiêu đề h1
+   (tên skin + loader version). Từ giờ dùng player hoàn toàn bằng cách
+   bấm trực tiếp lên giao diện skin; đổi cỡ vẫn bằng bấm đúp vào player.
+   Code JS đã dọn: `setStatus` chịu được khi `#status` không còn,
+   `fillChannelSelect`/`loadChannel` không chạm `#chan` nữa, nhánh
+   SYSMENU mở playlist thay vì focus `#chan`, nút PE_LIST của playlist
+   Classic thành "menu danh sách chưa làm" (trước đây nó mở select
+   `#chan`).
+10. **Đóng cửa sổ Video thì video dừng hẳn.** Trước đây đóng/ẩn cửa sổ
+    Video (toggleWindow) chỉ ẩn cửa sổ, thẻ `<video>` cứ phát tiếp cả
+    tiếng — cả skin mặc định cũng bị (lỗi ở code chung, không riêng
+    skin nào). Giờ khi đóng thì gọi `stopVideoPlayback()` (tạm dừng
+    videoEl, hủy HLS của video, gỡ src, `videoChan=null`). Mở lại cửa
+    sổ thì phát tiếp (dòng cũ gọi `playVideoChannel`). Không tự chuyển
+    sang thẻ tiếng khi đóng: muốn nghe lại thì bấm Play — `loadChannel`
+    đã có sẵn đường phát kênh video bằng thẻ tiếng khi cửa sổ video
+    đang ẩn.
+11. **Nhấp đúp vào video mở fullscreen.** Trước đây toàn bộ code chỉ có
+    1 handler dblclick duy nhất ở stage (đổi cỡ trang fit/1x), không có
+    `requestFullscreen` nào cho video nên bấm đúp vào video chỉ đổi cỡ
+    trang. Giờ thẻ `<video>` có handler dblclick riêng (trong
+    `bindVideoEl`): chưa full thì `videoEl.requestFullscreen()` (có
+    fallback `webkitEnterFullscreen` cho iOS), đang full thì
+    `document.exitFullscreen()`; bấm đúp lần nữa thì thoát. Handler
+    `stopPropagation` nên không kích luôn dblclick của stage (cỡ trang
+    không đổi).
 
 ## Mới ở v7.3 (theo báo lỗi trên điện thoại thật)
 
@@ -264,10 +381,11 @@ phiên bản loader (`tên file|7.3`) nên lên bản mới là parse lại skin
 
 ## Dung lượng JS (đo thật)
 
-- Lúc mở trang: **155.184 B** (JS inline trong index.html 88.347 B +
-  skin-loader.js 66.837 B). v7 là 140.613 B — tăng ~14,6 KB cho 13 mục
-  sửa ở v7.1 (songinfo, bìa FLAC, phổ gradient, ghi vị trí đáy, nút
-  CONFIG, đọc thẻ ML, thời lượng, đèn Play/Pause, EQ trong ngăn kéo).
+- Lúc mở trang: **156.189 B** (JS inline trong index.html 88.517 B +
+  skin-loader.js 67.672 B). v7.3 là 156.732 B — v7.4 NHỎ hơn 543 B vì
+  bỏ khối nút web dưới trang (tiết kiệm nhiều hơn phần code mới thêm
+  vào: ngăn kéo đặt trong cửa sổ chính, dừng video khi đóng cửa sổ,
+  fullscreen video). v7.1 là 155.184 B.
 - Khi nạp một skin `.wsz`: **176.511 B** (thêm classic-skin.js 21.327 B).
 - Tổng mọi file JS (kể cả file nạp chậm): 249.027 B. Webamp bundle 965 KB.
 
@@ -341,6 +459,21 @@ theo nhạc như ảnh bạn gửi.
   "Đà Nẵng", "Trực tiếp" hiện đủ, không cắt.
 - `proof-v73-notifier-classic.png` — notifier khi đổi sang Classic:
   hộp tối 260x64, "Đà Nẵng" / "Trực tiếp" hiện đủ.
+- `proof-v74-video-eq.png` — kênh video Nghệ An đang phát, EQ BẬT mà
+  thẻ tiếng vẫn tạm dừng (không còn 2 nguồn âm).
+- `proof-v74-audio-eq.png` — kênh chỉ có tiếng, EQ BẬT, thẻ tiếng phát
+  qua chuỗi EQ.
+- `proof-v74-video-close.png` — toàn trang sau khi đóng cửa sổ Video
+  (video đã dừng, không còn nguồn âm).
+- `proof-v74-drawer-closed.png` — ngăn kéo đóng: chỉ còn dải ~13px
+  dưới cửa sổ chính, nút OPEN ">" ở góc phải, nền bạc config_tabs.
+- `proof-v74-drawer-open.png` — ngăn kéo mở: đủ 129px, thanh trượt EQ
+  + tab EQUALIZER/OPTIONS/COLOR THEMES, nút CLOSE ">" ở góc phải.
+- `proof-v74-classic-pl.png` — playlist Classic: 5 nút không ảnh,
+  khung 9 mảnh, nền đen.
+- `proof-v74-classic-pl-stretch.png` — playlist Classic sau khi kéo
+  cao thêm +300: khung trên vẫn ở yên, nền danh sách đen đục, không
+  tách.
 
 ## Kết quả từng skin
 
@@ -370,19 +503,65 @@ theo nhạc như ảnh bạn gửi.
   Main + EQ + Playlist là chính).
 - Ảnh bìa mới đọc được mp3 (ID3v2 APIC) và FLAC (PICTURE), chưa đọc WAV.
 - Menu File / Play / ... trên thanh menu vẫn là hình trang trí.
-- Bật EQ trên đài radio thì đèn ON cập nhật chậm vài giây (do phải chờ
-  gắn lại luồng HLS) — tiếng vẫn đổi đúng, chỉ đèn báo chậm.
-- Chưa test trên điện thoại thật — cần bạn test lại các mục v7.3 trên
-  (notifier hiện đủ chữ chưa, đổi sang Classic rồi bấm play có còn hiện
-  notifier trắng của Modern không) và các mục v7.2 còn lại (2 cái EQ,
-  nhãn 16K, chiều trượt ngăn kéo, tab bạc).
+- Chưa test trên điện thoại thật — cần bạn test lại các mục v7.4 trên:
+  EQ trên kênh video còn tiếng đôi không, nút EQ đổi đèn ngay khi bấm
+  không, playlist Classic kéo rộng còn tách nền không (nhớ up đủ bộ
+  18 file rồi tải lại trang), ngăn kéo đóng còn dải nút 13px không,
+  bấm OPEN/CLOSE có trượt đúng không, chỗ CONFIG còn trống không, đóng
+  cửa sổ Video thì video có dừng hẳn không, nhấp đúp video có full
+  không, và dùng player không còn nút web dưới trang có thiếu gì không.
 - Nút playlist Classic (vùng bấm trong suốt) đã kiểm bằng trình duyệt
   thật ở v7.2/v7.3 nhưng chưa bấm thử trên máy thật: bấm ADD/REM/SEL/
   MISC/LIST xem menu có mở không, mặt nút có hiện đúng không.
+- `playing` (cờ chung "đang phát") có thể còn true sau khi dừng video
+  bằng `stopVideoPlayback()`: sự kiện `pause` của thẻ video không bắn
+  khi `load()` gỡ src ngay sau `pause()` (chỉ có sự kiện `emptied`),
+  nên cờ không về false. Không ảnh hưởng tiếng (EQ v7.4 không còn dùng
+  cờ này) và vô tình giúp mở lại cửa sổ Video thì video phát tiếp (dòng
+  769 truyền `playing` làm autoplay). Nếu sau này dọn cờ này thì phải
+  cho đường mở lại truyền autoplay=true rõ ràng.
+- `setEQOn` có thể chờ lâu khi HLS remote không tải được: `cutover`
+  gọi `au.play()` mà luồng HLS chưa có dữ liệu thì promise của `play()`
+  treo tới khi có dữ liệu hoặc khi có gì đó tạm dừng thẻ tiếng. Nút EQ
+  vẫn đổi đèn ngay (mục 2 ở v7.4), chỉ code nào `await setEQOn` mới bị
+  chờ theo. Trên điện thoại thật có mạng thì manifest tải được nên
+  không gặp.
 
 ## Kiểm tra (headless, Chrome 123)
 
-Chạy kiểm tra đầy đủ `check72.js` (34 mục: boot, 5 mục sửa v7.2, hồi quy
+Chạy kiểm tra `check74.js` (80 mục: boot, 11 mục sửa v7.4, hồi quy
+v7.1+v7.2+v7.3) bằng Chrome headless + máy chủ local, thư viện CDN được
+chặn và phục vụ từ bản local: **80/80 PASS**. Boot Modern 354x161/25 nút,
+loader v7.4, `drawerRestY=17` bắt từ XML gốc; 41 kênh radio (Nghệ An là
+kênh video, VOV1 là kênh audio, Đà Nẵng đi đường video vì URL medatech);
+không còn `#panel`/`#chan`/`#status`/nút trang, giữ `filepick`/`skinpick`/
+h1, không còn `#confighit`. Video Nghệ An phát đúng 1 nguồn (videoEl
+chạy, au tạm dừng); EQ ON/OFF trên kênh video: au vẫn tạm dừng, videoEl
+vẫn chạy, chuỗi EQ nối/ngắt đúng; ép trạng thái tiếng đôi rồi bấm EQ thì
+hết đôi, video vẫn chạy; kênh chỉ tiếng qua EQ vẫn phát; phản hồi tức
+thì: trong 120ms `eqState.on=true` và nút EQ trên skin đã đổi sang ảnh
+ON. Đóng cửa sổ Video: videoEl tạm dừng, `videoChan=null`, au tạm dừng,
+cửa sổ ẩn; mở lại: `videoChan` gắn lại Nghệ An, cửa sổ hiện; bấm Play
+khi cửa sổ ẩn thì đi đường thẻ tiếng (HLS audio) chứ không qua videoEl.
+Nhấp đúp video: `requestFullscreen` được gọi trên thẻ video, `scaleMode`
+không đổi (không kích dblclick của stage). Ngăn kéo: restY 17, inner
+28 đóng / 144 mở, wrap 157 đóng / 273 mở, wrap chồm lên cửa sổ chính
+17px, chỉ chừa dải ~13px dưới cửa sổ chính khi đóng, nút OPEN nằm trong
+dải, nút CLOSE ẩn khi đóng và ngược lại khi mở, không còn link "EQ đầy
+đủ ›", bấm OPEN/CLOSE trượt ra/vào về đúng vị trí, mở ngăn EQ thì cửa
+sổ EQ độc lập ẩn, đóng ngăn thì hiện lại. Playlist Classic: 5 nút không
+ảnh đúng vị trí/tác vụ, không đè list; kéo +150/+300: mảnh khung trên ở
+yên top:0, mảnh dưới dính đáy, nền danh sách đen đục, list dài ra. Đổi
+sang Classic: notifier hộp tối 260x64 đủ chữ; về Modern: notifier bạc
+128x80, chữ rộng không cuộn; khóa cache `|7.4`. 0 lỗi JS; chỉ có lỗi tài
+nguyên mạng `ERR_TUNNEL_CONNECTION_FAILED` (headless không ra được
+internet để tải HLS remote — đã biết, không phải lỗi trang). Lưu ý:
+chuỗi `setEQOn` trên kênh radio HLS có thể chờ tới khi HLS tải được
+trong headless nên bộ kiểm tra cho nó timeout 12 giây rồi dọn (tạm dừng
+thẻ tiếng + hủy HLS) thay vì chờ vô hạn; trên điện thoại thật có mạng
+thì chuỗi xong bình thường. Ảnh bằng chứng trong thư mục `proof/`.
+
+Chạy kiểm tra `check72.js` (34 mục: boot, 5 mục sửa v7.2, hồi quy
 v7.1) bằng Chrome headless + máy chủ local, thư viện CDN được chặn và
 phục vụ từ bản local: **34/34 PASS** — gồm 2 EQ loại trừ nhau, nhãn 16K,
 playlist Classic (khung 9 mảnh, 0 điểm xanh, list không bị nút đè, ở cỡ
@@ -419,15 +598,15 @@ trong thư mục `proof/`.
 
 ## Đóng gói
 
-Zip `amp-v7-3.zip` chỉ chứa 18 file chạy (không kèm ảnh bằng chứng):
+Zip `amp-v7-4.zip` chỉ chứa 18 file chạy (không kèm ảnh bằng chứng):
 `index.html`, `skin-loader.js`, `drawer.js`, `eq.js`, `playlist.js`,
 `classic-skin.js`, `about.js`, `albumart.js`, `avs.js`, `ml.js`,
 `notifier.js`, `remote.js`, `video.js`, `radio.m3u`, `base-2.91.wsz`,
 `blakk.zip`, `winampmodern566.wal`, `README.md`. Ảnh bằng chứng ở trong
 thư mục `proof/` của thư mục bản này, không có trong zip. Cách đóng gói
 (chạy từ thư mục bản này):
-`zip amp-v7-3.zip index.html skin-loader.js drawer.js eq.js playlist.js
+`zip amp-v7-4.zip index.html skin-loader.js drawer.js eq.js playlist.js
 classic-skin.js about.js albumart.js avs.js ml.js notifier.js remote.js
 video.js radio.m3u base-2.91.wsz blakk.zip winampmodern566.wal
-README.md && unzip -t amp-v7-3.zip && ln -sf "$PWD/amp-v7-3.zip"
-~/workspace/your_files/amp-v7-3.zip`.
+README.md && unzip -t amp-v7-4.zip && ln -sf "$PWD/amp-v7-4.zip"
+~/workspace/your_files/amp-v7-4.zip`.

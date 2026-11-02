@@ -37,6 +37,10 @@ async function resumeAudioCtx(){
     try { await Promise.race([audioCtx.resume(), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
   }
 }
+function auResumeState(){
+  const videoActive = !!(typeof videoEl !== "undefined" && videoEl && typeof videoChan !== "undefined" && videoChan && !videoEl.paused);
+  return { wasPlaying: !au.paused && !videoActive, wasTime: au.currentTime || 0 };
+}
 function makeAudioElement(withCors){
   const wasVol = au.volume;
   const el = document.createElement("audio");
@@ -89,7 +93,7 @@ async function enableEQ(){
   ensureAudioGraph();
   await resumeAudioCtx();
   if (eqNodes && eqNodes.src && eqNodes.el === au) { applyEQGains(); eqStateHook(); return; }
-  const wasPlaying = playing, wasTime = au.currentTime || 0;
+  const { wasPlaying, wasTime } = auResumeState();
   const oldEl = au, oldSrc = eqNodes ? eqNodes.src : null, oldHls = hls;
   makeAudioElement(true);
   await attachCurrentSource(oldHls);
@@ -103,7 +107,7 @@ async function enableEQ(){
   await refreshMonitor();
 }
 async function disableEQ(){
-  const wasPlaying = playing, wasTime = au.currentTime || 0;
+  const { wasPlaying, wasTime } = auResumeState();
   const oldEl = au, oldSrc = eqNodes ? eqNodes.src : null, oldHls = hls;
   if (eqNodes) { eqNodes.src = null; eqNodes.el = null; }
   monitorNodes = null;
@@ -129,7 +133,7 @@ async function refreshMonitor(){
     if (monitorNodes) {
       try { monitorNodes.src.disconnect(); } catch (e) {}
       monitorNodes = null;
-      const wasPlaying = playing, wasTime = au.currentTime || 0;
+      const { wasPlaying, wasTime } = auResumeState();
       const oldEl = au, oldHls = hls;
       makeAudioElement(false);
       await attachCurrentSource(oldHls);
@@ -152,6 +156,8 @@ function setEQOn(on){
     on = !!on;
     if (on === eqState.on && (on ? !!(eqNodes && eqNodes.src) : !(eqNodes && eqNodes.src))) { eqStateHook(); return; }
     eqState.on = on; saveEQState();
+    updateEQToggleVisual();
+    setStatus(on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)");
     if (on) await enableEQ(); else await disableEQ();
     updateEQToggleVisual();
     eqStateHook();

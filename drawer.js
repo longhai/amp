@@ -115,7 +115,6 @@ async function renderDrawerTab(win){
   if (!content) return;
   content.innerHTML = "";
   if (win._drawerEqPanel) { win._drawerEqPanel.remove(); win._drawerEqPanel = null; }
-  if (win._drawerEqLink) win._drawerEqLink.style.display = "none";
   const tab = d.tabs.find(t => t.name === drawerTab) || d.tabs[0];
   for (const t of d.tabs) {
     const el = win._drawerTabs[t.name];
@@ -175,8 +174,6 @@ async function renderDrawerTab(win){
 }
 async function renderDrawerEQTab(win){
   const d = SKIN.drawer, eq = d.contents && d.contents.eq;
-  const link = win._drawerEqLink;
-  if (link) link.style.display = "";
   const bands = eq ? (eq.sliders || []).filter(s => s.action === "EQ_BAND") : [];
   if (!eq || !bands.length) {
     const st = document.createElement("div");
@@ -226,6 +223,13 @@ async function renderDrawerEQTab(win){
     }
   }
 }
+function syncDrawerButtons(win, isOpen){
+  if (!win) return;
+  const open = (typeof isOpen === "boolean") ? isOpen : ((typeof drawerOpen !== "undefined") && drawerOpen);
+  if (win._drawerOpenBtn) win._drawerOpenBtn.style.display = open ? "none" : "";
+  if (win._drawerCloseBtn) win._drawerCloseBtn.style.display = open ? "" : "none";
+  if (win._drawerCloseBg) win._drawerCloseBg.style.display = open ? "" : "none";
+}
 async function buildDrawerWindow(skin, res){
   const d = skin.drawer;
   if (!d) return null;
@@ -238,7 +242,7 @@ async function buildDrawerWindow(skin, res){
   const inner = document.createElement("div");
   inner.className = "drawerinner";
   inner.style.width = sz.w + "px"; inner.style.height = sz.h + "px";
-  inner.style.transform = "translateY(-100%)";
+  inner.style.transform = "translateY(" + drawerInnerY(false, skin, sz.h) + "px)";
   inner.style.position = "relative";
   wrap.appendChild(inner);
   wrap._inner = inner;
@@ -249,7 +253,11 @@ async function buildDrawerWindow(skin, res){
   for (const lay of d.layers) {
     if (!lay.imageFile) continue;
     const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) inner.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    if (src) {
+      const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
+      if (lay.id === "drawer.button.close.bg") wrap._drawerCloseBg = im;
+      inner.appendChild(im);
+    }
   }
   for (const t of d.texts) {
     if (!t.default) continue;
@@ -262,6 +270,9 @@ async function buildDrawerWindow(skin, res){
     inner.appendChild(el);
   }
   for (const b of d.buttons) await buildButton(b, inner, res, onDrawerButton);
+  wrap._drawerOpenBtn = ((d.buttons || []).find(b => /drawer\.button\.open/i.test(b.id || "")) || {})._el || null;
+  wrap._drawerCloseBtn = ((d.buttons || []).find(b => /drawer\.button\.close/i.test(b.id || "")) || {})._el || null;
+  syncDrawerButtons(wrap);
   const tabsEl = document.createElement("div");
   tabsEl.style.cssText = "position:absolute;left:10px;bottom:5px;display:flex;gap:2px;align-items:flex-end;z-index:3;";
   inner.appendChild(tabsEl);
@@ -281,13 +292,6 @@ async function buildDrawerWindow(skin, res){
     tabsEl.appendChild(el);
     wrap._drawerTabs[t.name] = el;
   }
-  const eqLink = document.createElement("div");
-  eqLink.textContent = "EQ đầy đủ ›";
-  eqLink.style.cssText = "color:#9cf;font-size:12px;padding:2px 6px;cursor:pointer;margin-left:auto;white-space:nowrap;flex:0 0 auto;background:rgba(0,0,0,.4);border:1px solid #666;border-radius:3px;";
-  eqLink.addEventListener("click", async () => { await toggleWindow("eq"); });
-  tabsEl.appendChild(eqLink);
-  wrap._drawerEqLink = eqLink;
-  eqLink.style.display = "none";
   const content = document.createElement("div");
   content.style.cssText = "position:absolute;left:8px;right:8px;top:13px;bottom:28px;overflow-y:auto;";
   inner.appendChild(content);
