@@ -3,2713 +3,451 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Không gửi Referer khi tải stream: server medatech (Đà Nẵng, Quảng Ngãi,
-     Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
-     200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
 <meta name="referrer" content="no-referrer">
-<title>Amp — v8 (ML · Video · Vis · Album Art · Notifier · About · Drawer · Remote/Stick)</title>
+<title>Amp v9 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
-<script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=8.1"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  html,body{margin:0;padding:0;background:#000;color:#ccc;
-    font-family:Verdana,Arial,sans-serif;}
-  body{text-align:center;}
-  h1{font-size:13px;color:#888;margin:10px 0 2px;font-weight:normal;}
-  h1 b{color:#bbb;}
-  #skinsub{font-size:11px;color:#666;}
-  /* --- the skin stage: one scaled stack (main + EQ + Playlist) ---
-     Each window is a .win div at its native size, positioned absolutely
-     inside #stage at its scaled offset and scaled by the same CSS
-     transform — so all three windows grow/shrink together in fit mode
-     and keep native sizes in 1x mode. overflow:hidden: the skin window
-     clips to its own box, like Winamp's shaped window. */
-  #viewport{position:relative;margin:10px auto 0;}
-  #viewport.dragover{outline:2px dashed #6a0;outline-offset:4px;}
-  #stage{position:relative;margin:0 auto;}
-  #shell{position:relative;width:354px;max-width:96vw;height:143px;margin:0 auto;
-    background:#0a0a12;border:1px solid #2a2a3a;color:#9fb7d6;text-align:center;
-    padding-top:50px;box-sizing:border-box;}
-  #shell .shell-t{font-size:20px;color:#dfe8ff;letter-spacing:2px;}
-  #shell .shell-s{font-size:12px;margin-top:8px;color:#8fa3c0;}
-  #shell .shell-bar{width:200px;max-width:70%;height:4px;background:#1c2436;margin:14px auto 0;overflow:hidden;}
-  #shell .shell-bar i{display:block;height:100%;width:40%;background:#6a8fd0;animation:shellslide 1.2s linear infinite;}
-  @keyframes shellslide{from{margin-left:-40%;}to{margin-left:100%;}}
-  .win{position:absolute;left:0;top:0;transform-origin:top left;
-    background:#000 no-repeat 0 0;overflow:hidden;}
-  .win img{position:absolute;display:block;border:0;padding:0;
-    image-rendering:auto;-webkit-user-drag:none;user-select:none;}
-  .win .btn{position:absolute;padding:0;border:0;background:transparent;
-    cursor:pointer;touch-action:manipulation;}
-  .win.plclassic .btn:active{background:rgba(0,0,0,.30);}
-  .win .btn img{position:static;width:100%;height:100%;}
-  #ticker{position:absolute;overflow:hidden;white-space:nowrap;
-    color:#b9b9b9;font-size:12px;line-height:15px;text-align:center;}
-  #ticker span{display:inline-block;padding-left:0;will-change:transform;}
-  #ticker canvas{display:inline-block;will-change:transform;image-rendering:pixelated;}
-  #timer{position:absolute;color:#d2d2d2;font:700 11px/15px monospace;
-    text-align:center;overflow:hidden;white-space:nowrap;}
-  #timer canvas{position:absolute;left:0;top:0;}
-  .bar{position:absolute;cursor:pointer;}
-  .bar img{position:absolute;left:0;top:0;}
-  .bar .fill{position:absolute;left:0;top:0;overflow:hidden;height:100%;}
-  .bar .fill img{position:absolute;left:0;top:0;}
-  .wtext{position:absolute;overflow:hidden;white-space:nowrap;
-    color:#ccc;font-size:11px;line-height:13px;}
-  .vis{position:absolute;}
-  /* EQ slider: a track div with a draggable thumb image. The track is the
-     skin's own slider rect; the fill is a clipped copy of the skin's
-     "full" bar image (or a plain coloured bar when the skin has none). */
-  .eqsl{position:absolute;cursor:pointer;touch-action:none;}
-  .eqsl .fill{position:absolute;left:0;bottom:0;overflow:hidden;width:100%;}
-  .eqsl .fill img{position:absolute;left:0;bottom:0;}
-  .eqsl .thumb{position:absolute;cursor:grab;touch-action:none;}
-  .eqsl .thumb img{position:static;width:100%;height:100%;}
-  .eqsl.plain .track{background:#222;border:1px solid #444;}
-  .eqsl.plain .fill{background:rgba(120,180,90,.55);}
-  .eqsl.plain .thumb{background:#888;border:1px solid #bbb;border-radius:2px;}
-  /* Playlist list: an HTML list over the skin's list rect (or a plain
-     dark window when the skin has no playlist layout). */
-  .eqlist{position:absolute;overflow-y:auto;overflow-x:hidden;
-    background:rgba(0,0,0,.55);color:#ddd;font-size:12px;line-height:18px;
-    text-align:left;scrollbar-width:thin;}
-  .eqlist .row{padding:0 6px;white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis;cursor:pointer;}
-  /* Hàng playlist vẽ bằng font bitmap của skin (player.smallfont 6x8):
-     canvas 8px nên hàng cao tối thiểu 13px như Winamp thật, căn giữa. */
-  .eqlist .row.plrow{display:flex;align-items:center;min-height:13px;}
-  .eqlist .row canvas{display:block;flex:none;}
-  .eqlist .row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .eqlist .row .dur{flex:none;margin-left:8px;color:#888;}
-  .eqlist .row.cur .dur{color:#bbd2ff;}
-  /* Màu đúng system-colors (wasabi.list.*): đang phát -> chữ 187,210,255
-     trên nền list; chọn -> nền 103,136,201 + chữ 214,228,255. */
-  .eqlist .row.cur{background:rgb(28,61,125);color:#bbd2ff;font-weight:bold;}
-  .eqlist .row.sel{background:rgb(103,136,201);color:#d6e4ff;}
-  .resize-grip{position:absolute;right:0;bottom:0;width:20px;height:20px;
-    cursor:nwse-resize;touch-action:none;z-index:5;
-    background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.65) 50%,rgba(255,255,255,.65) 60%,transparent 60%,transparent 70%,rgba(255,255,255,.65) 70%,rgba(255,255,255,.65) 80%,transparent 80%);}
-  .eqlist .row .num{color:#888;margin-right:6px;}
-  .eqlist .row.cur .num{color:#bbd2ff;}
-  .plfallback{background:#181818;border:1px solid #333;}
-  .plfallback .title{position:absolute;left:0;right:0;top:0;height:20px;
-    background:#222;color:#ccc;font-size:12px;line-height:20px;
-    text-align:left;padding-left:8px;}
-  .plfallback .x{position:absolute;right:4px;top:2px;background:none;
-    border:0;color:#ccc;font-size:14px;cursor:pointer;}
-  /* Preset popup (EQ window). */
-  .preset-menu{position:absolute;z-index:5;background:#1a1a1a;
-    border:1px solid #555;min-width:130px;text-align:left;
-    box-shadow:0 4px 14px rgba(0,0,0,.6);}
-  .preset-menu button{display:block;width:100%;background:none;border:0;
-    color:#ddd;font-size:13px;padding:7px 10px;text-align:left;cursor:pointer;}
-  .preset-menu button:hover{background:#2c4a1e;}
-  .win video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000;object-fit:contain;}
-  .win canvas.avscv{position:absolute;left:0;top:0;}
-  .win .mlnav{position:absolute;left:0;right:0;top:0;height:22px;display:flex;gap:2px;align-items:center;
-    padding:0 4px;background:rgba(0,0,0,.55);color:#ddd;font-size:12px;z-index:3;}
-  .win .mlnav button{background:#222;color:#ddd;border:1px solid #555;padding:2px 7px;font-size:12px;cursor:pointer;}
-  .win .mlnav .crumb{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1;text-align:left;}
-  .win .aaimg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;background:#000;}
-  .win .aaname{position:absolute;left:0;right:0;bottom:0;padding:2px 6px;background:rgba(0,0,0,.6);
-    color:#ddd;font-size:11px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .win .optrow{position:absolute;left:0;right:0;text-align:left;color:#ddd;font-size:13px;
-    padding:5px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .win .optrow:hover{background:rgba(255,255,255,.12);}
-  .win .optrow .st{float:right;color:#8f8;}
-  .win .themelist{position:absolute;overflow-y:auto;overflow-x:hidden;color:#ddd;font-size:12px;
-    line-height:18px;text-align:left;scrollbar-width:thin;}
-  .win .themelist .trow{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
-  .win .themelist .trow.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
-  /* Đợt 5 — danh sách trong ngăn kéo vẽ bằng dữ liệu skin thật (không dùng
-     .optrow/.themelist bịa tràn khung nữa): hàng menu Options trong vùng
-     bucket 81x55 (cao 14px như bucket.entry của skin), danh sách theme
-     trong vùng ColorThemes:List (nền tile wasabi.list.background). */
-  .win .bucketlist{position:absolute;overflow:hidden;text-align:left;}
-  .win .bucketlist .brows{position:absolute;left:0;top:0;width:100%;}
-  .win .bucketlist .brow{display:flex;align-items:center;height:14px;line-height:14px;
-    font-size:11px;color:#000;padding:0 3px;cursor:pointer;white-space:nowrap;overflow:hidden;}
-  .win .bucketlist .brow .bl{flex:1;overflow:hidden;text-overflow:ellipsis;}
-  .win .bucketlist .brow .bs{flex:none;margin-left:4px;font-size:10px;color:#222;}
-  .win .bucketlist .brow:hover{background:rgba(255,255,255,.45);}
-  .win .ctlist{position:absolute;overflow-y:auto;overflow-x:hidden;text-align:left;
-    scrollbar-width:none;-ms-overflow-style:none;}
-  .win .ctlist::-webkit-scrollbar{display:none;}
-  .win .ctlist .ctrow{height:13px;line-height:13px;padding:0 4px;font-size:11px;
-    color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
-  .win .ctlist .ctrow.sel{font-weight:bold;}
-  .win .ctlist .ctrow:hover{background:rgba(255,255,255,.18);}
-  #notifier{position:fixed;top:10px;right:10px;z-index:50;display:none;overflow:hidden;
-    background:#111 no-repeat 0 0;box-shadow:0 4px 18px rgba(0,0,0,.7);cursor:pointer;}
-  #notifier .nt{position:absolute;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#222;}
-  .drawerwrap{overflow:hidden;}
-  .drawerwrap .drawerinner{transition:transform .25s ease;}
-  #scaler{z-index:2;}
-  #drawerwin{z-index:1;}
+  html,body{margin:0;padding:0;background:#141414;color:#ccc;font-family:Verdana,Arial,sans-serif;}
+  body{text-align:center;padding:10px 8px 30px;}
+  h1{font-size:14px;color:#bbb;margin:6px 0 2px;font-weight:normal;}
+  h1 b{color:#fff;}
+  #sub{font-size:12px;color:#777;margin-bottom:10px;}
+  #versionline{font-size:12px;color:#9ab;margin-bottom:8px;}
+  #versionline .bad{color:#e88;font-weight:bold;}
+  #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;}
+  .stage{position:relative;margin:0 auto;overflow:hidden;background:#000;
+    box-shadow:0 0 0 1px #333, 0 8px 30px rgba(0,0,0,.6);}
+  .stage .spr{position:absolute;display:block;border:0;padding:0;background-repeat:no-repeat;
+    image-rendering:auto;-webkit-user-drag:none;user-select:none;pointer-events:none;}
+  .stage .btn{position:absolute;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;}
+  .stage .btn .spr{position:absolute;left:0;top:0;pointer-events:none;}
+  .stage .txt{position:absolute;overflow:hidden;white-space:nowrap;pointer-events:none;line-height:1;}
+  .stage .txt .glyph{display:inline-block;vertical-align:top;background-repeat:no-repeat;}
+  .stage .ticker{position:absolute;overflow:hidden;white-space:nowrap;pointer-events:none;}
+  .stage .ticker .inner{display:inline-block;white-space:nowrap;will-change:transform;}
+  .stage .vis{position:absolute;pointer-events:none;}
+  .stage .rect{position:absolute;pointer-events:none;}
+  .stage .pl-list{position:absolute;overflow-y:auto;overflow-x:hidden;font-family:Arial,sans-serif;pointer-events:auto;}
+  .stage .pl-list .row{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:13px;padding:0 3px;cursor:default;}
+  .stage .pl-list .row.sel{background:#6788c9;color:#d6e4ff;}
+  .stage .pl-list .row.cur{color:#bbd2ff;font-weight:bold;}
+  #toolbar{margin:12px auto 4px;max-width:720px;}
+  #toolbar button{background:#1c1c1c;color:#ddd;border:1px solid #444;padding:7px 12px;margin:3px 2px;font-size:13px;cursor:pointer;border-radius:3px;}
+  #toolbar button.on{background:#2c4a1e;border-color:#6a0;color:#fff;}
+  #toolbar button:hover{border-color:#888;}
+  #status{margin:8px auto;max-width:720px;font-size:12px;color:#888;min-height:16px;text-align:left;line-height:1.5;}
+  #status .err{color:#e88;}
+  #drawer-check{margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:0;text-align:left;line-height:1.5;display:none;}
+  #drawer-check.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
+  #report{margin:10px auto;max-width:720px;text-align:left;font-size:12px;color:#777;line-height:1.6;
+    border-top:1px solid #2a2a2a;padding-top:8px;white-space:pre-wrap;}
+  #drop{margin:10px auto;max-width:720px;border:1px dashed #444;padding:10px;font-size:12px;color:#777;}
+  #drop.over{border-color:#6a0;color:#aca;}
+  .note{font-size:11px;color:#666;}
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v8 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
-<div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
+<h1><b>Amp v9</b> — Winamp Modern, cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng (đợt E)</h1>
+<div id="sub">Nền tảng v9 viết lại từ đầu theo đặc tả skin-sim: loader + renderer + cửa sổ chính vẽ đúng như Winamp gốc. Đợt E: phát tiếng thật — nhạc + radio/TV, tiếng video ĐI QUA chuỗi EQ như nhạc; EQ tắt = bypass tuyệt đối (TV360 qua vmttv xem được khi EQ tắt).</div>
+<div id="versionline">Amp v9 · đang kiểm tra version…</div>
 
-<input type="file" id="filepick" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden>
-<input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
+<div id="stage-wrap"><div class="stage" id="stage"></div></div>
+<div id="drawer-check"></div>
 
-<audio id="au" preload="none"></audio>
+<div id="toolbar">
+  <div>
+    <button id="btn-1x" class="on">Cỡ gốc 1x</button>
+    <button id="btn-2x">2x</button>
+    <button id="btn-3x">3x</button>
+    <button id="btn-fit">Vừa màn hình</button>
+    <button id="btn-stack">Xếp chồng: Player + Playlist</button>
+    <button id="btn-drawer">Mở ngăn kéo</button>
+    <button id="btn-video">Video</button>
+    <button id="btn-vis">Hiệu ứng (Vis)</button>
+    <button id="btn-local">Thêm nhạc local…</button>
+    <button id="btn-skin">Nạp skin .wal / .zip khác</button>
+    <input type="file" id="skinpick" accept=".wal,.zip" hidden>
+  </div>
+  <div style="margin-top:6px">
+    <span class="note">Hoặc kéo thả file .wal/.zip vào trang. Trang tự nạp winampmodern566.wal cùng thư mục.</span>
+  </div>
+</div>
 
+<div id="status">Đang nạp winampmodern566.wal cùng thư mục…</div>
+<div id="drop">Kéo thả file .wal/.zip vào đây để xem skin khác.</div>
+<div id="report"></div>
+
+<script>
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.2" là nguồn sự thật, đặt TRƯỚC
+   mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
+   lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
+   checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
+   đổi CHỖ NÀY + 3 hằng version trong 3 file JS + ?v= trên 3 thẻ script. */
+window.AMP_VERSION = "9.2";
+</script>
+<script src="skin-loader.js?v=9.2"></script>
+<script src="audio.js?v=9.2"></script>
+<script src="renderer.js?v=9.2"></script>
 <script>
 "use strict";
-const $ = s => document.querySelector(s);
-const stage = $("#stage"), viewport = $("#viewport"), statusEl = $("#status");
-let au = $("#au");
-let SKIN = null, channels = [], idx = 0, mode = "radio";
-let hls = null, failCount = 0, failTimer = null, playing = false;
-let scaleMode = localStorage.getItem("webamp-modern-scale") || "fit";
-let tickerText = "Amp", tickerNoteUntil = 0, tickerTimer = null, fileName = "";
-let fileBlobURL = null;
-let fileBlob = null, fileSize = 0, fileSampleRate = 0;
-let siBitrate = null, siFreq = null;
-let plItems = [];
-let plVisible = null, eqVisible = null;
-let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
-</script>
+/* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
+   VERSION = "9.2" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
+   "9.2" (audio.js là file mới, cùng version 9.2).
+   Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
+   ngay trước 3 file JS); mỗi file tự đối chiếu manifest lúc nạp
+   (MANIFEST_MISMATCH) để file cũ trên host tự tố mình. */
+/* BẮT BUỘC: bind rõ từng phần tử theo id ngay đầu script — không dựa vào
+   biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
+var $ = function (s) { return document.querySelector(s); };
+var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
+    reportEl = $("#report"), versionEl = $("#versionline"), dropZone = $("#drop"),
+    drawerCheckEl = $("#drawer-check"),
+    btnZoom1 = $("#btn-1x"), btnZoom2 = $("#btn-2x"), btnZoom3 = $("#btn-3x"),
+    btnZoomFit = $("#btn-fit"), btnStack = $("#btn-stack"), btnDrawer = $("#btn-drawer"),
+    btnVideo = $("#btn-video"), btnVis = $("#btn-vis"),
+    btnLocal = $("#btn-local"),
+    btnLoad = $("#btn-skin"), fileInput = $("#skinpick");
 
-<script>
-const EXPECTED_LOADER_VERSION = "8.1";
-function loaderVersion(){
-  return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
-}
-function showLoaderVersion(){
-  const el = $("#loaderver"); if(!el) return null;
-  const v = loaderVersion();
-  el.textContent = v ? ("loader v" + v) : "loader ?";
-  el.style.color = (v && v === EXPECTED_LOADER_VERSION) ? "" : "#e88";
-  return v;
-}
-function loaderMismatch(){ return loaderVersion() !== EXPECTED_LOADER_VERSION; }
-function loaderLabel(){
-  const v = loaderVersion();
-  return v ? ("v" + v) : "không rõ phiên bản";
-}
-showLoaderVersion();
+var VERSION = "9.2";
+var zoom = "1";
+var RES = null, SKIN = null, renderer = null, audioEngine = null;
+var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 13px + nút mở) */
+var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
 
-const stubResolver = {
-  hasCrop: () => false,
-  bitmapURL: async () => null,
-  fileURL: async () => null
-};
-let resolver = stubResolver;
-
-function setStatus(msg, isErr){
-  if (!statusEl) return;
-  statusEl.innerHTML = isErr ? '<span class="err">'+msg+'</span>' : msg;
+function setStatus(msg, isErr) {
+  statusEl.innerHTML = isErr ? '<span class="err">' + msg + "</span>" : msg;
 }
-function fmt(t){ if(!isFinite(t)) return "--:--";
-  t=Math.max(0,Math.floor(t)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); }
-
-let eqState = { on: false, preamp: 0, bands: [0,0,0,0,0,0,0,0,0,0] };
-try {
-  const saved = JSON.parse(localStorage.getItem("amp-eq-v5") || "null");
-  if (saved && Array.isArray(saved.bands) && saved.bands.length === 10) {
-    eqState.on = !!saved.on;
-    eqState.preamp = Math.max(-12, Math.min(12, +saved.preamp || 0));
-    eqState.bands = saved.bands.map(v => Math.max(-12, Math.min(12, +v || 0)));
+function setVersionLine(extra) {
+  var fromCache = RES ? String(RES.fromCache) : "?";
+  versionEl.textContent = "Amp v9 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+    + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
+    + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
+    + " · model fromCache: " + fromCache + (extra ? " · " + extra : "");
+}
+function checkVersions() {
+  var bad = [];
+  if (!window.AmpSkinLoader || window.AmpSkinLoader.LOADER_VERSION !== VERSION) bad.push("skin-loader.js v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?"));
+  if (!window.AmpAudio || window.AmpAudio.AUDIO_VERSION !== VERSION) bad.push("audio.js v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?"));
+  if (!window.AmpRenderer || window.AmpRenderer.RENDERER_VERSION !== VERSION) bad.push("renderer.js v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?"));
+  if (window.AmpSkinLoader && window.AmpSkinLoader.LOADER_VERSION !== window.AmpSkinLoader.EXPECTED_LOADER_VERSION) bad.push("loader lệch EXPECTED_LOADER_VERSION");
+  /* Đợt F — mỗi file tự đối chiếu với manifest lúc nạp (MANIFEST_MISMATCH):
+     file cũ trên host/cache sẽ tự tố mình dù hằng VERSION trong trang đã mới. */
+  if (window.AmpSkinLoader && window.AmpSkinLoader.MANIFEST_MISMATCH) bad.push("skin-loader.js v" + window.AmpSkinLoader.LOADER_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpAudio && window.AmpAudio.MANIFEST_MISMATCH) bad.push("audio.js v" + window.AmpAudio.AUDIO_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpRenderer && window.AmpRenderer.MANIFEST_MISMATCH) bad.push("renderer.js v" + window.AmpRenderer.RENDERER_VERSION + " (manifest v" + VERSION + ")");
+  if (bad.length) {
+    versionEl.innerHTML = '<span class="bad">BẢN MIX — version lệch, dừng lại: ' + bad.join(" + ") + " (cần v" + VERSION + " ở mọi file)</span>";
+    return false;
   }
-} catch (e) {  }
-function saveEQState(){
-  try { localStorage.setItem("amp-eq-v5", JSON.stringify(eqState)); } catch (e) {}
+  return true;
 }
-let audioCtx = null, eqNodes = null;
-function eqStateHook(){
-  window.__eqState = { on: eqState.on, bypass: !eqState.on,
-    ctxState: audioCtx ? audioCtx.state : null,
-    hasAnalyser: !!(eqNodes && eqNodes.analyser),
-    preamp: eqState.preamp, bands: eqState.bands.slice() };
+/* Đợt E — lưu state phát (playing/current/repeat/shuffle/volume/EQ) vào
+   localStorage, debounce 300ms vì kéo slider gọi liên tục. */
+var savePlayTimer = 0;
+function savePlaybackState(st) {
+  if (savePlayTimer) clearTimeout(savePlayTimer);
+  savePlayTimer = setTimeout(function () {
+    savePlayTimer = 0;
+    try { localStorage.setItem("amp9-play-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
+  }, 300);
 }
-eqStateHook();
-
-let playStartAt = 0, elapsedBase = 0, timeMode = "elapsed", timerInkColor = "#fff";
-function elapsedSecs(){
-  if (mode === "file" && typeof au !== "undefined" && au) return au.currentTime || 0;
-  return elapsedBase + (playStartAt ? (performance.now() - playStartAt) / 1000 : 0);
+function loadPlaybackState() {
+  try {
+    var s = JSON.parse(localStorage.getItem("amp9-play-v9") || "null");
+    return s && typeof s === "object" ? s : null;
+  } catch (e) { return null; }
 }
-function fileDuration(){
-  if (mode !== "file" || typeof au === "undefined" || !au) return null;
-  const d = au.duration;
-  return (isFinite(d) && d > 0) ? d : null;
-}
-function resetTimer(){ elapsedBase = 0; playStartAt = 0; updateTimerDisplay(); }
-function onPlayStart(){ if (!playStartAt) playStartAt = performance.now(); updateTimerDisplay(); }
-function onPlayPause(){ if (playStartAt) { elapsedBase = elapsedSecs(); playStartAt = 0; } updateTimerDisplay(); }
-function toggleTimeMode(){
-  if (mode !== "file" || fileDuration() === null) {
-    setStatus("Đài trực tiếp — không có thời lượng, đồng hồ chỉ đếm thời gian đã phát");
-    return;
-  }
-  timeMode = timeMode === "remaining" ? "elapsed" : "remaining";
-  updateTimerDisplay();
-  setStatus(timeMode === "remaining" ? "Đồng hồ: thời gian còn lại" : "Đồng hồ: thời gian đã phát");
-}
-function updateTimerDisplay(){
-  const el = elapsedSecs();
-  const dur = fileDuration();
-  const classic = !!(timerFont && timerFont.classicSlots);
-  let t;
-  if (timeMode === "remaining" && dur !== null) {
-    const rem = Math.max(0, dur - el);
-    t = "-" + (classic ? fmt2(rem) : fmt(rem));
-  } else {
-    t = classic ? fmt2(el) : fmt(el);
-  }
-  window.__timer = { text: t, elapsed: el, duration: dur, mode: timeMode };
-  for (const e2 of extraTimers) {
-    if (e2.isConnected) e2.textContent = t;
-  }
-  const timEl = $("#timer");
-  if (!timEl) return;
-  if (timerFontImg && timerFont) {
-    const cv = timEl.querySelector("canvas");
-    if (cv) { if (classic) drawClassicTimerBitmap(cv, t); else drawTimerBitmap(cv, t); }
-  } else {
-    timEl.textContent = t;
-  }
-}
-function fmt2(t){
-  if (!isFinite(t)) return "--:--";
-  t = Math.max(0, Math.floor(t));
-  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
-}
-function drawClassicTimerBitmap(cv, text){
-  const ctx = cv.getContext("2d");
-  const f = timerFont, img = timerFontImg;
-  const cw = f.charwidth, ch = f.charheight;
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const slots = [9, 21, 39, 51];
-  let di = 0;
-  for (const chr of text.replace("-", "")) {
-    if (chr === ":") continue;
-    const col = chr.charCodeAt(0) - 48;
-    if (col >= 0 && col <= 9 && di < slots.length)
-      ctx.drawImage(img, col * cw, 0, cw, ch, slots[di], 0, cw, ch);
-    di++;
-  }
-  if (text.charAt(0) === "-" && f.minus) {
-    const m = f.minus;
-    ctx.drawImage(img, m.sx, m.sy, m.sw, m.sh, -1, 6, m.sw, m.sh);
-  }
-}
-/* đồng hồ: cắt số theo charwidth, ":" đo từ ảnh font */
-function drawTimerBitmap(cv, text){
-  const ctx = cv.getContext("2d");
-  const f = timerFont, img = timerFontImg;
-  const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
-  const row = f.glyphRow || 0;
-  const colonCol = (f.colonCol === undefined || f.colonCol === null) ? 12 : f.colonCol;
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const totalW = text.length * step - (f.hspacing || 0);
-  const align = (cv.dataset.align || "left");
-  let x = align === "center" ? Math.round(Math.max(0, (cv.width - totalW) / 2)) : 0;
-  const y = Math.max(0, (cv.height - ch) / 2);
-  for (const chr of text) {
-    let col = -1;
-    if (chr >= "0" && chr <= "9") col = chr.charCodeAt(0) - 48;
-    else if (chr === ":") col = colonCol;
-    if (col >= 0) ctx.drawImage(img, col * cw, row * ch, cw, ch, x, y, cw, ch);
-    else if (chr === "-") {
-      ctx.fillStyle = timerInkColor || "#fff";
-      ctx.fillRect(x + Math.round(cw * 0.2), y + Math.round(ch / 2) - 1, Math.round(cw * 0.6), 2);
-    }
-    x += step;
-  }
-}
-const bitmapFontImgs = new Map();
-async function bitmapFontImage(font){
-  const key = font.file + (font.inverse ? "|inv" : "");
-  if (bitmapFontImgs.has(key)) return bitmapFontImgs.get(key);
-  const im = await new Promise(resolve => {
-    const i = new Image();
-    i.onload = () => resolve(i);
-    i.onerror = () => resolve(null);
-    i.src = font.imageURL;
-  });
-  let out = im;
-  if (im && font.inverse) {
-    /* Font "khuôn" (songinfo): nền đục trắng, glyph là lỗ trong suốt -> đảo alpha
-       (255-alpha, RGB trắng) để glyph hiện trắng trên nền tối, vẽ 1 lần rồi cache. */
-    try {
-      const c = document.createElement("canvas");
-      c.width = im.naturalWidth; c.height = im.naturalHeight;
-      const cx = c.getContext("2d");
-      cx.drawImage(im, 0, 0);
-      const d = cx.getImageData(0, 0, c.width, c.height);
-      for (let i = 0; i < d.data.length; i += 4) {
-        d.data[i + 3] = 255 - d.data[i + 3];
-        d.data[i] = d.data[i + 1] = d.data[i + 2] = 255;
-      }
-      cx.putImageData(d, 0, 0);
-      out = c;
-    } catch (e) { out = im; }
-  }
-  bitmapFontImgs.set(key, out);
-  return out;
-}
-/* Bảng ký tự THEO TỪNG FONT (khớp skin-loader.js / skin-sim.html): vị trí 1 ký tự
-   là (hàng, cột) trong bảng của font đó, tọa độ pixel = cột*charwidth, hàng*charheight.
-   Hàng 1 không thừa dấu cách; font số chỉ có hàng 1, ô trống trong chuỗi là ô ma. */
-const FONT_ROWS = {
-  "player.songticker.font": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
-  "player.smallfont":       ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
-  "shade.songticker.font":  ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
-  "player.BIGNUM":          ["", "0123456789  :  -"],
-  "player.songinfo.font":   ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
-  "player.pe.time.font":    ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
-};
-function fontCharPos(fontId, ch) {
-  const rows = FONT_ROWS[fontId];
-  if (!rows) return null;
-  const up = ch.toUpperCase();
-  for (let r = 0; r < rows.length; r++) {
-    const c = rows[r].indexOf(up);
-    if (c >= 0) return { row: r, col: c };
-    if (rows[r].indexOf(ch) >= 0) return { row: r, col: rows[r].indexOf(ch) };
-  }
-  return null;
-}
-function bitmapCharIndex(font, ch, cols){
-  if (!font) return null;
-  const rows = font.rows || (font.id && FONT_ROWS[font.id]);
-  const tryRows = (rs, c) => {
-    if (!rs) return null;
-    const up = c.toUpperCase();
-    for (let r = 0; r < rs.length; r++) {
-      const i = rs[r].indexOf(up);
-      if (i >= 0) return { row: r, col: i };
-      if (rs[r].indexOf(c) >= 0) return { row: r, col: rs[r].indexOf(c) };
-    }
-    return null;
-  };
-  let pos = tryRows(rows, ch);
-  if (pos) return pos;
-  const stripped = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/đ/g, "d");
-  pos = tryRows(rows, stripped.toUpperCase());
-  if (pos) return pos;
-  const punct = { "—": "-", "–": "-", "“": "\"", "”": "\"", "‘": "'", "’": "'", "…": "…" };
-  if (punct[ch]) { pos = tryRows(rows, punct[ch]); if (pos) return pos; }
-  if (!font.charset) return null;
-  /* Fallback bảng phẳng cũ (skin lạ không có trong FONT_ROWS). */
-  let i = font.charset.indexOf(ch);
-  if (i < 0) i = font.charset.indexOf(ch.toUpperCase());
-  if (i < 0) i = font.charset.indexOf(stripped.toUpperCase());
-  if (i < 0 && punct[ch]) i = font.charset.indexOf(punct[ch]);
-  if (i < 0) return null;
-  const ncols = cols || 1;
-  if (font.charset.length > ncols) return { row: Math.floor(i / ncols), col: i % ncols };
-  return { row: font.glyphRow || 0, col: i };
-}
-async function drawBitmapFontText(t, font, skinName){
-  const img = await bitmapFontImage(font);
-  if (!img) return null;
-  const text = compName(t.default || "", skinName || "WINAMP");
-  const cv = document.createElement("canvas");
-  cv.className = "wtext";
-  cv.style.left = t.x + "px"; cv.style.top = t.y + "px";
-  if (t.gammagroup) cv.dataset.gammagroup = t.gammagroup;
-  paintBitmapText(cv, img, font, text, t.color ? skinColor(t.color) : "");
-  return cv;
-}
-/* Tra màu system-colors.xml (loader gom vào SKIN.colors dạng id -> "r,g,b"):
-   id màu (vd "font.display") -> rgb(r,g,b); giá trị "r,g,b" trực tiếp ->
-   rgb(...); tên màu/CSS khác giữ nguyên. Chữ bitmap và .wtext đều dùng chung. */
-function skinColor(c){
-  if (c === null || c === undefined || c === "") return "";
-  const v = (typeof SKIN !== "undefined" && SKIN && SKIN.colors) ? SKIN.colors[c] : null;
-  const raw = (v !== null && v !== undefined) ? v : c;
-  const m = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/.exec(String(raw));
-  if (m) return "rgb(" + (+m[1]) + "," + (+m[2]) + "," + (+m[3]) + ")";
-  return String(raw);
-}
-function paintBitmapText(cv, img, font, text, color){
-  const cw = font.charwidth, ch = font.charheight;
-  const step = cw + (font.hspacing || 0);
-  const iw = img.naturalWidth || img.width || 0;
-  const cols = Math.max(1, Math.floor(iw / cw));
-  cv.width = Math.max(1, text.length * step - (font.hspacing || 0));
-  cv.height = ch;
-  cv.style.width = cv.width + "px"; cv.style.height = ch + "px";
-  const cx = cv.getContext("2d");
-  cx.clearRect(0, 0, cv.width, cv.height);
-  for (let i = 0; i < text.length; i++) {
-    const pos = bitmapCharIndex(font, text[i], cols);
-    if (!pos) continue; /* ký tự lạ / ô ma / dấu cách: để trống */
-    cx.drawImage(img, pos.col * cw, pos.row * ch, cw, ch, i * step, 0, cw, ch);
-  }
-  /* Glyph font bitmap vốn trắng: tô màu chữ (color) bằng source-in như
-     skin-sim (chỉ tô khi màu khác trắng, trắng thì giữ nguyên). */
-  if (color && color !== "#fff" && color !== "rgb(255,255,255)") {
-    cx.globalCompositeOperation = "source-in";
-    cx.fillStyle = color;
-    cx.fillRect(0, 0, cv.width, cv.height);
-  }
-}
-const VISCLASSIC = ["rgb(239,49,16)","rgb(206,41,16)","rgb(214,90,0)","rgb(214,102,0)","rgb(214,115,0)","rgb(198,123,8)","rgb(222,165,24)","rgb(214,181,33)","rgb(189,222,41)","rgb(148,222,33)","rgb(41,206,16)","rgb(50,190,16)","rgb(57,181,16)","rgb(49,156,8)","rgb(41,148,0)","rgb(24,132,8)"];
-function visRamp(){
-  const vc = (typeof SKIN !== "undefined" && SKIN && SKIN.visColors) || null;
-  if (vc && vc.length >= 24) return { ramp: vc.slice(2, 18), peak: vc[23] || "rgb(150,150,150)" };
-  return { ramp: VISCLASSIC, peak: "rgb(150,150,150)" };
-}
-function paintVisBars(ctx, data, w, h, st, bars, ramp, peakColor){
-  if (!st.disp || st.disp.length !== bars) { st.disp = new Array(bars).fill(0); st.peak = new Array(bars).fill(0); st.peakFall = new Array(bars).fill(0); }
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  if (typeof ramp[0] === "string") { for (let i = 0; i < ramp.length; i++) g.addColorStop(i / (ramp.length - 1), ramp[i]); }
-  else { for (const s of ramp) g.addColorStop(s[0], s[1]); }
-  const bw = w / bars;
-  for (let i = 0; i < bars; i++) {
-    const v = data[Math.floor(i * data.length / bars)] / 255;
-    const target = v * h;
-    let d = Math.max(target, st.disp[i] - h * 0.05);
-    st.disp[i] = d;
-    let pk = st.peak[i];
-    if (target > pk) { pk = target; st.peakFall[i] = 0.5; }
-    else { st.peakFall[i] *= 1.12; pk -= st.peakFall[i]; if (pk < 0) pk = 0; }
-    st.peak[i] = pk;
-    if (d >= 1) { ctx.fillStyle = g; ctx.fillRect(i * bw + 1, h - d, bw - 2, d); }
-    if (pk > 2) { ctx.fillStyle = peakColor; ctx.fillRect(i * bw + 1, h - pk - 2, bw - 2, 2); }
-  }
-}
-setInterval(updateTimerDisplay, 250);
-</script>
-
-<script>
-let mainWin = null, eqWin = null, plWin = null;
-let mlWin = null, vidWin = null, avsWin = null, aaWin = null, aboutWin = null;
-let remoteWin = null, stickWin = null, drawerWin = null, drawerOpen = false;
-let visMonitor = false, visMonitorBusy = null;
-let extraTimers = [], extraTickers = [];
-/* Vùng AVS/Video NHÚNG trong cửa sổ chính (đợt 7): AVSGroup của skin nằm
-   dưới menubar (y=35), cao snapadjustbottom (116); mở lên thì nội dung
-   player.main lùi xuống 116px, cửa sổ chính cao 143+116=259. Các nút
-   Video/Vis/Switch/1x/2x/Fullscreen giờ tác động vùng này, không còn mở
-   cửa sổ Video/Hiệu ứng rời (2 cửa sổ rời chỉ còn làm đích cho Detach,
-   chưa làm đợt 7). */
-let avsEmbeddedOpen = false, embAvsMode = "vis", embVideoScale = 1, embVisRandom = false;
-let mainContentEl = null, avsStripEl = null, embVideoBoxEl = null, embVisBoxEl = null;
-let videoavsOpenEl = null, videoavsCloseEl = null;
-try {
-  const s = JSON.parse(localStorage.getItem("amp-emb-avs") || "null");
-  if (s) { avsEmbeddedOpen = !!s.open; embAvsMode = s.mode === "video" ? "video" : "vis"; }
-} catch (e) {}
-function saveEmbAvsState(){
-  try { localStorage.setItem("amp-emb-avs", JSON.stringify({ open: avsEmbeddedOpen, mode: embAvsMode })); } catch (e) {}
-}
-function avsH(){ return (SKIN && SKIN.embeddedAvs) ? SKIN.embeddedAvs.h : 116; }
-function mainWinH(){
-  if (!SKIN || !SKIN.layout) return 143;
-  return SKIN.layout.h + ((avsEmbeddedOpen && SKIN.embeddedAvs) ? avsH() : 0);
-}
-let winVisMap = {};
-try { winVisMap = JSON.parse(localStorage.getItem("amp-win-visible-v6") || "{}"); } catch (e) {}
-function setWinVisible(kind, v){
-  winVisMap[kind] = !!v;
-  try { localStorage.setItem("amp-win-visible-v6", JSON.stringify(winVisMap)); } catch (e) {}
-}
-function winVisible(kind){
-  if (kind === "eq") {
-    if (eqVisible !== null) return eqVisible;
-    return true;
-  }
-  if (kind === "pl") {
-    if (plVisible !== null) return plVisible;
-    return !!(SKIN && SKIN.playlist && SKIN.playlist.defaultVisible);
-  }
-  if (kind === "drawer") return drawerOpen;
-  if (winVisMap[kind] !== undefined) return !!winVisMap[kind];
-  if (kind === "albumart") return !!(SKIN && SKIN.albumart && SKIN.albumart.defaultVisible);
-  return false;
-}
-/* cả 3 cửa sổ cùng chiều rộng trên màn hình */
-function drawerStripH(){
-  if (!drawerWin) return 0;
-  const full = +drawerWin.dataset.h || 129;
-  return Math.max(8, Math.round(full * 0.1));
-}
-function drawerRestY(){
-  return (SKIN && SKIN.layout && typeof SKIN.layout.drawerRestY === "number") ? SKIN.layout.drawerRestY : 17;
-}
-/* Độ dài thò ra dưới cửa sổ chính khi ngăn kéo mở: snapadjustbottom của
-   layout (116 với WinampModern566) — ngăn kéo cao 129 nên 13px đầu chìm
-   dưới cửa sổ chính; skin không có snap thì rơi về chiều cao đầy đủ. */
-function drawerSnap(skinObj){
-  const sk = skinObj || SKIN;
-  const v = sk && sk.layout && sk.layout.snapadjustbottom;
-  if (typeof v === "number" && v > 0) return v;
-  return drawerWin ? (+drawerWin.dataset.h || 129) : 129;
-}
-function drawerInnerY(open, skinObj, fullH){
-  const sk = skinObj || SKIN;
-  const lay = sk && sk.layout;
-  const full = fullH || (drawerWin ? (+drawerWin.dataset.h || 129) : 129);
-  const restY = (lay && typeof lay.drawerRestY === "number") ? lay.drawerRestY : 17;
-  /* mainH là chiều cao cửa sổ chính HIỆU DỤNG: khi vùng AVS nhúng mở,
-     main cao thêm snapadjustbottom (116) nên ngăn kéo phải bám dưới 259
-     chứ không phải 143. */
-  const mainH = (sk === SKIN) ? mainWinH() : (lay ? lay.h : 143);
-  const slot = open ? drawerSnap(sk) : Math.max(8, Math.round(full * 0.1));
-  return mainH + slot - full - restY;
-}
-function drawerWrapH(open, skinObj, fullH){
-  const full = fullH || (drawerWin ? (+drawerWin.dataset.h || 129) : 129);
-  return drawerInnerY(open, skinObj, fullH) + full;
-}
-function applyScale(){
-  if (!SKIN || !mainWin) return;
-  /* Chiều cao cửa sổ chính hiệu dụng: 143 khi đóng AVS, 259 khi mở vùng
-     AVS nhúng (mainWinH). Các cửa sổ dưới xếp theo sau cho đúng. */
-  const wins = [{ el: mainWin, w: SKIN.layout.w, h: mainWinH() }];
-  if (drawerWin) wins.push({ el: drawerWin, w: +drawerWin.dataset.w, h: drawerOpen ? drawerSnap() : drawerStripH(), drawer: true });
-  const stackKinds = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
-    ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
-  for (const [kind, wEl] of stackKinds) {
-    if (wEl && winVisible(kind)) wins.push({ el: wEl, w: +wEl.dataset.w, h: +wEl.dataset.h });
-  }
-  const mainW = SKIN.layout.w;
-  const ratioSum = wins.reduce((a, w) => a + w.h / w.w, 0);
-  let s;
-  if (scaleMode === "1x") s = 1;
-  else {
-    const vw = document.documentElement.clientWidth || window.innerWidth;
-    const vh = document.documentElement.clientHeight || window.innerHeight;
-    const availH = Math.max(120, vh - 130);
-    s = Math.min(vw * 0.98 / mainW, availH / (mainW * ratioSum), 3);
-  }
-  const targetW = mainW * s;
-  stage.style.width = targetW + "px";
-  let yPx = 0;
-  for (const w of wins) {
-    const si = targetW / w.w;
-    const hPx = w.h * si;
-    w.el.style.display = "";
-    w.el.style.transform = "scale(" + si + ")";
-    w.el.style.left = "0px";
-    if (w.drawer) {
-      w.el.style.top = (drawerRestY() * si) + "px";
-      w.el.style.height = drawerWrapH(drawerOpen) + "px";
-    } else {
-      w.el.style.top = yPx + "px";
-    }
-    yPx += hPx;
-  }
-  stage.style.height = yPx + "px";
-  const allWins = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
-    ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
-  for (const [kind, wEl] of allWins) if (wEl && !winVisible(kind)) wEl.style.display = "none";
-}
-function setScaleMode(m){
-  scaleMode = m; localStorage.setItem("webamp-modern-scale", m); applyScale();
-}
-window.addEventListener("resize", applyScale);
-function applyWindowVisibility(){ applyScale(); }
-/* nạp chậm: eq.js / playlist.js chỉ tải khi mở cửa sổ đó */
-let curRes = null;
-let eqJsPromise = null, plJsPromise = null;
-let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
-let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
-function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=8.1"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=8.1"); return videoJsPromise; }
-function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=8.1"); return avsJsPromise; }
-function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=8.1"); return aaJsPromise; }
-function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=8.1"); return aboutJsPromise; }
-function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=8.1"); return drawerJsPromise; }
-function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=8.1"); return remoteJsPromise; }
-function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=8.1"); return notifierJsPromise; }
-async function ensureMlWindow(){
-  if (mlWin) return mlWin;
-  await ensureMlJs();
-  mlWin = await buildMLWindow(SKIN, curRes);
-  stage.appendChild(mlWin);
-  applyScale();
-  return mlWin;
-}
-async function ensureVideoWindow(){
-  if (vidWin) return vidWin;
-  await ensureVideoJs();
-  vidWin = await buildVideoWindow(SKIN, curRes);
-  stage.appendChild(vidWin);
-  applyScale();
-  return vidWin;
-}
-async function ensureAvsWindow(){
-  if (avsWin) return avsWin;
-  await ensureAvsJs();
-  avsWin = await buildAVSWindow(SKIN, curRes);
-  stage.appendChild(avsWin);
-  applyScale();
-  return avsWin;
-}
-async function ensureAaWindow(){
-  if (aaWin) return aaWin;
-  await ensureAaJs();
-  aaWin = await buildAlbumArtWindow(SKIN, curRes);
-  stage.appendChild(aaWin);
-  applyScale();
-  return aaWin;
-}
-async function ensureAboutWindow(){
-  if (aboutWin) return aboutWin;
-  await ensureAboutJs();
-  aboutWin = await buildAboutWindow(SKIN, curRes);
-  stage.appendChild(aboutWin);
-  applyScale();
-  return aboutWin;
-}
-async function ensureRemoteWindow(){
-  if (remoteWin) return remoteWin;
-  await ensureRemoteJs();
-  remoteWin = await buildStandaloneWindow(SKIN, curRes, "remote");
-  if (!remoteWin) return null;
-  stage.appendChild(remoteWin);
-  applyScale();
-  return remoteWin;
-}
-async function ensureStickWindow(){
-  if (stickWin) return stickWin;
-  await ensureRemoteJs();
-  stickWin = await buildStandaloneWindow(SKIN, curRes, "stick");
-  if (!stickWin) return null;
-  stage.appendChild(stickWin);
-  applyScale();
-  return stickWin;
-}
-async function ensureDrawerWindow(){
-  if (drawerWin) return drawerWin;
-  await ensureDrawerJs();
-  drawerWin = await buildDrawerWindow(SKIN, curRes);
-  if (!drawerWin) return null;
-  stage.appendChild(drawerWin);
-  applyScale();
-  return drawerWin;
-}
-function loadScriptFile(src){
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("không tải được " + src));
+function ensureJSZip() {
+  return new Promise(function (resolve, reject) {
+    if (window.JSZip) return resolve(window.JSZip);
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload = function () { window.JSZip ? resolve(window.JSZip) : reject(new Error("không tải được JSZip")); };
+    s.onerror = function () { reject(new Error("không tải được JSZip (cần mạng)")); };
     document.head.appendChild(s);
   });
 }
-function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=8.1");
-  return eqJsPromise;
-}
-function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=8.1");
-  return plJsPromise;
-}
-let classicJsPromise = null;
-function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=8.1");
-  return classicJsPromise;
-}
-async function detectSkinKind(file){
-  if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
-  const JSZip = await SkinLoader.ensureJSZip();
-  const zip = await JSZip.loadAsync(file);
-  const names = Object.keys(zip.files).map(n => n.toLowerCase());
-  const hasXml = names.some(n => n === "skin.xml" || n.endsWith("/skin.xml"));
-  const hasMainRoot = names.some(n => /^main\.(bmp|png)$/.test(n));
-  if (hasXml) return { kind: "modern", zip };
-  if (hasMainRoot) return { kind: "classic", zip };
-  const ext = (file.name || "").toLowerCase();
-  if (ext.endsWith(".wsz")) return { kind: "classic", zip };
-  if (ext.endsWith(".wal") || ext.endsWith(".zip")) return { kind: "modern", zip };
-  return { kind: "unknown", zip: null };
-}
-async function ensureEqWindow(){
-  if (eqWin) return eqWin;
-  await ensureEqJs();
-  eqWin = await buildEQWindow(SKIN, curRes);
-  stage.appendChild(eqWin);
-  applyScale();
-  return eqWin;
-}
-async function ensurePlWindow(){
-  if (plWin) return plWin;
-  await ensurePlJs();
-  plWin = await buildPlaylistWindow(SKIN, curRes);
-  stage.appendChild(plWin);
-  await ensurePlRowFont();
-  renderPlaylist(true);
-  applyScale();
-  return plWin;
-}
-function skinKey(){
-  return (SKIN && SKIN.skin && SKIN.skin.name) || "skin";
-}
-function getWinSize(kind, defW, defH){
-  try {
-    const all = JSON.parse(localStorage.getItem("amp-winsize-v5.1") || "{}");
-    const s = all[skinKey()] && all[skinKey()][kind];
-    if (s && +s.w >= 200 && +s.h >= 80) return { w: +s.w, h: +s.h };
-  } catch (e) {}
-  return { w: defW, h: defH };
-}
-function saveWinSize(kind, w, h){
-  try {
-    const all = JSON.parse(localStorage.getItem("amp-winsize-v5.1") || "{}");
-    const k = skinKey();
-    all[k] = all[k] || {};
-    all[k][kind] = { w: Math.round(w), h: Math.round(h) };
-    localStorage.setItem("amp-winsize-v5.1", JSON.stringify(all));
-  } catch (e) {}
-}
-function buildPinRecord(win, nativeW, nativeH, rect){
-  const contentBottom = rect.y + rect.h;
-  const els = [];
-  for (const c of win.children) {
-    if (c.classList.contains("resize-grip")) continue;
-    if (c.dataset.nopin === "1") continue;
-    if (c.classList.contains("aaname")) continue;
-    if (c === win._plList || c === win._flexBox) continue;
-    const top = parseFloat(c.style.top || "");
-    if (!isFinite(top)) continue;
-    const h = parseFloat(c.style.height || "") || c.offsetHeight || 0;
-    if (!h) continue;
-    const bot = top + h;
-    const x = parseFloat(c.style.left || "0") || 0;
-    const w = parseFloat(c.style.width || "") || c.offsetWidth || 0;
-    if (top >= contentBottom - 2) els.push({ el: c, mode: "move", top });
-    else if (bot > contentBottom - 2 && Math.abs(nativeH - bot) <= 2)
-      els.push({ el: c, mode: "stretch", top, h, x, w, touchL: x <= 2, touchR: nativeW - (x + w) <= 2 });
+function setZoom(mode) {
+  zoom = mode;
+  var LW = parseInt(stage.style.width) || 354;
+  var LH = parseInt(stage.style.height) || 143;
+  var s = 1;
+  if (mode === "2") s = 2;
+  else if (mode === "3") s = 3;
+  else if (mode === "fit") {
+    var availW = Math.max(200, stageWrap.parentElement.clientWidth - 24);
+    var availH = Math.max(120, window.innerHeight - 340);
+    s = Math.min(availW / LW, availH / LH, 2.5);
+    s = Math.max(1, s); /* fit chỉ phóng to, không thu nhỏ dưới 1x */
   }
-  const moves = els.filter(e => e.mode === "move");
-  const barTop = moves.length ? Math.min(...moves.map(e => e.top)) : null;
-  const gap = barTop != null ? barTop - contentBottom : null;
-  const minH = barTop != null ? rect.y + 40 + gap + (nativeH - barTop) : 80;
-  return { nativeW, nativeH, rect, insetR: nativeW - (rect.x + rect.w), insetB: nativeH - contentBottom, els, barTop, gap, minH };
-}
-function applyWinLayout(win, w, h){
-  const p = win._pin;
-  const box = win._plList || win._flexBox;
-  if (p && box) {
-    const dy = h - p.nativeH, dw = w - p.nativeW;
-    box.style.width = Math.max(40, w - p.rect.x - p.insetR) + "px";
-    const bh = p.barTop != null ? Math.max(40, p.barTop + dy - p.gap - p.rect.y) : Math.max(40, h - p.rect.y - p.insetB);
-    box.style.height = bh + "px";
-    if (box.tagName === "CANVAS") { const cw = box.clientWidth, ch = box.clientHeight; if (cw > 0 && ch > 0) { box.width = cw; box.height = ch; } }
-    if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
-    const newContentBottom = p.rect.y + bh;
-    for (const e of p.els) {
-      if (e.mode === "move") e.el.style.top = (e.top + dy) + "px";
-      else if (e.mode === "follow") e.el.style.top = (newContentBottom - e.off) + "px";
-      else {
-        e.el.style.height = Math.max(4, e.h + dy) + "px";
-        if (e.touchL && e.touchR) e.el.style.width = Math.max(4, e.w + dw) + "px";
-        else if (e.touchR) e.el.style.left = (e.x + dw) + "px";
-        else if (!e.touchL) e.el.style.width = Math.max(4, e.w + dw) + "px";
-      }
-    }
-    return;
-  }
-  if (win._plList && win._plRect) {
-    win._plList.style.width = Math.max(40, w - win._plRect.x - (win._plInsetR || 6)) + "px";
-    win._plList.style.height = Math.max(40, h - win._plRect.y - (win._plInsetB || 6)) + "px";
-  }
-  if (win._flexBox && win._flexRect) {
-    win._flexBox.style.width = Math.max(40, w - win._flexRect.x - (win._flexInsetR || 6)) + "px";
-    win._flexBox.style.height = Math.max(40, h - win._flexRect.y - (win._flexInsetB || 6)) + "px";
-    if (win._flexBox.tagName === "CANVAS") { const cw = win._flexBox.clientWidth, ch = win._flexBox.clientHeight; if (cw > 0 && ch > 0) { win._flexBox.width = cw; win._flexBox.height = ch; } }
-    if (win._flexVideo) { win._flexVideo.style.width = "100%"; win._flexVideo.style.height = "100%"; }
+  stage.style.transform = "scale(" + s + ")";
+  stageWrap.style.width = "100%";
+  stageWrap.style.height = Math.round(LH * s) + "px";
+  stage.style.margin = (LW * s > stageWrap.clientWidth) ? "0" : "0 auto";
+  var btns = [[btnZoom1, "1"], [btnZoom2, "2"], [btnZoom3, "3"], [btnZoomFit, "fit"]];
+  for (var i = 0; i < btns.length; i++) {
+    if (btns[i][0]) btns[i][0].classList.toggle("on", btns[i][1] === mode);
   }
 }
-function addResizeHandle(win, kind){
-  const g = document.createElement("div");
-  g.className = "resize-grip";
-  g.title = "Kéo để đổi cỡ cửa sổ";
-  g.addEventListener("pointerdown", e => {
-    e.preventDefault();
-    e.stopPropagation();
-    try { g.setPointerCapture(e.pointerId); } catch (err) {}
-    const startX = e.clientX, startY = e.clientY;
-    const startW = +win.dataset.w, startH = +win.dataset.h;
-    const scale = win.getBoundingClientRect().width / startW;
-    const mv = ev => {
-      const w = Math.min(900, Math.max(200, startW + (ev.clientX - startX) / scale));
-      const h = Math.min(800, Math.max(win._pin ? win._pin.minH : 80, startH + (ev.clientY - startY) / scale));
-      win.dataset.w = w; win.dataset.h = h;
-      win.style.width = w + "px"; win.style.height = h + "px";
-      applyWinLayout(win, w, h);
-      if (win._bgImg) win.style.backgroundSize = w + "px " + h + "px";
-      applyScale();
-    };
-    const up = ev => {
-      g.removeEventListener("pointermove", mv);
-      g.removeEventListener("pointerup", up);
-      g.removeEventListener("pointercancel", up);
-      saveWinSize(kind, +win.dataset.w, +win.dataset.h);
-      applyScale();
-    };
-    g.addEventListener("pointermove", mv);
-    g.addEventListener("pointerup", up);
-    g.addEventListener("pointercancel", up);
-  });
-  win.appendChild(g);
-}
-const WIN_ENSURERS = {
-  eq: ensureEqWindow, pl: ensurePlWindow, ml: ensureMlWindow, video: ensureVideoWindow,
-  avs: ensureAvsWindow, albumart: ensureAaWindow, about: ensureAboutWindow,
-  remote: ensureRemoteWindow, stick: ensureStickWindow
-};
-const WIN_LABELS = { eq: "EQ", pl: "Playlist", ml: "Thư viện", video: "Video",
-  avs: "Hiệu ứng", albumart: "Ảnh bìa", about: "Giới thiệu", remote: "Remote", stick: "Stick" };
-async function toggleWindow(kind){
-  if (kind === "drawer") { await toggleDrawer(); return; }
-  /* Skin có vùng AVS nhúng: Video/Hiệu ứng là chế độ của vùng đó trong
-     cửa sổ chính, không mở cửa sổ rời nữa. Toggle: đóng -> mở ở chế độ
-     đó; đang mở ở chế độ đó -> đóng; đang mở ở chế độ kia -> đổi chế độ. */
-  if ((kind === "video" || kind === "avs") && SKIN && SKIN.embeddedAvs) {
-    const mode = kind === "video" ? "video" : "vis";
-    if (avsEmbeddedOpen && embAvsMode === mode) await setEmbAvs(false);
-    else await setEmbAvs(true, mode);
-    return;
-  }
-  const ensure = WIN_ENSURERS[kind];
-  if (!ensure) return;
-  const winVar = { eq: () => eqWin, pl: () => plWin, ml: () => mlWin, video: () => vidWin,
-    avs: () => avsWin, albumart: () => aaWin, about: () => aboutWin,
-    remote: () => remoteWin, stick: () => stickWin }[kind]();
-  if (!winVar) {
-    try { await ensure(); } catch (e) { setStatus("không mở được " + (WIN_LABELS[kind] || kind) + ": " + e.message, true); return; }
-    if (kind === "remote" && !remoteWin) { setStatus("Skin này không có cửa sổ Remote", true); return; }
-    if (kind === "stick" && !stickWin) { setStatus("Skin này không có cửa sổ Stick", true); return; }
-  }
-  const now = !winVisible(kind);
-  if (kind === "pl") { plVisible = now; try { localStorage.setItem("amp-pl-visible-v5", now ? "1" : "0"); } catch (e) {} }
-  else if (kind === "eq") {
-    eqVisible = now; try { localStorage.setItem("amp-eq-visible-v5", now ? "1" : "0"); } catch (e) {} 
-    if (now && drawerOpen && typeof drawerTab !== "undefined" && drawerTab === "eq") {
-      drawerEqSaved = false;
-      toggleDrawer();
-    }
-  }
-  else setWinVisible(kind, now);
-  if (kind === "avs" && !now && window.__avsClosed) window.__avsClosed();
-  if (kind === "avs" && now && window.__avsOpened) window.__avsOpened();
-  if (kind === "video" && now && mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && window.playVideoChannel) playVideoChannel(channels[idx], playing);
-  if (kind === "video" && !now && window.stopVideoPlayback) stopVideoPlayback();
-  if (kind === "albumart" && now && window.updateAlbumArt) window.updateAlbumArt();
-  applyWindowVisibility();
-}
-let drawerEqSaved = false, drawerEqWasOpen = null;
-function drawerEqHide(){
-  if (typeof drawerTab === "undefined" || drawerTab !== "eq" || drawerEqSaved) return;
-  drawerEqSaved = true; drawerEqWasOpen = eqVisible;
-  if (winVisible("eq")) { eqVisible = false; applyWindowVisibility(); }
-}
-function drawerEqRestore(){
-  if (!drawerEqSaved) return;
-  drawerEqSaved = false;
-  eqVisible = drawerEqWasOpen;
-  applyWindowVisibility();
-}
-function drawerTabSync(){
-  if (typeof drawerTab === "undefined") return;
-  if (drawerTab === "eq") drawerEqHide(); else drawerEqRestore();
-}
-async function toggleDrawer(){
-  if (!SKIN || !SKIN.drawer) { setStatus("Skin này không có ngăn kéo Config", true); return; }
-  if (!drawerWin) {
-    try { await ensureDrawerWindow(); } catch (e) { setStatus("không mở được ngăn kéo Config: " + e.message, true); return; }
-    if (!drawerWin) { setStatus("Skin này không có ngăn kéo Config", true); return; }
-  }
-  if (drawerWin._closing) {
-    clearTimeout(drawerWin._closeTimer);
-    drawerWin._closing = false;
-    if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(" + drawerInnerY(true) + "px)";
-    if (typeof syncDrawerButtons === "function") syncDrawerButtons(drawerWin, true);
-    return;
-  }
-  if (!drawerOpen) {
-    if (drawerWin._closeTimer) { clearTimeout(drawerWin._closeTimer); drawerWin._closeTimer = null; }
-    drawerWin._closing = false;
-    drawerOpen = true;
-    setWinVisible("drawer", true);
-    drawerEqHide();
-    drawerWin.style.display = "";
-    if (typeof syncDrawerButtons === "function") syncDrawerButtons(drawerWin, true);
-    if (drawerWin._inner) {
-      drawerWin._inner.style.transform = "translateY(" + drawerInnerY(false) + "px)";
-      requestAnimationFrame(() => { if (drawerWin._inner && drawerOpen) drawerWin._inner.style.transform = "translateY(" + drawerInnerY(true) + "px)"; });
-    }
-    applyWindowVisibility();
+async function renderCurrent() {
+  if (!renderer) return;
+  /* Đợt C: playlist mở thì xếp chồng Player + Playlist (stage rộng 436);
+     đóng thì chỉ cửa sổ chính (354). Tổng cao = playerH + playlistH:
+     ngăn kéo đóng 156+164=320 (đỉnh ngăn kéo lộ 13px), ngăn kéo mở
+     259+164=423. */
+  if (playlistOpen) {
+    await renderer.renderStacked(stage, { drawerOpen: drawerOpen });
   } else {
-    drawerWin._closing = true;
-    if (typeof syncDrawerButtons === "function") syncDrawerButtons(drawerWin, false);
-    if (drawerWin._inner) drawerWin._inner.style.transform = "translateY(" + drawerInnerY(false) + "px)";
-    const finish = () => {
-      if (!drawerWin._closing) return;
-      drawerWin._closing = false;
-      drawerWin._closeTimer = null;
-      drawerOpen = false;
-      setWinVisible("drawer", false);
-      drawerEqRestore();
-      if (typeof syncDrawerButtons === "function") syncDrawerButtons(drawerWin, false);
-      applyWindowVisibility();
-    };
-    drawerWin._closeTimer = setTimeout(finish, 300);
-    if (drawerWin._inner) {
-      const onEnd = e => {
-        if (e.propertyName !== "transform") return;
-        drawerWin._inner.removeEventListener("transitionend", onEnd);
-        clearTimeout(drawerWin._closeTimer);
-        finish();
-      };
-      drawerWin._inner.addEventListener("transitionend", onEnd);
-    }
+    await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
+  }
+  setZoom(zoom);
+  checkDrawer();
+}
+/* Đợt C: mở/đóng playlist (nút PL trong skin, menu View, nút Xếp chồng,
+   nút đóng X của cửa sổ Playlist). Đóng/mở thì các cửa sổ xếp lại theo
+   đúng thứ tự chồng (main → drawer → playlist). */
+function setPlaylistOpen(open) {
+  playlistOpen = !!open;
+  if (btnStack) btnStack.textContent = playlistOpen ? "Đóng Playlist" : "Xếp chồng: Player + Playlist";
+  renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+}
+/* Self-check sau khi vẽ (đợt B + đợt F): sai thì hiện cảnh báo đỏ, không vẽ
+   sai trong im lặng. Mở ngăn kéo đặt thẳng vị trí cuối trong lúc vẽ (một
+   bước, không rAF hai bước) nên chỉ cần kiểm lại sau 50ms: nếu vị trí
+   lệch thì vẽ lại một lần và báo rõ.
+   Đợt F: chung 1 banner #drawer-check cho cả 3 self-check — ngăn kéo
+   (chỉ khi đang mở), AVS/Video (hình học vùng nhúng/cửa sổ rời), tiếng
+   (EQ bật + đang phát mà chưa nối MediaElementSource). */
+function checkDrawer() {
+  if (!renderer) return;
+  var errs = [];
+  try { errs = renderer.runDrawerSelfCheck(stage) || []; } catch (e) { errs = ["self-check loi: " + (e.message || e)]; }
+  /* Ngăn kéo đóng (chỉ lộ dải 13px) thì self-check hình học mở không áp;
+     chỉ báo khi đang mở mà lệch. AVS/tiếng kiểm luôn, không phụ thuộc ngăn kéo. */
+  if (!drawerOpen) errs = [];
+  try { errs = errs.concat(renderer.runAvsSelfCheck(stage) || []); } catch (e) { errs.push("self-check AVS loi: " + (e.message || e)); }
+  try { errs = errs.concat(renderer.runAudioSelfCheck() || []); } catch (e) { errs.push("self-check tieng loi: " + (e.message || e)); }
+  if (errs.length) {
+    drawerCheckEl.textContent = "⚠ SELF-CHECK: " + errs.join(" | ");
+    drawerCheckEl.classList.add("show");
+  } else {
+    drawerCheckEl.textContent = "";
+    drawerCheckEl.classList.remove("show");
   }
 }
-async function cycleRemoteStick(){
-  if (!SKIN || (!SKIN.remote && !SKIN.stick)) { setStatus("Skin này không có Remote/Stick", true); return; }
-  if (remoteWin && winVisible("remote")) {
-    setWinVisible("remote", false);
-    if (SKIN.stick) { await ensureStickWindow(); setWinVisible("stick", true); }
-  } else if (stickWin && winVisible("stick")) {
-    setWinVisible("stick", false);
-  } else if (SKIN.remote) {
-    await ensureRemoteWindow();
-    setWinVisible("remote", true); setWinVisible("stick", false);
-  } else if (SKIN.stick) {
-    await ensureStickWindow();
-    setWinVisible("stick", true);
-  }
-  applyWindowVisibility();
+function setDrawerButton() {
+  if (btnDrawer) btnDrawer.textContent = drawerOpen ? "Đóng ngăn kéo" : "Mở ngăn kéo";
 }
-try {
-  const pv = localStorage.getItem("amp-pl-visible-v5");
-  if (pv !== null) plVisible = pv === "1";
-  const ev = localStorage.getItem("amp-eq-visible-v5");
-  if (ev !== null) eqVisible = ev === "1";
-} catch (e) {}
-
-async function resolveImg(res, imageId, imageFile){
-  if (imageId && res.hasCrop(imageId)) {
-    const u = await res.bitmapURL(imageId);
-    if (u) return u;
-  }
-  if (imageFile) return await res.fileURL(imageFile);
-  return null;
-}
-async function renderFrameInto(win, frame, res){
-  if (!frame) return;
-  for (const lay of frame.layers) {
-    if (!lay.imageFile) continue;
-    const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) win.appendChild(layerEl(src, lay));
-  }
-  for (const t of frame.texts) {
-    if (!t.default) continue;
-    const el = document.createElement("div");
-    el.className = "wtext";
-    el.style.left = t.x + "px"; el.style.top = t.y + "px";
-    el.style.width = (t.w || 50) + "px"; el.style.height = (t.h || 14) + "px";
-    el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 11) + "px";
-    el.style.lineHeight = (t.h || 14) + "px";
-    el.style.overflow = "visible";
-    el.textContent = compName(t.default, (SKIN && SKIN.skin && SKIN.skin.name) || "WINAMP");
-    if (t.color) el.style.color = skinColor(t.color);
-    if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
-    if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
-    win.appendChild(el);
-  }
-  for (const b of frame.buttons) await buildButton(b, win, res, onFrameButton);
-}
-/* Chữ tiêu đề cửa sổ theo Winamp gốc (như skin-sim): Arial bold 11px, màu
-   titlebar.text.color trong system-colors.xml (trắng 255,255,255), bóng
-   1px 1px đen, chữ hoa (forceuppercase="1" trong titlebar.xml). Chỉ áp cho
-   đúng chữ titlebar, không đổi style các chữ khác. */
-function styleTitlebarText(el, t){
-  el.style.fontFamily = "Arial, sans-serif";
-  el.style.fontWeight = "bold";
-  el.style.fontSize = "11px";
-  el.style.lineHeight = (t.h || 15) + "px";
-  el.style.color = skinColor(t.color || "titlebar.text.color");
-  el.style.textShadow = "1px 1px #000";
-  el.style.textTransform = "uppercase";
-}
-async function onFrameButton(b){
-  if (b.action === "CLOSE") {
-    const kind = b._winKind;
-    if (kind === "drawer") { await toggleDrawer(); return; }
-    if (kind) { setWinVisible(kind, false); applyWindowVisibility(); }
-    return;
-  }
-  onMainButton(b);
-}
-function gammaOfImage(id){
-  if (!id || typeof SKIN === "undefined" || !SKIN || !SKIN.bitmapGamma) return "";
-  return SKIN.bitmapGamma[id] || "";
-}
-function imgElSrc(src, x, y, w, h, gamma){
-  const im = document.createElement("img");
-  im.src = src; im.draggable = false; im.alt = "";
-  im.onerror = () => { im.style.display = "none"; };
-  im.style.left = x + "px"; im.style.top = y + "px";
-  if (w) im.style.width = w + "px"; if (h) im.style.height = h + "px";
-  if (gamma) im.dataset.gammagroup = gamma;
-  return im;
-}
-/* Vẽ 1 lớp (layer) đúng như skin: alpha -> opacity = alpha/255 (vd 3 lớp phủ
-   display alpha="13" chỉ ~5%, không vẽ đậm 100%); tile="1" -> lặp ảnh nền
-   thay vì kéo giãn (vd display.center, wasabi.list.background). */
-function layerEl(src, lay){
-  const a = lay.alpha !== undefined && lay.alpha !== null && lay.alpha !== "" ? parseInt(lay.alpha, 10) : 255;
-  const opacity = (isFinite(a) ? a : 255) / 255;
-  if (lay.tile === "1") {
-    const d = document.createElement("div");
-    d.style.position = "absolute";
-    d.style.left = lay.x + "px"; d.style.top = lay.y + "px";
-    d.style.width = (lay.w || 10) + "px"; d.style.height = (lay.h || 10) + "px";
-    d.style.backgroundImage = "url(" + JSON.stringify(src) + ")";
-    d.style.backgroundRepeat = "repeat";
-    d.style.backgroundSize = "auto";
-    d.style.backgroundPosition = "0 0";
-    if (opacity < 1) d.style.opacity = String(opacity);
-    if (lay.gammagroup) d.dataset.gammagroup = lay.gammagroup;
-    return d;
-  }
-  const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
-  if (opacity < 1) im.style.opacity = String(opacity);
-  if (lay.gammagroup) im.dataset.gammagroup = lay.gammagroup;
-  return im;
-}
-
-function wireButtonPointer(d, im, b){
-  const base = () => {
-    if (b._stateBase) return b._stateBase();
-    if (b.mergedPause && playing && b._pauseSrc) return b._pauseSrc;
-    return b._src;
-  };
-  b._base = base;
-  const show = f => { if (f) im.src = f; };
-  d.addEventListener("pointerover", e => { if (e.pointerType === "mouse") show(b._hoverSrc || base()); });
-  d.addEventListener("pointerout", () => show(base()));
-  d.addEventListener("pointerdown", () => show(b._downSrc || b._hoverSrc || base()));
-  d.addEventListener("pointerup", () => show(base()));
-  d.addEventListener("pointercancel", () => show(base()));
-  d.addEventListener("pointerleave", () => show(base()));
-}
-async function buildButton(b, container, res, onClick){
-  const d = document.createElement("div");
-  d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
-  d.style.left = b.x + "px"; d.style.top = b.y + "px";
-  d.style.width = (b.w || 10) + "px"; d.style.height = (b.h || 10) + "px";
-  /* Bộ lọc màu theo gammagroup đặt trên vỏ nút (ảnh trong đổi theo trạng
-     thái hover/pressed nhưng vẫn là cùng 1 nút) — xem applyColorTheme. */
-  if (b.gammagroup) d.dataset.gammagroup = b.gammagroup;
-  b._src = await resolveImg(res, b.image, b.imageFile);
-  b._hoverSrc = b.hoverImage ? await resolveImg(res, b.hoverImage, b.hoverFile) : null;
-  b._downSrc = b.downImage ? await resolveImg(res, b.downImage, b.downFile) : null;
-  b._pauseSrc = b.pauseImage ? await resolveImg(res, b.pauseImage, b.pauseFile) : null;
-  b._activeSrc = b.activeImage ? await resolveImg(res, b.activeImage, b.activeFile) : null;
-  if (b.action === "PLAY" && !b.mergedPause) b._stateBase = () => playing ? (b._activeSrc || b._downSrc || b._src) : b._src;
-  else if (b.action === "PAUSE") b._stateBase = () => (!playing && mode === "file" && au && au.currentTime > 0) ? (b._activeSrc || b._downSrc || b._src) : b._src;
-  if (!b._src) return null;
-  const im = document.createElement("img");
-  im.src = b._src; im.draggable = false; im.alt = "";
-  im.onerror = () => { d.style.display = "none"; };
-  d.appendChild(im);
-  wireButtonPointer(d, im, b);
-  d.addEventListener("click", () => onClick(b));
-  container.appendChild(d);
-  b._el = d; b._img = im;
-  return d;
-}
-function updatePlayState(){
-  if (!SKIN) return;
-  const play = SKIN.buttons.find(b => b.action === "PLAY");
-  if (play && play._img) play._img.src = play._base ? play._base() : play._src;
-  const pause = SKIN.buttons.find(b => b.action === "PAUSE");
-  if (pause && pause._img) pause._img.src = pause._base ? pause._base() : pause._src;
-  const ind = SKIN.layers && SKIN.layers.find(l => l.id === "playIndicator");
-  if (ind && ind._img && resolver && resolver.bitmapURL) {
-    const id = playing ? "PLAYPAUS.playing" : ((mode === "file" && au && au.currentTime > 0) ? "PLAYPAUS.paused" : "PLAYPAUS.stopped");
-    if (ind._indId !== id) {
-      ind._indId = id;
-      resolver.bitmapURL(id).then(u => { if (u && ind._indId === id) ind._img.src = u; });
-    }
-  }
-  /* <status>: đang phát -> playBitmap, tạm dừng -> pauseBitmap, dừng -> stopBitmap. */
-  const st = playing ? "play" : ((mode === "file" && au && au.currentTime > 0) ? "pause" : "stop");
-  for (const s of (SKIN.status || [])) {
-    if (!s._els) continue;
-    for (const k of ["stop", "play", "pause"]) {
-      const im = s._els[k];
-      if (im) im.style.display = (k === st) ? "" : "none";
-    }
-  }
-}
-
-async function buildMainWindow(skin, res, win){
-  const L = skin.layout;
-  hiddenGroups = {};
-  siBitrate = null; siFreq = null;
-  mainContentEl = null; avsStripEl = null; embVideoBoxEl = null; embVisBoxEl = null;
-  videoavsOpenEl = null; videoavsCloseEl = null;
-  const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
-  if (bgSrc) {
-    win.style.backgroundImage = "url(" + JSON.stringify(bgSrc) + ")";
-    if (L.bgCrop) {
-      win.style.backgroundSize = L.bgCrop.fullW + "px " + L.bgCrop.fullH + "px";
-      win.style.backgroundPosition = (-L.bgCrop.x) + "px " + (-L.bgCrop.y) + "px";
+function toggleDrawer(open) {
+  drawerOpen = !!open;
+  if (renderer) renderer.setDrawerOpen(drawerOpen);
+  setDrawerButton();
+  renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+  /* Fallback 50ms (V8-BUGS Lỗi 2): kiểm lại vị trí mở, lệch thì vẽ lại. */
+  setTimeout(function () {
+    if (!renderer) return;
+    var errs = [];
+    try { errs = renderer.runDrawerSelfCheck(stage) || []; } catch (e) { errs = []; }
+    if (drawerOpen && errs.length) {
+      renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+      setTimeout(checkDrawer, 60);
     } else {
-      win.style.backgroundSize = L.w + "px " + L.h + "px";
-      win.style.backgroundPosition = "0 0";
+      checkDrawer();
     }
-  }
-  if (skin.frame) {
-    for (const lay of skin.frame.layers) {
-      if (!lay.imageFile) continue;
-      const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) {
-        const im = layerEl(src, lay);
-        win.appendChild(im);
-        const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
-      }
-    }
-    for (const t of skin.frame.texts) {
-      if (!t.default) continue;
-      const el = document.createElement("div");
-      el.className = "wtext";
-      el.style.left = t.x + "px"; el.style.top = t.y + "px";
-      el.style.width = (t.w || 50) + "px"; el.style.height = (t.h || 14) + "px";
-      el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 11) + "px";
-      el.style.lineHeight = (t.h || 14) + "px";
-      el.style.overflow = "visible";
-      el.textContent = compName(t.default, (skin.name || "WINAMP"));
-      if (t.color) el.style.color = skinColor(t.color);
-      if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
-      if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
-      win.appendChild(el);
-      const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
-    }
-    for (const b of skin.frame.buttons) {
-      const bel = await buildButton(b, win, res, onMainButton);
-      const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
-    }
-  }
-  /* Nội dung player.main nằm trong mainContent để khi mở vùng AVS nhúng,
-     cả khối lùi xuống 116px bằng transform (khung titlebar/menubar và nút
-     videoavs.open/close ở ngoài nên đứng yên). */
-  const mainContent = document.createElement("div");
-  mainContent.id = "mainContent";
-  mainContent.style.cssText = "position:absolute;left:0px;top:0px;width:" + L.w + "px;height:" + L.h + "px;";
-  win.appendChild(mainContent);
-  mainContentEl = mainContent;
-  /* Vùng AVS nhúng (AVSGroup): dưới menubar, trên mainContent khi mở (DOM
-     sau mainContent nên đè lên 18px chồng lấn 133..151 — đúng thứ tự dummy
-     group: player.main trước, AVSGroup sau). Ẩn mặc định. */
-  let avsStrip = null;
-  if (skin.embeddedAvs) {
-    avsStrip = document.createElement("div");
-    avsStrip.id = "avsStrip";
-    avsStrip.style.cssText = "position:absolute;left:" + (skin.embeddedAvs.x || 0) + "px;top:" + skin.embeddedAvs.y + "px;width:" + skin.embeddedAvs.w + "px;height:" + skin.embeddedAvs.h + "px;display:none;";
-    win.appendChild(avsStrip);
-  }
-  avsStripEl = avsStrip;
-  const skip = new Set(["player.bb-seek-empty", "player.bb-seek-full",
-    "player.bb-volume-min", "player.bb-volume-max",
-    "player.bb-spectrum-left", "player.bb-spectrum-right", "player.bb-spectrum-on",
-    "player.bb-songticker-endcover"]);
-  for (const lay of skin.layers) {
-    if (skip.has(lay.image)) continue;
-    if (!lay.imageFile) continue;
-    const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) {
-      const im = layerEl(src, lay); lay._img = im;
-      /* Lớp nền nút videoavs.open/close: đứng yên cùng nút, không lùi
-         theo player.main khi mở vùng AVS. */
-      if ((lay.image || "").toLowerCase() === "player.button.videoavs.up.bg") win.appendChild(im);
-      else mainContent.appendChild(im);
-      const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
-    }
-  }
-  /* Chỉ báo trạng thái phát (<status> trong XML): 3 bitmap stop/play/pause,
-     chỉ hiện đúng 1 theo trạng thái phát — updatePlayState() đổi khi phát/
-     dừng/tạm dừng. Vị trí/kích thước lấy từ model (vd 24,35 10x23 và
-     34,110 90x29); bitmap có crop sẵn theo từng trạng thái nên vẽ qua
-     resolveImg như layer/button thường. */
-  for (const s of (skin.status || [])) {
-    const wrap = document.createElement("div");
-    wrap.style.position = "absolute";
-    wrap.style.left = (s.x || 0) + "px"; wrap.style.top = (s.y || 0) + "px";
-    if (s.w) wrap.style.width = s.w + "px";
-    if (s.h) wrap.style.height = s.h + "px";
-    wrap.style.pointerEvents = "none";
-    s._els = {};
-    for (const k of ["stop", "play", "pause"]) {
-      const bmp = s[k + "Bitmap"], file = s[k + "File"];
-      if (!bmp && !file) continue;
-      const src = await resolveImg(res, bmp, file);
-      if (!src) continue;
-      const im = document.createElement("img");
-      im.src = src; im.draggable = false; im.alt = "";
-      im.style.position = "absolute"; im.style.left = "0px"; im.style.top = "0px";
-      if (s.w) im.style.width = s.w + "px";
-      if (s.h) im.style.height = s.h + "px";
-      im.style.display = "none";
-      const gg = gammaOfImage(bmp);
-      if (gg) im.dataset.gammagroup = gg;
-      wrap.appendChild(im);
-      s._els[k] = im;
-    }
-    mainContent.appendChild(wrap);
-    s._wrap = wrap;
-    const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, wrap);
-  }
-  const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
-    || skin.texts.find(t => t.display === "songname")
-    || skin.texts.find(t => t.ticker === "1");
-  const tim = skin.texts.find(t => t.id === "timer")
-    || skin.texts.find(t => t.display === "time");
-  if (tick) {
-    const tickEl = document.createElement("div");
-    tickEl.id = "ticker";
-    tickEl.style.left = tick.x + "px"; tickEl.style.top = tick.y + "px";
-    tickEl.style.width = tick.w + "px"; tickEl.style.height = (tick.h || 14) + "px";
-    tickEl.innerHTML = "<span id='tickerspan'></span>";
-    if (tick.gammagroup) tickEl.dataset.gammagroup = tick.gammagroup;
-    mainContent.appendChild(tickEl);
-    tickerEl = tick; tickerFont = null; tickerFontFamily = null;
-    const tfont = tick.font && skin.fonts ? skin.fonts[tick.font] : null;
-    if (tfont) {
-      tickerFont = tfont;
-      if (tfont.tag === "truetypefont" && tfont.file) {
-        const fam = "AmpSkin-" + (tick.font || "").replace(/[^a-z0-9]/gi, "");
-        res.fileURL(tfont.file).then(url => {
-          if (!url) return;
-          try {
-            const ff = new FontFace(fam, "url(" + url + ")");
-            ff.load().then(() => { document.fonts.add(ff); tickerFontFamily = fam; renderTicker(); }).catch(() => {});
-          } catch (e) { }
-        });
-      }
-    }
-  }
-  timerFont = null; timerFontImg = null;
-  if (tim) {
-    const timEl = document.createElement("div");
-    timEl.id = "timer";
-    timEl.style.left = tim.x + "px"; timEl.style.top = tim.y + "px";
-    timEl.style.width = tim.w + "px"; timEl.style.height = (tim.h || 14) + "px";
-    timEl.style.cursor = "pointer";
-    timEl.title = "Bấm để đổi đã phát / còn lại";
-    if (tim.gammagroup) timEl.dataset.gammagroup = tim.gammagroup;
-    timEl.addEventListener("click", toggleTimeMode);
-    const font = tim.font && skin.fonts ? skin.fonts[tim.font] : null;
-    if (font && font.tag === "bitmapfont" && font.imageURL) {
-      const cv = document.createElement("canvas");
-      cv.width = tim.w + (font.classicSlots ? 1 : 0); cv.height = tim.h || 14;
-      cv.dataset.align = tim.align || "left";
-      timEl.appendChild(cv);
-      timerFont = font;
-      timerFontImg = await bitmapFontImage(font);
-      if (!timerFontImg) timerFont = null;
-      else timerInkColor = sampleInkColor(timerFontImg);
-    }
-    if (!timerFont) timEl.textContent = "0:00";
-    mainContent.appendChild(timEl);
-  }
-  for (const t of skin.texts) {
-    if (t === tick || t === tim) continue;
-    if (!t.default && !t.display) continue;
-    const tfont = t.font && skin.fonts ? skin.fonts[t.font] : null;
-    if (tfont && tfont.tag === "bitmapfont" && tfont.imageURL && tfont.charset && tfont.charwidth) {
-      const cv = await drawBitmapFontText(t, tfont, skin.name);
-      if (cv) {
-        mainContent.appendChild(cv);
-        const lid = (t.id || "").toLowerCase();
-        if (lid === "bitrate") siBitrate = { cv, font: tfont, def: t.default || "(___)" };
-        else if (lid === "frequency") siFreq = { cv, font: tfont, def: t.default || "(__)" };
-        const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, cv);
-        continue;
-      }
-    }
-    const el = document.createElement("div");
-    el.className = "wtext";
-    el.style.left = t.x + "px"; el.style.top = t.y + "px";
-    el.style.width = (t.w || 30) + "px"; el.style.height = (t.h || 8) + "px";
-    el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
-    el.textContent = compName(t.default || "", (skin.name || "WINAMP"));
-    el.dataset.display = t.display || "";
-    if (t.color) el.style.color = skinColor(t.color);
-    if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
-    if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
-    mainContent.appendChild(el);
-    const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
-  }
-  visCanvas = null; visCtx = null;
-  if (skin.vis && skin.vis[0]) {
-    const v = skin.vis[0];
-    const cv = document.createElement("canvas");
-    cv.className = "vis";
-    cv.width = v.w || 72; cv.height = v.h || 25;
-    cv.style.left = v.x + "px"; cv.style.top = v.y + "px";
-    cv.style.width = (v.w || 72) + "px"; cv.style.height = (v.h || 25) + "px";
-    mainContent.appendChild(cv);
-    visCanvas = cv; visCtx = cv.getContext("2d");
-    const hid = isHiddenEl(skin, v); if (hid) registerHidden(hid, cv);
-  }
-  const cover = skin.layers.find(l => l.image === "player.bb-songticker-endcover");
-  if (cover) {
-    const src = await resolveImg(res, cover.image, cover.imageFile);
-    if (src) mainContent.appendChild(layerEl(src, cover));
-  }
-  await buildStrip(skin, res, mainContent);
-  for (const s of skin.sliders) {
-    if (s.action === "VOLUME" || s.action === "SEEK" || s.action === "EQ_PREAMP" || s.action === "EQ_BAND") {
-      const tr = await buildMainSlider(s, mainContent, res);
-      const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, tr);
-    }
-  }
-  for (const b of skin.buttons) {
-    /* Nút videoavs.open/close: đứng yên ở góc phải (không lùi theo
-       player.main), chỉ đổi hiện/ẩn theo trạng thái vùng AVS. */
-    const bid = (b.id || "").toLowerCase();
-    const isVideoavsBtn = bid === "videoavs.open" || bid === "videoavs.close";
-    const bel = await buildButton(b, isVideoavsBtn ? win : mainContent, res, onMainButton);
-    if (isVideoavsBtn) {
-      if (bid === "videoavs.open") videoavsOpenEl = bel;
-      else videoavsCloseEl = bel;
-    }
-    const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
-  }
-  for (const b of skin.buttons) if (b.action === "EQ_TOGGLE" && b._img) b._stateBase = () => eqState.on ? (b._activeSrc || b._downSrc || b._src) : b._src;
-  refreshModeLEDs(skin, res);
-  /* Vẽ vùng AVS nhúng (nếu skin có) rồi áp trạng thái đã lưu. Monitor/scale
-     do syncEmbAvs ở applySkinFile lo (lúc này SKIN/mainWin chưa gán xong). */
-  if (skin.embeddedAvs && avsStrip) {
-    await buildEmbeddedAvs(skin, res, avsStrip);
-    applyEmbAvsVisual(win, skin);
-  }
+  }, 50);
 }
-/* ---- Vùng AVS/Video nhúng trong cửa sổ chính (đợt 7) ---- */
-async function buildEmbeddedAvs(skin, res, strip){
-  /* Vẽ vùng AVS nhúng (AVSGroup) vào strip: nền + khung + vùng vẽ
-     video.group (canvas vis + thẻ video) + các nhóm nút (video/vis/
-     switchto/detach). Vị trí nhóm lấy từ model, tọa độ con tương đối
-     trong nhóm, panel đặt ở (x,y) — mẫu drawer. */
-  const ea = skin.embeddedAvs;
-  if (!ea) return;
-  strip.style.background = "#000";
-  for (const bg of (ea.backgrounds || [])) {
-    if (!bg.imageFile) continue;
-    const src = await resolveImg(res, bg.image, bg.imageFile);
-    if (src) strip.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h, bg.gammagroup));
-  }
-  for (const lay of ea.layers) {
-    if (!lay.imageFile) continue;
-    const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) strip.appendChild(layerEl(src, lay));
-  }
-  /* Vùng vẽ video.group (4,21,346x69): hộp đen chứa canvas vis + video.
-     Canvas vis hiện ở chế độ vis, video hiện ở chế độ video. */
-  const vr = ea.videoRect || { x: 4, y: 21, w: 346, h: 69 };
-  const drawBox = document.createElement("div");
-  drawBox.id = "embDrawBox";
-  drawBox.style.cssText = "position:absolute;left:" + vr.x + "px;top:" + vr.y + "px;width:" + vr.w + "px;height:" + vr.h + "px;background:#000;overflow:hidden;";
-  strip.appendChild(drawBox);
+async function bootSkin(file, name) {
+  setStatus("Đang mở " + name + " …");
+  reportEl.textContent = "";
   try {
-    await ensureAvsJs();
-    if (typeof window !== "undefined" && window.__attachAvsCanvas) {
-      embVisBoxEl = window.__attachAvsCanvas(drawBox, { x: 0, y: 0, w: vr.w, h: vr.h });
-    }
-  } catch (e) {}
-  try {
-    await ensureVideoJs();
-    if (typeof window !== "undefined" && window.__attachVideoEl) {
-      const created = window.__attachVideoEl(drawBox, { x: 0, y: 0, w: vr.w, h: vr.h });
-      if (created && created.box) { created.box.style.overflow = "hidden"; embVideoBoxEl = created.box; }
-    }
-  } catch (e) {}
-  for (const [gid, g] of Object.entries(ea.groups || {})) {
-    const panel = document.createElement("div");
-    panel.dataset.embGroup = gid;
-    panel.style.cssText = "position:absolute;left:" + (g.x || 0) + "px;top:" + (g.y || 0) + "px;";
-    strip.appendChild(panel);
-    for (const lay of (g.layers || [])) {
-      if (!lay.imageFile) continue;
-      const src = await resolveImg(res, lay.image, lay.imageFile);
-      if (src) panel.appendChild(layerEl(src, lay));
-    }
-    for (const t of (g.texts || [])) {
-      if (!t.default && !t.display) continue;
-      const el = document.createElement("div");
-      el.className = "wtext";
-      el.style.left = t.x + "px"; el.style.top = t.y + "px";
-      el.style.width = (t.w || 30) + "px"; el.style.height = (t.h || 8) + "px";
-      el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 8) + "px";
-      el.style.lineHeight = (t.h || 8) + "px";
-      el.textContent = t.default || "";
-      el.dataset.display = t.display || "";
-      if (t.color) el.style.color = skinColor(t.color);
-      if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
-      if (t.display === "VID_Info" && typeof window !== "undefined") window.__embVidInfoEl = el;
-      panel.appendChild(el);
-    }
-    for (const b of (g.buttons || [])) {
-      await buildButton(b, panel, res, onEmbAvsButton);
-    }
-  }
-  /* Nút random + LED random: đổi ảnh theo trạng thái (LED hiện led.on). */
-  const vg = ea.groups && ea.groups["buttons.vis"];
-  if (vg) for (const b of (vg.buttons || [])) {
-    if (!/random/i.test(b.id || "")) continue;
-    b._stateBase = () => embVisRandom ? (b._activeSrc || b._downSrc || b._src) : b._src;
-  }
-  refreshEmbRandomVisual();
-  syncEmbAvsMode(skin);
-}
-function refreshVideoavsButtons(){
-  if (videoavsOpenEl) videoavsOpenEl.style.display = avsEmbeddedOpen ? "none" : "";
-  if (videoavsCloseEl) videoavsCloseEl.style.display = avsEmbeddedOpen ? "" : "none";
-}
-function setEmbGroupVisible(gid, show){
-  if (!avsStripEl) return;
-  const p = avsStripEl.querySelector("[data-emb-group='" + gid + "']");
-  if (p) p.style.display = show ? "" : "none";
-}
-function syncEmbAvsMode(skin){
-  /* skin: truyền vào lúc build (SKIN toàn cục chưa gán xong); lúc chạy
-     bỏ trống để dùng SKIN. */
-  skin = skin || SKIN;
-  if (!skin || !skin.embeddedAvs || !avsStripEl) return;
-  const vis = embAvsMode !== "video";
-  setEmbGroupVisible("buttons.vis", vis);
-  setEmbGroupVisible("buttons.video", !vis);
-  setEmbGroupVisible("buttons.vis.switchto", vis);
-  setEmbGroupVisible("buttons.video.switchto", !vis);
-  if (embVisBoxEl) embVisBoxEl.style.display = vis ? "" : "none";
-  if (embVideoBoxEl) embVideoBoxEl.style.display = vis ? "none" : "";
-  setEmbGroupVisible("buttons.vis.detach", avsEmbeddedOpen && vis);
-  setEmbGroupVisible("buttons.video.detach", avsEmbeddedOpen && !vis);
-}
-function applyEmbAvsVisual(win, skin){
-  /* Áp trạng thái mở/đóng + chế độ lên DOM (không đụng monitor/scale).
-     Dùng được cả lúc build (win/skin cục bộ) lẫn lúc chạy (mainWin/SKIN). */
-  if (!skin || !skin.embeddedAvs || !win) return;
-  const open = avsEmbeddedOpen;
-  if (mainContentEl) mainContentEl.style.transform = open ? "translateY(" + skin.embeddedAvs.h + "px)" : "";
-  if (avsStripEl) avsStripEl.style.display = open ? "" : "none";
-  win.style.height = (skin.layout.h + (open ? skin.embeddedAvs.h : 0)) + "px";
-  refreshVideoavsButtons();
-  syncEmbAvsMode(skin);
-}
-async function syncEmbAvs(){
-  if (!SKIN || !SKIN.embeddedAvs || !mainWin) return;
-  applyEmbAvsVisual(mainWin, SKIN);
-  if (avsEmbeddedOpen && embAvsMode === "vis") {
-    try { await ensureAvsJs(); if (window.__avsOpened) await window.__avsOpened(true); } catch (e) {}
-  } else {
-    if (window.__avsClosed) { try { await window.__avsClosed(true); } catch (e) {} }
-  }
-  applyScale();
-}
-async function setEmbAvs(open, mode){
-  /* Đặt trạng thái vùng AVS nhúng rồi đồng bộ DOM. open=false: đóng hẳn.
-     mode: "vis" | "video" (chỉ có nghĩa khi open=true). */
-  if (!SKIN || !SKIN.embeddedAvs) return false;
-  if (typeof open === "boolean") avsEmbeddedOpen = open;
-  if (mode) embAvsMode = mode;
-  saveEmbAvsState();
-  await syncEmbAvs();
-  return true;
-}
-async function setEmbAvsMode(mode){
-  if (!SKIN || !SKIN.embeddedAvs) return false;
-  embAvsMode = mode;
-  if (!avsEmbeddedOpen) { await setEmbAvs(true, mode); return true; }
-  saveEmbAvsState();
-  syncEmbAvsMode();
-  if (mode === "vis") {
-    try { await ensureAvsJs(); if (window.__avsOpened) await window.__avsOpened(true); } catch (e) {}
-    setStatus("Đã chuyển sang Hiệu ứng (Visualizer)");
-  } else {
-    if (window.__avsClosed) { try { await window.__avsClosed(true); } catch (e) {} }
-    setStatus("Đã chuyển sang Video");
-  }
-  return true;
-}
-function setEmbVideoScale(n){
-  embVideoScale = (n === 2) ? 2 : 1;
-  const v = (typeof window !== "undefined" && window.__getVideoEl) ? window.__getVideoEl() : null;
-  if (v) {
-    /* 1x: vừa khung video.group (contain). 2x: phóng 2x, căn giữa, phần
-       thừa cắt bởi overflow hidden của hộp video. */
-    v.style.objectFit = "contain";
-    v.style.transform = embVideoScale === 2 ? "scale(2)" : "";
-    v.style.transformOrigin = "center center";
-  }
-  setStatus(embVideoScale === 2 ? "Video: 2x (phóng gấp đôi trong khung)" : "Video: 1x (vừa khung)");
-}
-function embAvsFullscreen(){
-  const v = (typeof window !== "undefined" && window.__getVideoEl) ? window.__getVideoEl() : null;
-  const target = (embAvsMode === "video" && v) ? v : (embVisBoxEl || avsStripEl);
-  if (!target) return;
-  if (document.fullscreenElement) { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
-  if (target.requestFullscreen) { const p = target.requestFullscreen(); if (p && p.catch) p.catch(() => {}); }
-}
-function refreshEmbRandomVisual(){
-  if (!SKIN || !SKIN.embeddedAvs) return;
-  const g = SKIN.embeddedAvs.groups && SKIN.embeddedAvs.groups["buttons.vis"];
-  if (!g) return;
-  for (const b of (g.buttons || [])) {
-    if (!/random/i.test(b.id || "")) continue;
-    if (b._img && b._base) b._img.src = b._base();
-  }
-}
-function onEmbAvsButton(b){
-  const a = b.action, id = (b.id || "").toLowerCase();
-  if (a === "VID_FS" || a === "VIS_FS") { embAvsFullscreen(); return; }
-  if (a === "VID_1X") { setEmbVideoScale(1); return; }
-  if (a === "VID_2X") { setEmbVideoScale(2); return; }
-  if (a === "VIS_PREV" || a === "VIS_NEXT") {
-    if (typeof window !== "undefined" && window.onAVSButton) { window.onAVSButton(b); return; }
-    setStatus("Chưa nạp được hiệu ứng"); return;
-  }
-  if (a === "VID_MISC" || a === "VIS_MENU") { setStatus("Menu Video/Vis chưa làm trong đợt này"); return; }
-  if (/switchto/i.test(b.id || "")) { setEmbAvsMode(embAvsMode === "vis" ? "video" : "vis"); return; }
-  if (/detach/i.test(b.id || "")) { setStatus("Tách cửa sổ Video/Vis ra ngoài chưa làm trong đợt này"); return; }
-  if (/button\.vid\.max/i.test(id) || /button\.vid\.restore/i.test(id)) { setStatus("Phóng to/thu nhỏ cửa sổ Video chưa làm trong đợt này (đang nhúng trong cửa sổ chính)"); return; }
-  if (/random/i.test(id)) {
-    embVisRandom = !embVisRandom;
-    refreshEmbRandomVisual();
-    setStatus("Hiệu ứng ngẫu nhiên: " + (embVisRandom ? "BẬT" : "TẮT"));
-    return;
-  }
-  onMainButton(b);
-}
-async function buildStrip(skin, res, win){
-  const s = skin.seek, v = skin.volume;
-  if (!s || !v) return;
-  const d = document.createElement("div");
-  d.className = "bar"; d.id = "strip";
-  d.style.left = s.x + "px"; d.style.top = s.y + "px";
-  d.style.width = s.w + "px"; d.style.height = s.h + "px";
-  const sEmpty = await resolveImg(res, s.emptyImage, s.emptyFile);
-  if (sEmpty) d.appendChild(imgElSrc(sEmpty, 0, 0, s.w, s.h, gammaOfImage(s.emptyImage)));
-  const fs = document.createElement("div");
-  fs.className = "fill"; fs.id = "fill-seek"; fs.style.width = "0px";
-  const sFull = await resolveImg(res, s.fullImage, s.fullFile);
-  if (sFull) fs.appendChild(imgElSrc(sFull, 0, 0, s.w, s.h, gammaOfImage(s.fullImage)));
-  d.appendChild(fs);
-  const vEmpty = await resolveImg(res, v.emptyImage, v.emptyFile);
-  if (vEmpty) d.appendChild(imgElSrc(vEmpty, v.x - s.x, v.y - s.y, v.w, v.h, gammaOfImage(v.emptyImage)));
-  const fv = document.createElement("div");
-  fv.className = "fill"; fv.id = "fill-vol"; fv.style.width = "0px";
-  fv.style.left = (v.x - s.x) + "px"; fv.style.top = (v.y - s.y) + "px";
-  const vFull = await resolveImg(res, v.fullImage, v.fullFile);
-  if (vFull) fv.appendChild(imgElSrc(vFull, 0, 0, v.w, v.h, gammaOfImage(v.fullImage)));
-  d.appendChild(fv);
-  d.addEventListener("pointerdown", e => {
-    stripSet(e);
-    const mv = ev => stripSet(ev);
-    const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", mv);
-    window.addEventListener("pointerup", up);
-  });
-  win.appendChild(d);
-}
-function stripSet(e){
-  const strip = $("#strip"); if (!strip) return;
-  const el = strip.getBoundingClientRect();
-  const frac = Math.min(1, Math.max(0, (e.clientX - el.left) / el.width));
-  if (mode === "file" && isFinite(au.duration) && au.duration > 0) {
-    au.currentTime = frac * au.duration; setFill("seek", frac);
-  } else {
-    au.volume = frac; setFill("vol", frac);
-    flashTicker("Âm lượng " + Math.round(frac * 100) + "%");
-  }
-}
-function setFill(kind, frac){
-  if (!SKIN) return;
-  const rect = kind === "seek" ? SKIN.seek : SKIN.volume;
-  const el = $("#fill-" + kind);
-  if (el && rect) el.style.width = Math.round(rect.w * frac) + "px";
-}
-async function buildMainSlider(s, win, res){
-  const track = document.createElement("div");
-  track.className = "eqsl";
-  track.style.left = s.x + "px"; track.style.top = s.y + "px";
-  track.style.width = s.w + "px"; track.style.height = s.h + "px";
-  const thumbSrc = s.thumb ? await resolveImg(res, s.thumb, s.thumbFile) : null;
-  const tw = s.thumbW || 14, th = s.thumbH || 14;
-  let thumb = null;
-  if (thumbSrc) {
-    thumb = document.createElement("div");
-    thumb.className = "thumb";
-    thumb.style.width = tw + "px"; thumb.style.height = th + "px";
-    const im = document.createElement("img");
-    im.src = thumbSrc; im.draggable = false; im.alt = "";
-    const tgg = s.gammagroup || gammaOfImage(s.thumb);
-    if (tgg) im.dataset.gammagroup = tgg;
-    im.onerror = () => { thumb.style.display = "none"; };
-    thumb.appendChild(im);
-    track.appendChild(thumb);
-  }
-  const horiz = s.orientation === "horizontal";
-  const bandIndex = s.action === "EQ_PREAMP" ? -1 : (s.action === "EQ_BAND" ? (parseInt(s.param || "1", 10) - 1) : -2);
-  const getFrac = () => {
-    if (s.action === "VOLUME") return au.volume;
-    if (s.action === "SEEK") return (mode === "file" && isFinite(au.duration) && au.duration > 0) ? au.currentTime / au.duration : 0;
-    if (bandIndex >= -1) return ((bandIndex < 0 ? eqState.preamp : eqState.bands[bandIndex]) + 12) / 24;
-    return 0;
-  };
-  let stripUrl = null;
-  if (s.strip && s.strip.image) {
-    stripUrl = await resolveImg(res, s.strip.image, s.strip.imageFile);
-    if (stripUrl) track.style.backgroundImage = "url(" + JSON.stringify(stripUrl) + ")";
-  }
-  const setFrac = frac => {
-    frac = Math.min(1, Math.max(0, frac));
-    if (s.action === "VOLUME") { au.volume = frac; setFill("vol", frac); }
-    else if (s.action === "SEEK" && mode === "file" && isFinite(au.duration) && au.duration > 0) {
-      au.currentTime = frac * au.duration; setFill("seek", frac);
-    }
-    else if (bandIndex >= -1) {
-      const v = Math.max(-12, Math.min(12, Math.round((-12 + frac * 24) * 10) / 10));
-      if (bandIndex < 0) eqState.preamp = v; else eqState.bands[bandIndex] = v;
-      saveEQState();
-      if (!eqState.on) {
-        eqState.on = true; saveEQState();
-        ensureEqJs().then(() => { enableEQ().catch(() => {}); if (window.updateEQToggleVisual) updateEQToggleVisual(); }).catch(() => {});
-      }
-      if (typeof applyEQGains === "function") applyEQGains();
-      eqStateHook();
-    }
-    placeThumb();
-  };
-  const placeThumb = () => {
-    const f = getFrac();
-    if (thumb) {
-      if (horiz) thumb.style.left = Math.round(f * (s.w - tw)) + "px";
-      else thumb.style.top = Math.round((1 - f) * (s.h - th)) + "px";
-    }
-    if (stripUrl && s.strip) {
-      const st = s.strip, cols = st.cols || 1;
-      let idx;
-      if (st.zeroEmpty) {
-        idx = Math.round(f * st.n);
-        if (idx <= 0) { track.style.backgroundPosition = "0 15px"; return; }
-        idx = idx - 1;
-      } else {
-        idx = Math.round(f * (st.n - 1));
-      }
-      track.style.backgroundPosition = (-((idx % cols) * st.fw)) + "px " + (-(Math.floor(idx / cols) * st.fh)) + "px";
-    }
-  };
-  track.addEventListener("pointerdown", e => {
-    try { track.setPointerCapture(e.pointerId); } catch (err) {  }
-    const r = track.getBoundingClientRect();
-    const frac = horiz ? (e.clientX - r.left) / r.width : 1 - (e.clientY - r.top) / r.height;
-    setFrac(frac);
-    const mv = ev => {
-      const rr = track.getBoundingClientRect();
-      setFrac(horiz ? (ev.clientX - rr.left) / rr.width : 1 - (ev.clientY - rr.top) / rr.height);
-    };
-    const up = () => { track.removeEventListener("pointermove", mv); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up); };
-    track.addEventListener("pointermove", mv);
-    track.addEventListener("pointerup", up);
-    track.addEventListener("pointercancel", up);
-    e.preventDefault();
-  });
-  s._placeThumb = placeThumb;
-  if (bandIndex >= -1 && typeof eqSliderEls !== "undefined")
-    eqSliderEls.push({ bandIndex, place: placeThumb, setVal: v => setFrac((v + 12) / 24) });
-  win.appendChild(track);
-  placeThumb();
-  return track;
-}
-</script>
-
-<script>
-let plListEl = null, localFiles = [];
-let selectedPl = null, lastTapAt = 0, lastTapItem = null;
-function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function rebuildPlItems(){
-  plItems = channels.map((c, i) => ({ kind: "radio", ch: i, name: c.name, url: c.url }));
-  for (const f of localFiles) plItems.push({ kind: "file", name: f.name, blobURL: f.blobURL });
-  selectedPl = null; lastTapItem = null; lastTapAt = 0;
-  window.__plItems = plItems.map(it => ({ kind: it.kind, name: it.name }));
-}
-function isCurrentPlItem(it){
-  if (it.kind === "radio") return mode === "radio" && idx === it.ch;
-  return mode === "file" && fileBlobURL === it.blobURL;
-}
-function fmtDur(s){
-  if (!isFinite(s) || s <= 0) return "";
-  const m = Math.floor(s / 60), ss = Math.floor(s % 60);
-  return m + ":" + (ss < 10 ? "0" : "") + ss;
-}
-function probeFileDuration(entry){
-  if (!entry || entry.duration > 0 || entry._durProbing) return;
-  entry._durProbing = true;
-  const a = new Audio();
-  a.preload = "metadata";
-  a.src = entry.blobURL;
-  a.addEventListener("loadedmetadata", () => { if (isFinite(a.duration) && a.duration > 0) { entry.duration = a.duration; renderPlaylist(false); } a.src = ""; }, { once: true });
-  a.addEventListener("error", () => { a.src = ""; }, { once: true });
-}
-/* Font bitmap cho hàng playlist: player.smallfont của skin (6x8), như chữ
-   nhỏ trong Winamp thật. Nạp 1 lần khi mở cửa sổ playlist (ensurePlWindow);
-   nếu skin không có font thì renderPlaylist rơi về chữ HTML thường. */
-let plRowFont = null, plRowFontImg = null;
-async function ensurePlRowFont(){
-  if (plRowFontImg) return plRowFontImg;
-  const f = SKIN && SKIN.fonts && SKIN.fonts["player.smallfont"];
-  if (!f || !f.file || !f.imageURL) return null;
-  plRowFont = f;
-  plRowFontImg = await bitmapFontImage(f);
-  return plRowFontImg;
-}
-function renderPlaylist(scrollToCur){
-  if (window.refreshML) { try { window.refreshML(); } catch (e) {} }
-  const list = plListEl; if (!list) return;
-  list.innerHTML = "";
-  const pc = SKIN && SKIN.playlist && SKIN.playlist.colors;
-  plItems.forEach((it, i) => {
-    const row = document.createElement("div");
-    const cur = isCurrentPlItem(it);
-    const sel = selectedPl === it;
-    row.className = "row plrow" + (cur ? " cur" : "") + (sel ? " sel" : "");
-    /* Màu đúng system-colors: chọn -> nền chọn + chữ chọn; đang phát
-       (không chọn) -> chữ bài đang phát trên nền thường; thường -> chữ
-       trắng trên nền list. */
-    const rowColor = pc ? (sel ? pc.selected : (cur ? pc.current : pc.normal)) : "";
-    if (pc) {
-      row.style.color = rowColor;
-      row.style.background = sel ? pc.selectedBg : pc.bg;
-    }
-    let durText = "";
-    if (it.kind === "file") {
-      const lf = localFiles.find(l => l.blobURL === it.blobURL);
-      if (lf && lf.duration > 0) durText = fmtDur(lf.duration);
-    }
-    if (plRowFontImg && plRowFont) {
-      /* Hàng vẽ bằng font bitmap của skin: tên (kèm số thứ tự) + thời
-         lượng, tô màu theo trạng thái hàng (paintBitmapText tô source-in;
-         chữ trắng giữ nguyên không tô). */
-      const nm = document.createElement("div");
-      nm.className = "nm";
-      const cv = document.createElement("canvas");
-      paintBitmapText(cv, plRowFontImg, plRowFont, (i + 1) + ". " + it.name, rowColor || "rgb(255,255,255)");
-      nm.appendChild(cv);
-      row.appendChild(nm);
-      if (durText) {
-        const dc = document.createElement("canvas");
-        dc.className = "dur";
-        paintBitmapText(dc, plRowFontImg, plRowFont, durText, rowColor || "rgb(255,255,255)");
-        row.appendChild(dc);
-      }
-    } else {
-      const durHtml = durText ? "<span class='dur'>" + durText + "</span>" : "";
-      row.innerHTML = "<span class='num'>" + (i + 1) + ".</span><span class='nm'>" + escapeHtml(it.name) + "</span>" + durHtml;
-    }
-    row.addEventListener("click", () => selectPlItem(it));
-    list.appendChild(row);
-  });
-  if (scrollToCur) {
-    const cur = list.querySelector(".cur");
-    if (cur) cur.scrollIntoView({ block: "nearest" });
-  }
-}
-/* chạm 1 = chọn dòng, chạm 2 lần = phát */
-function selectPlItem(it){
-  const now = Date.now();
-  if (lastTapItem === it && now - lastTapAt < 350) {
-    lastTapAt = 0; lastTapItem = null;
-    playPlItem(it);
-    return;
-  }
-  lastTapAt = now; lastTapItem = it;
-  selectedPl = it;
-  renderPlaylist();
-  setStatus("Đã chọn: " + it.name + " — chạm 2 lần để phát");
-}
-function playPlItem(it){
-  selectedPl = it;
-  if (it.kind === "radio") loadChannel(it.ch, true);
-  else playLocalFile(it.blobURL, it.name);
-}
-</script>
-
-<script>
-function compName(txt, fallback) {
-  if (typeof txt !== "string") return txt;
-  return txt.replace(/:componentname/gi, fallback);
-}
-
-async function buildSkinInto(skin, res){
-  const main = document.createElement("div");
-  main.className = "win"; main.id = "scaler";
-  main.style.width = skin.layout.w + "px";
-  main.style.height = skin.layout.h + "px";
-  await buildMainWindow(skin, res, main);
-  return { main };
-}
-function shellNote(msg){ const sh = document.querySelector("#shell .shell-s"); if (sh) sh.textContent = msg; }
-let _idb = null;
-function idbOpen(){
-  return new Promise((res, rej) => {
-    const r = indexedDB.open("amp-skin-cache-v7", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("skins");
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function idbGet(key){
-  try {
-    if (!_idb) _idb = await idbOpen();
-    return await new Promise((res, rej) => {
-      const t = _idb.transaction("skins", "readonly").objectStore("skins").get(key);
-      t.onsuccess = () => res(t.result || null);
-      t.onerror = () => rej(t.error);
-    });
-  } catch (e) { return null; }
-}
-async function idbPut(key, val){
-  try {
-    if (!_idb) _idb = await idbOpen();
-    await new Promise((res, rej) => {
-      const t = _idb.transaction("skins", "readwrite").objectStore("skins").put(val, key);
-      t.onsuccess = () => res();
-      t.onerror = () => rej(t.error);
-    });
-    return true;
-  } catch (e) { return false; }
-}
-function skinCacheKey(name){ return name + "|" + (typeof SkinLoader !== "undefined" && SkinLoader.VERSION ? SkinLoader.VERSION : EXPECTED_LOADER_VERSION); }
-async function tryCachedSkin(file){
-  if (typeof SkinLoader === "undefined" || typeof SkinLoader.loadSkinFromCache !== "function") return null;
-  const c = await idbGet(skinCacheKey(file.name));
-  if (!c || !c.skin || !c.bitmaps || !c.files) return null;
-  if (c.version && c.version !== (SkinLoader.VERSION || EXPECTED_LOADER_VERSION)) return null;
-  if (file.size && c.size && c.size !== file.size) return null;
-  try {
-    if (c.kind === "classic" || (c.skin && c.skin.kind === "classic")) {
-      await ensureClassicJs();
-      if (typeof ClassicSkin === "undefined" || typeof ClassicSkin.loadClassicFromCache !== "function") return null;
-      return await ClassicSkin.loadClassicFromCache(c);
-    }
-    return await SkinLoader.loadSkinFromCache(c);
-  } catch (e) { return null; }
-}
-async function cacheSkin(file, res){
-  if (!res || !res.skin || !res.bitmaps || !res.files) return;
-  const skinCopy = JSON.parse(JSON.stringify(res.skin));
-  for (const f of Object.values(skinCopy.fonts || {})) { delete f.imageURL; delete f.imageW; delete f.imageH; }
-  await idbPut(skinCacheKey(file.name), { name: file.name, size: file.size, version: (typeof SkinLoader !== "undefined" && SkinLoader.VERSION ? SkinLoader.VERSION : EXPECTED_LOADER_VERSION), kind: res.kind || (res.skin && res.skin.kind) || "modern", skin: skinCopy, bitmaps: res.bitmaps, files: res.files });
-}
-async function headValidate(name, cached){
-  try {
-    const r = await fetch(name, { method: "HEAD" });
-    if (!r.ok) return;
-    const len = +(r.headers.get("content-length") || 0);
-    if (len && cached.size && len !== cached.size) {
-      const full = await fetch(name);
-      if (!full.ok) return;
-      await applySkinFile(new File([await full.blob()], name, { type: "application/zip" }));
-    }
-  } catch (e) { }
-}
-async function applySkinFile(file){
-  if (!file) return;
-  setStatus("Đang đọc skin: " + file.name + "… (đang giải nén)");
-  try {
-    if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
-    let res = await tryCachedSkin(file);
-    let fromCache = !!res;
-    if (!res) {
-      const det = await detectSkinKind(file);
-      if (det.kind === "classic") {
-        await ensureClassicJs();
-        if (typeof ClassicSkin === "undefined") throw new Error("classic-skin.js chưa nạp được");
-        res = await ClassicSkin.loadClassicFile(file, det.zip);
-      } else if (det.kind === "modern") {
-        res = await SkinLoader.loadSkinFile(file, det.zip);
-      } else {
-        throw new Error("không nhận ra file skin (không thấy skin.xml của .wal hay main.bmp/main.png của .wsz)");
-      }
-    }
-    setStatus("Đang đọc skin: " + file.name + "… (đang vẽ giao diện)");
-    if (window.resetNotifier) window.resetNotifier();
-    const built = await buildSkinInto(res.skin, res.resolve);
-    await new Promise(r => setTimeout(r, 0));
-    stage.replaceChildren(built.main);
-    SKIN = res.skin; resolver = res.resolve; curRes = res.resolve;
-    plRowFont = null; plRowFontImg = null; /* font hàng playlist theo skin mới */
-    mainWin = built.main; eqWin = null; plWin = null;
-    mlWin = null; vidWin = null; avsWin = null; aaWin = null; aboutWin = null;
-    remoteWin = null; stickWin = null; drawerWin = null; drawerOpen = false;
-    extraTimers = []; extraTickers = [];
-    if (visMonitor) { visMonitor = false; }
-    if (winVisible("eq")) { try { await ensureEqWindow(); } catch (e) { setStatus("không mở được EQ: " + e.message, true); } }
-    if (winVisible("pl")) { try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); } }
-    if (SKIN.drawer) { try { await ensureDrawerWindow(); } catch (e) {} }
-    for (const kind of ["ml", "video", "avs", "albumart", "about"]) {
-      /* Skin có vùng AVS nhúng: video/avs là chế độ của vùng đó, không phải
-         cửa sổ rời — bỏ qua ở đây, khôi phục bằng syncEmbAvs bên dưới. */
-      if (SKIN.embeddedAvs && (kind === "video" || kind === "avs")) continue;
-      if (winVisible(kind)) { try { await WIN_ENSURERS[kind](); } catch (e) { setStatus("không mở được " + (WIN_LABELS[kind] || kind) + ": " + e.message, true); } }
-    }
-    if (winVisible("remote") && SKIN.remote) { try { await ensureRemoteWindow(); } catch (e) {} }
-    if (winVisible("stick") && SKIN.stick) { try { await ensureStickWindow(); } catch (e) {} }
-    if (SKIN.embeddedAvs) {
-      /* Khôi phục vùng AVS nhúng theo trạng thái đã lưu; kênh video đang
-         chọn thì mở ở chế độ video (ghi đè chế độ vis đã lưu). */
-      if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx])) { avsEmbeddedOpen = true; embAvsMode = "video"; }
-      await syncEmbAvs();
-    }
-    if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && window.playVideoChannel) {
-      /* Kênh video đang chọn: phát vào vùng AVS nhúng (đã mở ở trên) thay
-         vì cửa sổ Video rời. */
-      if (SKIN.embeddedAvs) playVideoChannel(channels[idx], playing);
-      else if (winVisible("video")) playVideoChannel(channels[idx], playing);
-    }
-    if (window.applySavedColorTheme) window.applySavedColorTheme();
-    applyWindowVisibility();
-    renderPlaylist(true);
-    updateTimerDisplay();
-    updateSonginfo();
-    if (window.updateEQToggleVisual) updateEQToggleVisual();
-    updatePlayState();
-    if (SKIN.sliders) for (const s of SKIN.sliders) if (s._placeThumb) s._placeThumb();
-    $("#skinname").textContent = SKIN.skin.name || file.name;
-    const lv = loaderVersion();
-    const winTag = (key, label) => (SKIN[key] ? " · " + label + " " + (SKIN[key].native ? "theo skin" : "dự phòng") : "");
-    $("#skinsub").textContent = "tác giả: " + (SKIN.skin.author || "?") + " · " + SKIN.buttons.length + " nút · " + SKIN.layout.w + "x" + SKIN.layout.h
-      + (SKIN.eq ? " · EQ " + (SKIN.eq.native ? "theo skin" : "dự phòng") : " · EQ dự phòng")
-      + (SKIN.playlist ? " · Playlist " + (SKIN.playlist.native ? "theo skin" : "dự phòng") : " · Playlist dự phòng")
-      + winTag("ml", "ML") + winTag("video", "Video") + winTag("avs", "Vis")
-      + winTag("albumart", "Album Art") + winTag("notifier", "Notifier") + winTag("about", "About")
-      + (SKIN.drawer ? " · Drawer theo skin" : "") + (SKIN.remote ? " · Remote theo skin" : "")
-      + (SKIN.stick ? " · Stick theo skin" : "");
-    showLoaderVersion();
-    if (!fromCache) await cacheSkin(file, res);
-    let okMsg = "Đã nạp skin: " + (SKIN.skin.name || file.name) + " — " + (SKIN.skin.author || "") + (lv ? " · loader v" + lv : "") + (fromCache ? " · từ bộ nhớ đệm" : "");
-    if (res.report.cropError) okMsg += " · không cắt được vùng mờ của ảnh nền (" + res.report.cropError + ") — skin có thể hiện rộng hơn bình thường";
-    if (loaderMismatch()) okMsg += " · CẢNH BÁO: đang chạy loader " + (lv ? "cũ v" + lv : "không rõ phiên bản") + ", tải lại trang (hoặc mở tab ẩn danh) để nạp loader v" + EXPECTED_LOADER_VERSION;
-    setStatus(okMsg);
-    window.__lastSkinLoad = { ok: true, name: SKIN.skin.name, author: SKIN.skin.author,
-      file: file.name, buttons: SKIN.buttons.length, layout: SKIN.layout,
-      frame: !!SKIN.frame, eq: !!SKIN.eq, eqNative: !!(SKIN.eq && SKIN.eq.native),
-      playlist: !!SKIN.playlist, playlistNative: !!(SKIN.playlist && SKIN.playlist.native),
-      ml: !!SKIN.ml, mlNative: !!(SKIN.ml && SKIN.ml.native),
-      video: !!SKIN.video, videoNative: !!(SKIN.video && SKIN.video.native),
-      avs: !!SKIN.avs, avsNative: !!(SKIN.avs && SKIN.avs.native),
-      albumart: !!SKIN.albumart, albumartNative: !!(SKIN.albumart && SKIN.albumart.native),
-      notifier: !!SKIN.notifier, notifierNative: !!(SKIN.notifier && SKIN.notifier.native),
-      about: !!SKIN.about, aboutNative: !!(SKIN.about && SKIN.about.native),
-      drawer: !!SKIN.drawer, remote: !!SKIN.remote, stick: !!SKIN.stick,
-      colorPresets: (SKIN.colorPresets || []).length,
-      missing: res.report.missing, notes: res.report.notes, fromCache,
-      loaderVersion: loaderVersion(), crop: res.report.crop || null };
-  } catch (err) {
-    window.__lastSkinLoad = { ok: false, file: file.name, error: err.message, loaderVersion: loaderVersion() };
-    const lv2 = loaderVersion();
-    setStatus("không đọc được skin này: " + err.message + (lv2 ? " · loader v" + lv2 : ""), true);
-  }
-}
-$("#skinpick").addEventListener("change", e => {
-  applySkinFile(e.target.files[0]);
-  e.target.value = "";
-});
-viewport.addEventListener("dragover", e => { e.preventDefault(); viewport.classList.add("dragover"); });
-viewport.addEventListener("dragleave", () => viewport.classList.remove("dragover"));
-viewport.addEventListener("drop", e => {
-  e.preventDefault(); viewport.classList.remove("dragover");
-  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) applySkinFile(f);
-});
-stage.addEventListener("dblclick", () => setScaleMode(scaleMode === "fit" ? "1x" : "fit"));
-
-function resetTicker(){
-  tickerText = mode === "file" ? (fileName || "File local")
-    : (channels[idx] ? channels[idx].name + " — Trực tiếp" : "Amp");
-  tickerNoteUntil = 0;
-}
-function flashTicker(msg, ms){
-  tickerText = msg; tickerNoteUntil = Date.now() + (ms || 2500);
-  renderTicker();
-}
-function sampleInkColor(img){
-  try {
-    const c = document.createElement("canvas");
-    c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
-    const cx = c.getContext("2d");
-    cx.drawImage(img, 0, 0);
-    const d = cx.getImageData(0, 0, c.width, c.height).data;
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let i = 0; i < d.length; i += 16) {
-      if (d[i + 3] > 30) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-    }
-    if (n) return "rgb(" + Math.round(r / n) + "," + Math.round(g / n) + "," + Math.round(b / n) + ")";
-  } catch (e) { }
-  return "#fff";
-}
-let tickerFont = null, tickerFontFamily = null, tickerEl = null, tickerDrawSeq = 0;
-function tickerCharIndex(font, ch, cols){ return bitmapCharIndex(font, ch, cols); }
-async function drawTickerCanvas(box){
-  const seq = ++tickerDrawSeq;
-  const img = await bitmapFontImage(tickerFont);
-  if (seq !== tickerDrawSeq || !img || !box.isConnected) return;
-  const f = tickerFont;
-  const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
-  const iw = img.naturalWidth || img.width || 0;
-  const cols = Math.max(1, Math.floor(iw / cw));
-  const text = tickerText;
-  const cv = document.createElement("canvas");
-  cv.className = "ticker-cv";
-  const ink = sampleInkColor(img);
-  const altfam = (tickerEl && tickerEl.altfont) || "Arial";
-  const meas = document.createElement("canvas").getContext("2d");
-  meas.font = ch + "px " + altfam;
-  let w = 0;
-  const runs = [];
-  for (const chr of text) {
-    if (chr === " ") { runs.push({ blank: true, w: step }); w += step; continue; }
-    const pos = tickerCharIndex(f, chr, cols);
-    if (pos) { runs.push({ pos, w: step }); w += step; }
-    else {
-      const aw = Math.max(2, Math.ceil(meas.measureText(chr).width));
-      runs.push({ chr, w: aw + (f.hspacing || 0) }); w += aw + (f.hspacing || 0);
-    }
-  }
-  w = Math.max(1, w - (f.hspacing || 0));
-  cv.width = w; cv.height = ch;
-  const ctx = cv.getContext("2d");
-  let x = 0;
-  for (const r of runs) {
-    if (r.pos !== undefined) {
-      ctx.drawImage(img, r.pos.col * cw, r.pos.row * ch, cw, ch, x, 0, cw, ch);
-    } else if (!r.blank) {
-      ctx.fillStyle = ink;
-      ctx.font = ch + "px " + altfam;
-      ctx.textBaseline = "top";
-      ctx.fillText(r.chr, x, 0);
-    }
-    x += r.w;
-  }
-  /* Màu chữ chạy (color="font.display.songticker" -> trắng): tô như
-     paintBitmapText, chỉ tô khi khác trắng. */
-  const tickCol = tickerEl && tickerEl.color ? skinColor(tickerEl.color) : "";
-  if (tickCol && tickCol !== "#fff" && tickCol !== "rgb(255,255,255)") {
-    ctx.globalCompositeOperation = "source-in";
-    ctx.fillStyle = tickCol;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-  }
-  if (seq !== tickerDrawSeq || !box.isConnected) return;
-  const elH = (tickerEl && tickerEl.h) || 14;
-  const scale = elH / ch;
-  cv.style.height = elH + "px";
-  cv.style.width = Math.round(w * scale) + "px";
-  cv.dataset.w = Math.round(w * scale);
-  cv.dataset.x = "0";
-  cv.style.transform = "translateX(0px)";
-  box.replaceChildren(cv);
-  window.__ticker = { font: f ? "bitmapfont" : null, glyphs: runs.filter(r => r.pos !== undefined).length, altchars: runs.filter(r => r.chr !== undefined).length, text };
-}
-function renderTicker(){
-  for (const el of extraTickers) {
-    if (el.isConnected) el.textContent = tickerText;
-  }
-  const box = $("#ticker"); if (!box) return;
-  if (tickerFont && tickerFont.tag === "bitmapfont" && tickerFont.imageURL) {
-    drawTickerCanvas(box);
-    return;
-  }
-  let span = box.querySelector("#tickerspan");
-  if (!span) { box.innerHTML = "<span id='tickerspan'></span>"; span = box.querySelector("#tickerspan"); }
-  span.textContent = tickerText;
-  if (tickerFontFamily) span.style.fontFamily = tickerFontFamily;
-  if (tickerEl && tickerEl.fontsize) span.style.fontSize = Math.min(18, +tickerEl.fontsize) + "px";
-  if (tickerEl && tickerEl.color) span.style.color = skinColor(tickerEl.color);
-  span.dataset.x = "0"; span.style.transform = "translateX(0px)";
-}
-function tickTicker(){
-  const box = $("#ticker"); if (!box) return;
-  const inner = box.querySelector("canvas, #tickerspan"); if (!inner) return;
-  const w = inner.tagName === "CANVAS" ? parseFloat(inner.dataset.w || "0") : inner.scrollWidth;
-  if (w <= box.clientWidth || Date.now() < tickerNoteUntil) return;
-  let x = parseFloat(inner.dataset.x || "0") - 1;
-  if (-x > w) x = box.clientWidth;
-  inner.dataset.x = x; inner.style.transform = "translateX(" + x + "px)";
-}
-setInterval(tickTicker, 40);
-
-function parseM3U(text){
-  const lines = text.split(/\r?\n/); const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^#EXTINF:-?\d+,(.*)$/);
-    if (m) {
-      const url = (lines[i + 1] || "").trim();
-      if (url && !url.startsWith("#")) {
-        const g = lines[i].match(/group-title="([^"]*)"/);
-        out.push({ name: m[1].trim(), url, group: g ? g[1] : "" });
-      }
-    }
-  }
-  return out;
-}
-function channelIsVideo(c){
-  if (!c) return false;
-  if (/hình|video/i.test(c.group || "")) return true;
-  return /mediatech\.vn|truyenhinhnghean\.vn/i.test(c.url || "");
-}
-function fillChannelSelect(){
-  const sel = $("#chan"); if (!sel) return; sel.innerHTML = "";
-  channels.forEach((c, i) => {
-    const o = document.createElement("option");
-    o.value = i; o.textContent = (i + 1) + ". " + c.name; sel.appendChild(o);
-  });
-  sel.value = idx;
-  sel.onchange = () => loadChannel(+sel.value, true);
-}
-
-let repeatMode = 0;
-let shuffleOn = false;
-try {
-  const savedMode = JSON.parse(localStorage.getItem("amp-mode-v7") || "null");
-  if (savedMode) {
-    repeatMode = [0, 1, 2].indexOf(+savedMode.repeat) >= 0 ? +savedMode.repeat : 0;
-    shuffleOn = !!savedMode.shuffle;
-  }
-} catch (e) { }
-function saveModeState(){
-  try { localStorage.setItem("amp-mode-v7", JSON.stringify({ repeat: repeatMode, shuffle: shuffleOn })); } catch (e) { }
-}
-function randomPlIndex(cur){
-  if (!plItems.length) return -1;
-  if (plItems.length === 1) return 0;
-  let n;
-  do { n = Math.floor(Math.random() * plItems.length); } while (n === cur);
-  return n;
-}
-function playNextPlItem(wrap){
-  if (!plItems.length) return false;
-  const cur = plItems.findIndex(isCurrentPlItem);
-  let n;
-  if (shuffleOn) n = randomPlIndex(cur);
-  else {
-    n = cur + 1;
-    if (n >= plItems.length) { if (!wrap) return false; n = 0; }
-    if (cur < 0) n = 0;
-  }
-  if (n < 0) return false;
-  playPlItem(plItems[n]);
-  return true;
-}
-function stepPlItem(dir){
-  if (!plItems.length) return;
-  const cur = plItems.findIndex(isCurrentPlItem);
-  let n;
-  if (shuffleOn) n = randomPlIndex(cur);
-  else n = cur < 0 ? 0 : (cur + dir + plItems.length) % plItems.length;
-  if (n < 0) return;
-  playPlItem(plItems[n]);
-}
-let hiddenGroups = {};
-function isHiddenEl(skin, el){
-  const ids = (skin && skin.hiddenIds) || [];
-  if (!ids.length) return null;
-  /* So khớp không phân biệt hoa/thường: XML ghi target="close" nhưng nút
-     trong khung là id="Close". Trả về đúng mục trong hiddenIds để khóa
-     hiddenGroups khớp với toggleHiddenGroup (nó tra theo mục đó). */
-  const low = s => (s || "").toLowerCase();
-  if (el.id) {
-    const hit = ids.find(id => low(id) === low(el.id));
-    if (hit) return hit;
-  }
-  if (el._group) {
-    const hit = ids.find(id => low(id) === low(el._group));
-    if (hit) return hit;
-  }
-  return null;
-}
-function registerHidden(gid, node){
-  if (!node) return;
-  const g = hiddenGroups[gid] || (hiddenGroups[gid] = { nodes: [], shown: false, covered: [] });
-  g.nodes.push(node);
-  node.style.display = "none";
-}
-function rectsOverlap(a, b){
-  const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-  const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-  if (ox <= 0 || oy <= 0) return 0;
-  return (ox * oy) / Math.max(1, a.w * a.h);
-}
-function toggleHiddenGroup(param){
-  const ids = (SKIN && SKIN.hiddenIds) || [];
-  const p = (param || "").toLowerCase();
-  const gid = ids.find(id => id.toLowerCase().indexOf(p) >= 0 || p.indexOf(id.toLowerCase()) >= 0);
-  if (!gid) return false;
-  const g = hiddenGroups[gid];
-  if (!g) return false;
-  const show = !g.shown;
-  g.shown = show;
-  for (const n of g.nodes) n.style.display = show ? "" : "none";
-  if (show) {
-    g.covered = [];
-    const gr = (SKIN.groupRects || {})[gid];
-    if (gr && gr.w > 0 && gr.h > 0) {
-      for (const lay of (SKIN.layers || [])) {
-        if (lay._group === gid) continue;
-        if (!lay._img || lay._img.style.display === "none") continue;
-        if ((lay.w || 0) <= 0 || (lay.h || 0) <= 0) continue;
-        if (rectsOverlap({ x: lay.x || 0, y: lay.y || 0, w: lay.w, h: lay.h }, gr) > 0.5) {
-          lay._img.style.display = "none";
-          g.covered.push(lay._img);
-        }
-      }
-    }
-  } else {
-    for (const n of g.covered || []) n.style.display = "";
-    g.covered = [];
-  }
-  const tb = (SKIN.buttons || []).find(b => b.kind === "togglebutton" && (b.param || "").toLowerCase() === p);
-  if (tb && tb._img) {
-    tb._stateBase = () => show ? (tb._activeSrc || tb._downSrc || tb._src) : tb._src;
-    tb._img.src = tb._base ? tb._base() : tb._src;
-  }
-  return true;
-}
-function refreshModeLEDs(skin, res){
-  if (!skin) return;
-  const setBase = (id, on) => {
-    const b = skin.buttons.find(x => x.id === id);
-    if (!b || !b._img) return;
-    if (b._activeSrc) {
-      b._stateBase = () => on ? b._activeSrc : b._src;
-      b._img.src = b._base();
-      b._img.style.opacity = "1";
-    } else {
-      b._img.style.opacity = on ? "1" : "0.35";
-    }
-  };
-  setBase("RepeatLED", repeatMode > 0);
-  setBase("ShuffleLED", shuffleOn);
-  setBase("ShuffleDisplay", shuffleOn);
-  setBase("Repeat", repeatMode > 0);
-  setBase("Shuffle", shuffleOn);
-  const rd = skin.buttons.find(x => x.id === "RepeatDisplay");
-  if (rd && rd._img && res && res.bitmapURL) {
-    const m = repeatMode;
-    res.bitmapURL("player.songinfo.repeat" + m).then(u => {
-      if (u && repeatMode === m) { rd._img.src = u; rd._src = u; }
-    });
-  }
-}
-function destroyHls(){ if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
-function loadChannel(i, autoplay){
-  if (!channels.length) return;
-  idx = ((i % channels.length) + channels.length) % channels.length;
-  mode = "radio";
-  fileBlob = null; fileSize = 0; fileSampleRate = 0; updateSonginfo();
-  const c = channels[idx];
-  const chSel = $("#chan"); if (chSel) chSel.value = idx;
-  tickerText = c.name + " — Trực tiếp"; tickerNoteUntil = 0; renderTicker();
-  setFill("seek", 0);
-  setStatus("Kênh " + (idx + 1) + "/" + channels.length + ": " + c.name);
-  destroyHls(); au.pause();
-  updatePlayState();
-  resetTimer();
-  renderPlaylist(true);
-  showNotifierFor(c);
-  updateAlbumArtForCurrent();
-  const isVid = channelIsVideo(c);
-  if (isVid && SKIN && SKIN.embeddedAvs) {
-    /* Kênh video: mở vùng AVS nhúng ở chế độ video rồi phát vào thẻ video
-       trong đó (native trước, HLS chỉ khi native lỗi — video.js). */
-    setEmbAvs(true, "video");
-    if (window.playVideoChannel) { playVideoChannel(c, autoplay); return; }
-  } else if (!isVid && SKIN && SKIN.embeddedAvs && avsEmbeddedOpen && embAvsMode === "video") {
-    /* Kênh audio: vùng đang ở chế độ video thì về vis, khỏi màn hình đen. */
-    setEmbAvsMode("vis");
-  }
-  if (isVid && winVisMap.video !== false && (vidWin ? winVisible("video") : autoplay)) {
-    if (!vidWin) {
-      setWinVisible("video", true);
-      ensureVideoWindow().then(() => {
-        if (winVisible("video") && window.playVideoChannel) playVideoChannel(c, autoplay);
-        else playAudioChannel(c, autoplay);
-      }).catch(() => playAudioChannel(c, autoplay));
-      return;
-    }
-    if (winVisible("video") && window.playVideoChannel) { playVideoChannel(c, autoplay); return; }
-  }
-  if (window.stopVideoPlayback) stopVideoPlayback();
-  playAudioChannel(c, autoplay);
-}
-function playAudioChannel(c, autoplay){
-  const url = c.url;
-  const playIt = () => { if (autoplay) au.play().catch(() => {}); };
-  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
-    hls = new Hls({ maxBufferLength: 30 });
-    hls.loadSource(url); hls.attachMedia(au);
-    hls.on(Hls.Events.ERROR, (ev, data) => {
-      if (!data || !data.fatal) return;
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { try { hls.startLoad(); } catch (e) {} return; }
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch (e) {} return; }
-      handleFail("HLS " + (data.type || "") + " " + (data.details || ""));
-    });
-    hls.on(Hls.Events.MANIFEST_PARSED, playIt);
-    setTimeout(() => { if (au.paused && autoplay && !au.src) playIt(); }, 3000);
-  } else {
-    au.src = url; playIt();
-  }
-}
-function handleFail(why){
-  failCount++;
-  const c = channels[idx];
-  const msg = c.name + " — không phát được" + (why ? " (" + why + ")" : "");
-  tickerText = c.name + " — không phát được"; tickerNoteUntil = Date.now() + 2500; renderTicker();
-  setStatus(msg, true);
-  if (failCount >= 6) { setStatus("Nhiều kênh lỗi liên tiếp — đã dừng tự chuyển. Bấm Next để thử kênh khác.", true); return; }
-  clearTimeout(failTimer);
-  if (repeatMode === 2) {
-    failTimer = setTimeout(() => loadChannel(idx, true), 2500);
-  } else {
-    failTimer = setTimeout(() => { playNextPlItem(repeatMode === 1); }, 2500);
-  }
-}
-function showNotifierFor(c){
-  if (!c || !SKIN) return;
-  const title = c.name || "";
-  const artist = (c.group || "") || (mode === "file" ? (fileName || "") : "Trực tiếp");
-  ensureNotifierJs().then(() => {
-    if (window.showNotifier) window.showNotifier(title, artist);
-  }).catch(() => {});
-}
-function updateAlbumArtForCurrent(){
-  if (aaWin && window.updateAlbumArt) window.updateAlbumArt();
-}
-function bindAudio(el){
-  el.addEventListener("playing", () => {
-    playing = true; updatePlayState(); onPlayStart();
-    failCount = 0;
-    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-  });
-  el.addEventListener("pause", () => { playing = false; updatePlayState(); onPlayPause(); });
-  el.addEventListener("error", () => {
-    if (!el.src || el.src === "") return;
-    if (mode === "file") { setStatus("File lỗi — không phát được", true); return; }
-    handleFail("audio error");
-  });
-  el.addEventListener("loadedmetadata", () => {
-    updateSonginfo();
-    if (mode === "file" && fileBlobURL) {
-      const lf = localFiles.find(l => l.blobURL === fileBlobURL);
-      if (lf && isFinite(el.duration) && el.duration > 0 && lf.duration !== el.duration) { lf.duration = el.duration; renderPlaylist(false); }
-    }
-  });
-  el.addEventListener("timeupdate", () => {
-    if (mode === "file" && isFinite(el.duration) && el.duration > 0) {
-      setFill("seek", el.currentTime / el.duration);
-      if (SKIN && SKIN.sliders) for (const s of SKIN.sliders) if (s.action === "SEEK" && s._placeThumb) s._placeThumb();
-      updateTimerDisplay();
-    }
-  });
-  el.addEventListener("ended", () => {
-    if (mode !== "file") return;
-    playing = false; updatePlayState(); onPlayPause();
-    if (repeatMode === 2) { el.currentTime = 0; el.play().catch(() => {}); }
-    else if (repeatMode === 1) playNextPlItem(true);
-    else playNextPlItem(false);
-  });
-}
-bindAudio(au);
-document.addEventListener("pointerdown", () => {
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-}, { passive: true });
-
-function parseAudioHeader(d){
-  if (d.length > 12 && d[0] === 0x66 && d[1] === 0x4c && d[2] === 0x61 && d[3] === 0x43) {
-    let p = 4;
-    while (p + 4 <= d.length) {
-      const last = d[p] & 0x80, type = d[p] & 0x7f, len = (d[p+1] << 16) | (d[p+2] << 8) | d[p+3];
-      if (type === 0 && len >= 18 && p + 4 + 18 <= d.length) { const q = p + 4; return (d[q+10] << 12) | (d[q+11] << 4) | (d[q+12] >> 4); }
-      if (last || len <= 0) break;
-      p += 4 + len;
-    }
-    return 0;
-  }
-  if (d.length > 12 && d[0] === 0x52 && d[1] === 0x49 && d[2] === 0x46 && d[3] === 0x46) {
-    let p = 12;
-    while (p + 8 <= d.length) {
-      const sz = d[p+4] | (d[p+5] << 8) | (d[p+6] << 16) | (d[p+7] << 24);
-      if (d[p] === 0x66 && d[p+1] === 0x6d && d[p+2] === 0x74 && d[p+3] === 0x20 && sz >= 16) return d[p+12] | (d[p+13] << 8) | (d[p+14] << 16) | (d[p+15] << 24);
-      if (sz <= 0) break;
-      p += 8 + sz;
-    }
-    return 0;
-  }
-  let s = 0;
-  if (d.length > 10 && d[0] === 0x49 && d[1] === 0x44 && d[2] === 0x33) s = 10 + (((d[6] & 0x7f) << 21) | ((d[7] & 0x7f) << 14) | ((d[8] & 0x7f) << 7) | (d[9] & 0x7f));
-  const srTable = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
-  for (let i = s; i + 3 < d.length; i++) {
-    if (d[i] !== 0xff || (d[i+1] & 0xe0) !== 0xe0) continue;
-    const ver = (d[i+1] >> 3) & 3, layer = (d[i+1] >> 1) & 3, si = (d[i+2] >> 2) & 3;
-    if (ver === 1 || layer !== 1 || si === 3 || !srTable[ver]) continue;
-    return srTable[ver][si];
-  }
-  return 0;
-}
-async function updateSonginfo(){
-  if (!siBitrate && !siFreq) return;
-  let br = "", fr = "";
-  if (mode === "file" && fileSize > 0 && fileSampleRate > 0 && isFinite(au.duration) && au.duration > 0) {
-    br = String(Math.round(fileSize * 8 / au.duration / 1000));
-    fr = String(Math.round(fileSampleRate / 1000));
-  }
-  window.__songinfo = { bitrate: br, freq: fr, sampleRate: fileSampleRate, size: fileSize, duration: au.duration || 0, mode };
-  if (siBitrate) { const img = await bitmapFontImage(siBitrate.font); if (img) paintBitmapText(siBitrate.cv, img, siBitrate.font, br || siBitrate.def); }
-  if (siFreq) { const img = await bitmapFontImage(siFreq.font); if (img) paintBitmapText(siFreq.cv, img, siFreq.font, fr || siFreq.def); }
-}
-async function readFileTags(f){
-  const out = {};
-  try {
-    const head = new Uint8Array(await f.slice(0, 1048576).arrayBuffer());
-    const isFlac = head[0] === 0x66 && head[1] === 0x4C && head[2] === 0x61 && head[3] === 0x43;
-    if (isFlac) {
-      let p = 4;
-      while (p + 4 <= head.length) {
-        const last = head[p] >> 7, type = head[p] & 0x7F;
-        const len = (head[p + 1] << 16) | (head[p + 2] << 8) | head[p + 3];
-        p += 4;
-        if (type === 4 && p + len <= head.length) {
-          const dv = new DataView(head.buffer, head.byteOffset + p, len);
-          let q = 4;
-          const n = dv.getUint32(q, true); q += 4;
-          for (let i = 0; i < n && q + 4 <= len; i++) {
-            const cl = dv.getUint32(q, true); q += 4;
-            if (q + cl > len) break;
-            const s = new TextDecoder().decode(head.subarray(p + q, p + q + cl));
-            q += cl;
-            const eq = s.indexOf("=");
-            if (eq > 0) {
-              const k = s.slice(0, eq).toUpperCase(), v = s.slice(eq + 1).trim();
-              if (k === "ARTIST" && !out.artist) out.artist = v;
-              if (k === "ALBUM" && !out.album) out.album = v;
-            }
-          }
-          break;
-        }
-        p += len;
-        if (last) break;
-      }
-      return out;
-    }
-    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) {
-      const ver = head[3];
-      const tagSize = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F);
-      let p = 10;
-      const end = Math.min(head.length, 10 + tagSize);
-      const dec = (bytes, enc) => {
+    await ensureJSZip();
+    var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
+    SKIN = loaded.skin; RES = loaded.resolve;
+    renderer = window.AmpRenderer.createRenderer(RES, document, {
+      onRerender: function () { renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
+      onDrawerToggle: function (open) { toggleDrawer(open); },
+      /* Đợt C: nút PL trong skin / menu View / nút đóng X của playlist. */
+      onPlaylistToggle: function (open) {
+        if (open === undefined) setPlaylistOpen(!playlistOpen);
+        else setPlaylistOpen(!!open);
+      },
+      isPlaylistOpen: function () { return playlistOpen; },
+      /* Đợt C: menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
+         thư mục rồi đặt làm dữ liệu playlist (41 kênh + 3 bài Demo). */
+      onReloadRadio: async function () {
         try {
-          if (enc === 1) return new TextDecoder("utf-16").decode(bytes);
-          if (enc === 2) return new TextDecoder("utf-16be").decode(bytes);
-          if (enc === 3) return new TextDecoder().decode(bytes);
-          return new TextDecoder("iso-8859-1").decode(bytes);
-        } catch (e) { return ""; }
-      };
-      while (p + 10 <= end) {
-        const id = String.fromCharCode(head[p], head[p + 1], head[p + 2], head[p + 3]);
-        if (id === "\0\0\0\0") break;
-        const size = ver >= 4 ? ((head[p + 4] & 0x7F) << 21) | ((head[p + 5] & 0x7F) << 14) | ((head[p + 6] & 0x7F) << 7) | (head[p + 7] & 0x7F)
-          : (head[p + 4] << 24) | (head[p + 5] << 16) | (head[p + 6] << 8) | head[p + 7];
-        if (size <= 0 || p + 10 + size > head.length) break;
-        if (id === "TPE1" || id === "TALB") {
-          const v = dec(head.subarray(p + 11, p + 10 + size), head[p + 10]).replace(/\0.*$/, "").trim();
-          if (v) { if (id === "TPE1" && !out.artist) out.artist = v; if (id === "TALB" && !out.album) out.album = v; }
-        }
-        p += 10 + size;
-        if (out.artist && out.album) break;
-      }
-      if (out.artist || out.album) return out;
+          var r = await fetch("radio.m3u");
+          if (r.ok) {
+            var t = await r.text();
+            var n = renderer.setPlaylistData(t, "radio.m3u", "radio.m3u");
+            setStatus("Đã nạp lại radio.m3u: " + n + " mục (41 kênh + 3 bài Demo).");
+          }
+        } catch (e) { setStatus("Không nạp lại được radio.m3u: " + (e.message || e), true); }
+      },
+      /* Đợt D — đường (d) restore: lưu state AVS (mở/chế độ/tách rời/
+         scale) mỗi khi đổi, để lần nạp trang sau mở lại đúng trạng thái. */
+      onAvsChange: function (st) {
+        try { localStorage.setItem("amp9-avs-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
+      },
+      /* Đợt E — lưu state phát (playing/current/repeat/shuffle/volume/EQ)
+         mỗi khi đổi, để lần nạp trang sau khôi phục (trừ file local). */
+      onPlaybackChange: function (st) { savePlaybackState(st); }
+    });
+    /* Đợt E — tạo audio engine SAU renderer (engine cần getVideoEl/
+       isVideoItem của renderer), rồi gắn vào renderer. */
+    if (window.AmpAudio) {
+      audioEngine = window.AmpAudio.createAudioEngine({
+        document: document, window: window,
+        getVideoEl: function () { return renderer.getAvsMedia().video; },
+        resetVideoEl: function () { return renderer.resetAvsMedia(); },
+        isVideoItem: function (it) { return renderer.isVideoItem(it); },
+        onTimeUpdate: function (t, dur, seekable) { renderer.onAudioTimeUpdate(t, dur, seekable); },
+        onEnded: function () { renderer.onAudioEnded(); },
+        onError: function (info) { renderer.onAudioError(info); },
+        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* đợt F: phát/dừng thì chạy lại self-check tiếng */ },
+        onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
+      });
+      renderer.setAudioEngine(audioEngine);
     }
-    if (head.length >= 128) {
-      const tail = new Uint8Array(await f.slice(Math.max(0, f.size - 128)).arrayBuffer());
-      if (tail[0] === 0x54 && tail[1] === 0x41 && tail[2] === 0x47) {
-        const t = (a, b) => new TextDecoder("iso-8859-1").decode(tail.subarray(a, b)).replace(/\0.*$/, "").trim();
-        if (!out.artist) out.artist = t(33, 63);
-        if (!out.album) out.album = t(63, 93);
+    /* Đợt D — restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
+    try {
+      var savedAvs = JSON.parse(localStorage.getItem("amp9-avs-v9") || "null");
+      if (savedAvs) renderer.restoreAvsState(savedAvs);
+    } catch (e) { /* state lưu hỏng thì mở mặc định (đóng) */ }
+    var finalH = await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
+    setDrawerButton();
+    checkDrawer();
+    /* Đợt C: nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
+       (41 kênh, giữ tên + thứ tự gốc; Demo ở cuối). Không có file thì
+       playlist chỉ có 3 bài Demo, vẫn vẽ được. */
+    var playlistInfo = "Playlist: Demo (3 bài mẫu) — chưa thấy radio.m3u cùng thư mục";
+    try {
+      var rr = await fetch("radio.m3u");
+      if (rr.ok) {
+        var rt = await rr.text();
+        var rn = renderer.setPlaylistData(rt, "radio.m3u", "radio.m3u");
+        var pst = renderer.getPlaylistState();
+        playlistInfo = "Playlist: " + pst.source + " — " + rn + " mục (nhóm: "
+          + Object.keys(pst.groups).map(function (k) { return k + " " + pst.groups[k]; }).join(", ")
+          + ") · tổng thời gian " + Math.floor(pst.total / 60) + ":" + String(pst.total % 60).padStart(2, "0");
       }
+    } catch (e) { /* giữ playlist Demo */ }
+    /* Đợt E — khôi phục state phát đã lưu (volume/EQ/repeat/shuffle/
+       mục đang chọn). Không tự phát lại. */
+    try {
+      var savedPlay = loadPlaybackState();
+      if (savedPlay) renderer.restorePlaybackState(savedPlay);
+    } catch (e) { /* state lưu hỏng thì mở mặc định */ }
+    var lay = RES.layouts["main|normal"] || RES.layouts["normal"];
+    var lines = [];
+    lines.push("Skin: " + (SKIN.name || "(không tên)") + (SKIN.version ? " v" + SKIN.version : ""));
+    if (SKIN.author) lines.push("Tác giả: " + SKIN.author);
+    lines.push("Bitmap: " + Object.keys(RES.bitmaps).length + " · Font: " + Object.keys(RES.fonts).length
+      + " · Màu: " + Object.keys(RES.colors).length + " · Group: " + Object.keys(RES.groupdefs).length
+      + " · Layout: " + Object.keys(RES.layouts).length);
+    if (lay) lines.push("Layout main|normal: " + lay.w + "×" + lay.h + " · contentH=" + lay.contentH
+      + " (frameOffsetY=" + lay.frameOffsetY + ") · snapadjustbottom=" + lay.snapadjustbottom
+      + " · drawerRestY=" + lay.drawerRestY + " · cửa sổ chính sau trim: 354×" + finalH);
+    if (RES.drawer) lines.push("Ngăn kéo: cao " + RES.drawer.fullH + " · contentX=" + RES.drawer.contentX
+      + " · tabs=(" + (RES.drawer.tabsPos ? RES.drawer.tabsPos.x + "," + RES.drawer.tabsPos.y : "?") + ")");
+    if (RES.embeddedAvs) {
+      var ea = RES.embeddedAvs;
+      lines.push("AVS nhúng (embeddedAvs): có — " + ea.w + "×" + ea.h + " tại (" + ea.x + "," + ea.y + "), video.group "
+        + ea.videoRect.w + "×" + ea.videoRect.h + " tại (" + ea.videoRect.x + "," + ea.videoRect.y + ")");
+    } else {
+      lines.push("AVS nhúng (embeddedAvs): không" + (RES.kind === "classic" ? " (skin Classic .wsz — chỉ cửa sổ Video/Hiệu ứng rời)" : " — chỉ cửa sổ rời"));
     }
-  } catch (e) {}
-  return out;
+    var avsNow = renderer.getAvsState();
+    lines.push("AVS hiện tại: " + (avsNow.open ? ("mở, chế độ " + avsNow.mode + (avsNow.detached ? ", cửa sổ rời" : ", vùng nhúng") + ", scale " + avsNow.videoScale + "x") : "đóng"));
+    lines.push(playlistInfo);
+    if (loaded.report.notes.length) lines.push("Ghi chú: " + loaded.report.notes.join(" | "));
+    reportEl.textContent = lines.join("\n");
+    setVersionLine("skin: " + (SKIN.name || name));
+    setZoom(zoom);
+    if (RES.kind === "classic") {
+      setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — skin Classic không có vùng AVS nhúng và cửa sổ chính chưa vẽ được ở v9; bấm “Video” / “Hiệu ứng (Vis)” để mở cửa sổ rời (đợt E đã phát tiếng qua chuỗi EQ).");
+    } else {
+      setStatus("Đã nạp: " + (SKIN.name || name) + " — bấm “Mở ngăn kéo” để xem tab EQ/Options/Color Themes; bấm nút PL (hoặc menu View) để mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
+    }
+  } catch (e) {
+    setStatus("Lỗi: " + (e.message || e), true);
+    reportEl.textContent = "Không nạp được skin: " + (e.message || e);
+  }
 }
-function playLocalFile(blobURL, name){
-  destroyHls();
-  mode = "file"; fileName = name; fileBlobURL = blobURL;
-  const lf = localFiles.find(l => l.blobURL === blobURL);
-  fileBlob = (lf && lf.file) || null; fileSize = (lf && lf.size) || 0; fileSampleRate = 0;
-  au.src = blobURL;
-  updatePlayState();
-  resetTimer();
-  tickerText = name; tickerNoteUntil = 0; renderTicker();
-  setFill("seek", 0);
-  setStatus("File local: " + name);
-  renderPlaylist(true);
-  updateAlbumArtForCurrent();
-  updateSonginfo();
-  if (fileBlob) fileBlob.slice(0, 262144).arrayBuffer().then(b => { fileSampleRate = parseAudioHeader(new Uint8Array(b)); updateSonginfo(); }).catch(() => {});
-  au.play().catch(() => {});
-}
-$("#filepick").addEventListener("change", e => {
-  const f = e.target.files[0]; if (!f) return;
-  const blobURL = URL.createObjectURL(f);
-  const entry = { name: f.name, blobURL, file: f, size: f.size };
-  localFiles.push(entry);
-  probeFileDuration(entry);
-  readFileTags(f).then(t => {
-    if (t.artist) entry.artist = t.artist;
-    if (t.album) entry.album = t.album;
-    if (mlWin && typeof renderML === "function") renderML();
+function wireToolbar() {
+  btnZoom1.addEventListener("click", function () { setZoom("1"); });
+  btnZoom2.addEventListener("click", function () { setZoom("2"); });
+  btnZoom3.addEventListener("click", function () { setZoom("3"); });
+  btnZoomFit.addEventListener("click", function () { setZoom("fit"); });
+  btnStack.addEventListener("click", function () {
+    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
+    setPlaylistOpen(!playlistOpen);
   });
-  rebuildPlItems();
-  playLocalFile(blobURL, f.name);
-  e.target.value = "";
-});
-
-function onMainButton(b){
-  const a = b.action, p = (b.param || "").toLowerCase();
-  if (a === "PLAY" && b.mergedPause && playing) { au.pause(); return; }
-  if (a === "PLAY") { if (mode === "file" && au.src) au.play(); else loadChannel(idx, true); }
-  else if (a === "PAUSE") au.pause();
-  else if (a === "STOP") {
-    au.pause(); try { au.currentTime = 0; } catch (e) {}
-    resetTimer();
-    if (mode === "file") setFill("seek", 0);
-    updatePlayState();
-  }
-  else if (a === "NEXT") stepPlItem(1);
-  else if (a === "PREV") stepPlItem(-1);
-  else if (a === "EJECT") $("#filepick").click();
-  else if (a === "EQ_TOGGLE") { (async () => { try { await ensureEqJs(); } catch (e) { setStatus("không tải được EQ: " + e.message, true); return; } await setEQOn(!eqState.on); setStatus(eqState.on ? "EQ: BẬT (qua AudioContext — tiếng nhỏ hơn bypass)" : "EQ: TẮT (bypass thẳng ra loa)"); })(); }
-  else if (a === "CLOSE") setStatus("Nút đóng chưa có tác dụng trong bản này (tắt tab trình duyệt để đóng)");
-  else if (a === "MINIMIZE") setStatus("Nút thu nhỏ chưa có tác dụng trong bản này");
-  else if (a === "SYSMENU") { if (!winVisible("pl")) toggleWindow("pl"); }
-  else if (a === "TOGGLE") {
-    if (p === "eq") toggleWindow("eq");
-    else if (p.indexOf("pl") >= 0) toggleWindow("pl");
-    else if (p.indexOf("ml") >= 0) toggleWindow("ml");
-    else if (/about/i.test(b.id || "")) toggleWindow("about");
-    else setStatus("Nút này chưa có tác dụng trong bản này");
-  }
-  else if (a === "VIDEO" || a === "VIS" || a === "AVS" ||
-      /switchto/i.test(b.id || "") || /button\.vis\.detach/i.test(b.id || "")) {
-    /* Vùng AVS nhúng (đợt 7): VIDEO mở vùng ở chế độ video, VIS/AVS mở ở
-       chế độ vis; nút Switch đổi chế độ. Không mở cửa sổ rời nữa. */
-    if (SKIN && SKIN.embeddedAvs) {
-      if (/switchto/i.test(b.id || "")) setEmbAvsMode(embAvsMode === "vis" ? "video" : "vis");
-      else if (a === "VIDEO") setEmbAvs(true, "video");
-      else setEmbAvs(true, "vis");
-    } else {
-      if (/switchto/i.test(b.id || "") || a === "VIDEO") toggleWindow("video");
-      else toggleWindow("avs");
-    }
-  }
-  else if (a === "ML" || /^ml$/i.test(b.id || "")) toggleWindow("ml");
-  else if (a === "ABOUT" || /^about$/i.test(b.id || "")) toggleWindow("about");
-  else if (a === "CONFIG" || /drawer\.button\.(open|close)/i.test(b.id || "")) toggleDrawer();
-  else if (a === "REMOTE" || /remote/i.test(b.id || "")) cycleRemoteStick();
-  else if (a === "VIS_FS" || a === "VID_FS") {
-    if (SKIN && SKIN.embeddedAvs) embAvsFullscreen();
-    else toggleWindow("avs");
-  }
-  else if (a === "VID_1X" || a === "VID_2X") {
-    if (SKIN && SKIN.embeddedAvs) setEmbVideoScale(a === "VID_2X" ? 2 : 1);
-    else toggleWindow("video");
-  }
-  else if (/^videoavs\.open$/i.test(b.id || "")) { setEmbAvs(true); setStatus("Đã mở Video/Hiệu ứng"); }
-  else if (/^videoavs\.close$/i.test(b.id || "")) { setEmbAvs(false); setStatus("Đã đóng Video/Hiệu ứng"); }
-  else if (/^about$/i.test(b.id || "")) toggleWindow("about");
-  else if (/button\.vis\.switchto/i.test(b.id || "")) toggleWindow("video");
-  else if (/button\.vis\.detach/i.test(b.id || "")) toggleWindow("avs");
-  else if (/drawer\.button/i.test(b.id || "")) toggleDrawer();
-  else if (a === "DOUBLESIZE") setScaleMode(scaleMode === "fit" ? "1x" : "fit");
-  else if (!a && /^repeat/i.test(b.id || "")) {
-    repeatMode = (repeatMode + 1) % 3;
-    saveModeState();
-    refreshModeLEDs(SKIN, resolver);
-    setStatus("Repeat: " + ["Tắt", "Lặp playlist", "Lặp 1 bài"][repeatMode] + (repeatMode ? " — áp dụng cho cả radio và file local" : ""));
-  }
-  else if (!a && /^shuffle/i.test(b.id || "")) {
-    shuffleOn = !shuffleOn;
-    saveModeState();
-    refreshModeLEDs(SKIN, resolver);
-    setStatus(shuffleOn ? "Trộn bài: BẬT — Next/Prev và hết bài sẽ chọn ngẫu nhiên trong playlist" : "Trộn bài: TẮT");
-  }
-  else if (!a && b.param && b.kind === "togglebutton") {
-    if (toggleHiddenGroup(b.param)) {
-      const gid = (SKIN.hiddenIds || []).find(id => id.toLowerCase().indexOf(b.param.toLowerCase()) >= 0 || b.param.toLowerCase().indexOf(id.toLowerCase()) >= 0) || b.param;
-      const g = hiddenGroups[gid];
-      setStatus("Nhóm " + gid + ": " + (g && g.shown ? "HIỆN" : "ẨN"));
-    } else {
-      setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
-    }
-  }
-  else if (!a) setStatus("Nút chuyển chế độ chưa có tác dụng trong bản này");
+  btnDrawer.addEventListener("click", function () {
+    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
+    toggleDrawer(!drawerOpen);
+  });
+  /* Đợt D — nút Video/Vis trên thanh công cụ: mở vùng nhúng (Modern)
+     hoặc cửa sổ rời (Classic). openAvs tự gọi onRerender nên không cần
+     renderCurrent thêm ở đây. */
+  btnVideo.addEventListener("click", function () {
+    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
+    renderer.openAvs("video");
+  });
+  btnVis.addEventListener("click", function () {
+    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
+    renderer.openAvs("vis");
+  });
+  /* Đợt E — chọn thư mục nhạc local (webkitdirectory). Trình duyệt không
+     nhớ file local nên mỗi lần chọn lại thư mục. */
+  btnLocal.addEventListener("click", function () {
+    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
+    renderer.openLocalFolderPicker();
+  });
+  /* Đợt E — phím Space: Play/Pause khi focus không nằm trong ô nhập. */
+  document.addEventListener("keydown", function (e) {
+    if (!renderer) return;
+    if (e.code !== "Space" && e.key !== " ") return;
+    var tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.preventDefault) e.preventDefault();
+    renderer.togglePlay();
+  });
+  btnLoad.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    if (fileInput.files.length) bootSkin(fileInput.files[0], fileInput.files[0].name);
+  });
+  window.addEventListener("resize", function () { if (zoom === "fit") setZoom("fit"); });
+  ["dragover", "dragenter"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.remove("over"); });
+  });
+  document.addEventListener("drop", function (e) {
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) bootSkin(f, f.name);
+  });
 }
-
-async function loadDefaultSkin(){
-  try {
-    if (typeof SkinLoader === "undefined") throw new Error("skin-loader.js chưa nạp được");
-    if (loaderMismatch()) {
-      setStatus("đang chạy loader cũ (" + loaderLabel() + ") trong khi trang là v" + EXPECTED_LOADER_VERSION + " — bấm tải lại trang (hoặc mở tab ẩn danh) để nạp loader mới, skin có thể hiển thị sai", true);
-    }
-    const cached = await idbGet(skinCacheKey("winampmodern566.wal"));
-    if (cached && cached.skin && cached.bitmaps && cached.files) {
-      await applySkinFile(new File([], "winampmodern566.wal", { type: "application/zip" }));
-      if (window.__lastSkinLoad && window.__lastSkinLoad.ok) { headValidate("winampmodern566.wal", cached); return true; }
-    }
-    const r = await fetch("winampmodern566.wal");
-    if (!r.ok) throw new Error("winampmodern566.wal HTTP " + r.status);
-    const blob = await r.blob();
-    await applySkinFile(new File([blob], "winampmodern566.wal", { type: "application/zip" }));
-    if (window.__lastSkinLoad && window.__lastSkinLoad.ok === false)
-      throw new Error(window.__lastSkinLoad.error || "không đọc được winampmodern566.wal");
-    return true;
-  } catch (err) {
-    window.__lastSkinLoad = { ok: false, file: "winampmodern566.wal", error: err.message };
-    shellNote("không nạp được skin mặc định — bấm Nạp skin để chọn file .wal/.zip/.wsz");
-    setStatus("không nạp được skin mặc định (" + err.message + "), bấm Nạp skin để chọn file .wal/.zip/.wsz", true);
-    return false;
-  }
+wireToolbar();
+if (checkVersions()) {
+  setVersionLine("");
+  (async function () {
+    try {
+      var r = await fetch("winampmodern566.wal");
+      if (r.ok) {
+        var buf = await r.arrayBuffer();
+        await bootSkin(buf, "winampmodern566.wal");
+        return;
+      }
+    } catch (e) { /* không có file cùng thư mục -> chờ kéo thả */ }
+    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.zip vào trang, hoặc bấm “Nạp skin .wal/.zip khác”.");
+  })();
+} else {
+  setStatus("Version lệch — dừng lại, xem dòng version ở trên.", true);
 }
-window.addEventListener("DOMContentLoaded", () => {
-fetch("radio.m3u").then(r => { if (!r.ok) throw new Error("radio.m3u HTTP " + r.status); return r.text(); })
-.then(async (m3u) => {
-  channels = parseM3U(m3u);
-  rebuildPlItems();
-  fillChannelSelect();
-  au.volume = 1.0; setFill("vol", 1.0);
-  loadChannel(0, false);
-  const ok = await loadDefaultSkin();
-  if (ok) {
-    tickerText = channels[0] ? channels[0].name + " — Trực tiếp" : "WinampModern566";
-    renderTicker();
-    let msg = "Đã nạp " + channels.length + " kênh từ radio.m3u · bấm Play để nghe · bấm đúp vào player để đổi 1x / vừa màn hình · bấm “Nạp skin” để thử file .wal/.zip/.wsz · loader v" + (loaderVersion() || "?");
-    if (loaderMismatch()) msg += " · CẢNH BÁO loader cũ, tải lại trang để nạp v" + EXPECTED_LOADER_VERSION;
-    if (!window.Hls) msg += " · cảnh báo: thư viện hls.js chưa tải được từ mạng (CDN), đài .m3u8 có thể không phát được — kiểm tra mạng rồi tải lại trang";
-    setStatus(msg);
-  }
-  if (eqState.on) { try { await ensureEqJs(); await enableEQ(); if (window.updateEQToggleVisual) updateEQToggleVisual(); } catch (e) {} }
-}).catch(err => {
-  shellNote("Lỗi nạp radio.m3u — kiểm tra mạng rồi tải lại trang");
-  setStatus("Lỗi nạp radio.m3u: " + err.message, true);
-  console.error(err);
-});
-});
 </script>
 </body>
 </html>
