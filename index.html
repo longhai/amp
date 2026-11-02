@@ -4,17 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<!-- Đợt G — color-scheme: dark: trang này là trang TỐI (nền #141414) nhưng
+     vẽ skin Winamp SÁNG (menubar RGB ~236, chữ đen). Chrome trên Android
+     khi bật dark mode sẽ "force-dark" trang không khai báo scheme: nó đảo
+     ngược ảnh sáng → menubar thành nền tối chữ sáng (vệt đen đo được trên
+     ảnh điện thoại thật 2/11: RGB ~107), trong khi render desktop đúng.
+     Khai báo dark = trang đã tự hỗ trợ dark → Chrome KHÔNG force-dark,
+     skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
+     có meta này thì menubar sáng (210,212,218) như bản thường. -->
+<meta name="color-scheme" content="dark">
 <title>Amp v9 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
+  /* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN (skin Winamp): không tiêu đề,
+     không dòng mô tả/version, không hàng nút HTML, không chữ hướng dẫn.
+     Chỉ còn: cửa sổ skin (#stage) + 1 nút menu nhỏ ⋯ ở góc dưới-phải
+     (nạp skin / thêm nhạc / zoom) + banner đỏ chỉ hiện khi lỗi. */
   html,body{margin:0;padding:0;background:#141414;color:#ccc;font-family:Verdana,Arial,sans-serif;}
-  body{text-align:center;padding:10px 8px 30px;}
-  h1{font-size:14px;color:#bbb;margin:6px 0 2px;font-weight:normal;}
-  h1 b{color:#fff;}
-  #sub{font-size:12px;color:#777;margin-bottom:10px;}
-  #versionline{font-size:12px;color:#9ab;margin-bottom:8px;}
-  #versionline .bad{color:#e88;font-weight:bold;}
+  body{text-align:center;padding:8px;}
   #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;}
   .stage{position:relative;margin:0 auto;overflow:hidden;background:#000;
     box-shadow:0 0 0 1px #333, 0 8px 30px rgba(0,0,0,.6);}
@@ -32,99 +40,103 @@
   .stage .pl-list .row{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:13px;padding:0 3px;cursor:default;}
   .stage .pl-list .row.sel{background:#6788c9;color:#d6e4ff;}
   .stage .pl-list .row.cur{color:#bbd2ff;font-weight:bold;}
-  #toolbar{margin:12px auto 4px;max-width:720px;}
-  #toolbar button{background:#1c1c1c;color:#ddd;border:1px solid #444;padding:7px 12px;margin:3px 2px;font-size:13px;cursor:pointer;border-radius:3px;}
-  #toolbar button.on{background:#2c4a1e;border-color:#6a0;color:#fff;}
-  #toolbar button:hover{border-color:#888;}
-  #status{margin:8px auto;max-width:720px;font-size:12px;color:#888;min-height:16px;text-align:left;line-height:1.5;}
-  #status .err{color:#e88;}
+  /* Banner lỗi: ẩn mặc định, chỉ hiện khi lỗi (version lệch, không nạp
+     được skin, self-check). Không có chữ thường trực trên màn hình. */
+  #status{display:none;margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:16px;text-align:left;line-height:1.5;}
+  #status.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
   #drawer-check{margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:0;text-align:left;line-height:1.5;display:none;}
   #drawer-check.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
-  #report{margin:10px auto;max-width:720px;text-align:left;font-size:12px;color:#777;line-height:1.6;
-    border-top:1px solid #2a2a2a;padding-top:8px;white-space:pre-wrap;}
-  #drop{margin:10px auto;max-width:720px;border:1px dashed #444;padding:10px;font-size:12px;color:#777;}
-  #drop.over{border-color:#6a0;color:#aca;}
-  .note{font-size:11px;color:#666;}
+  /* Nút menu tối thiểu (⋯) ở góc dưới-phải: điểm chạm duy nhất ngoài
+     skin — nạp skin .wal/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
+     mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
+  #btn-menu{position:fixed;right:10px;bottom:10px;z-index:50;width:36px;height:36px;
+    border-radius:50%;background:rgba(28,28,28,.85);color:#bbb;border:1px solid #555;
+    font-size:18px;line-height:1;cursor:pointer;opacity:.65;padding:0;}
+  #btn-menu:hover,#btn-menu:focus{opacity:1;border-color:#888;color:#fff;outline:none;}
+  #menu-pop{position:fixed;right:10px;bottom:54px;z-index:50;background:#1c1c1c;
+    border:1px solid #555;border-radius:6px;padding:4px;min-width:200px;
+    box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;}
+  #menu-pop button{display:block;width:100%;text-align:left;background:none;border:0;
+    color:#ddd;padding:9px 10px;font-size:13px;cursor:pointer;border-radius:4px;font-family:Verdana,Arial,sans-serif;}
+  #menu-pop button:hover{background:#333;color:#fff;}
+  #menu-pop button.on{color:#fff;}
+  #menu-pop button.on::before{content:"✓ ";}
 </style>
 </head>
 <body>
-<h1><b>Amp v9</b> — Winamp Modern, cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng (đợt E)</h1>
-<div id="sub">Nền tảng v9 viết lại từ đầu theo đặc tả skin-sim: loader + renderer + cửa sổ chính vẽ đúng như Winamp gốc. Đợt E: phát tiếng thật — nhạc + radio/TV, tiếng video ĐI QUA chuỗi EQ như nhạc; EQ tắt = bypass tuyệt đối (TV360 qua vmttv xem được khi EQ tắt).</div>
-<div id="versionline">Amp v9 · đang kiểm tra version…</div>
-
 <div id="stage-wrap"><div class="stage" id="stage"></div></div>
+<div id="status"></div>
 <div id="drawer-check"></div>
-
-<div id="toolbar">
-  <div>
-    <button id="btn-1x" class="on">Cỡ gốc 1x</button>
-    <button id="btn-2x">2x</button>
-    <button id="btn-3x">3x</button>
-    <button id="btn-fit">Vừa màn hình</button>
-    <button id="btn-stack">Xếp chồng: Player + Playlist</button>
-    <button id="btn-drawer">Mở ngăn kéo</button>
-    <button id="btn-video">Video</button>
-    <button id="btn-vis">Hiệu ứng (Vis)</button>
-    <button id="btn-local">Thêm nhạc local…</button>
-    <button id="btn-skin">Nạp skin .wal / .zip khác</button>
-    <input type="file" id="skinpick" accept=".wal,.zip" hidden>
-  </div>
-  <div style="margin-top:6px">
-    <span class="note">Hoặc kéo thả file .wal/.zip vào trang. Trang tự nạp winampmodern566.wal cùng thư mục.</span>
-  </div>
+<button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
+<div id="menu-pop" hidden>
+  <button data-act="skin">Nạp skin .wal/.zip…</button>
+  <button data-act="local">Thêm nhạc local…</button>
+  <button data-act="zoom1">Zoom: Cỡ gốc 1x</button>
+  <button data-act="zoomfit">Zoom: Vừa màn hình</button>
 </div>
-
-<div id="status">Đang nạp winampmodern566.wal cùng thư mục…</div>
-<div id="drop">Kéo thả file .wal/.zip vào đây để xem skin khác.</div>
-<div id="report"></div>
+<input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.2" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.3" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
    lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
    checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
-   đổi CHỖ NÀY + 3 hằng version trong 3 file JS + ?v= trên 3 thẻ script. */
-window.AMP_VERSION = "9.2";
+   đổi CHỖ NÀY + 3 hằng version trong 3 file JS + ?v= trên 3 thẻ script.
+   Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt). */
+window.AMP_VERSION = "9.3";
 </script>
-<script src="skin-loader.js?v=9.2"></script>
-<script src="audio.js?v=9.2"></script>
-<script src="renderer.js?v=9.2"></script>
+<script src="skin-loader.js?v=9.3"></script>
+<script src="audio.js?v=9.3"></script>
+<script src="renderer.js?v=9.3"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.2" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "9.3" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
    ngay trước 3 file JS); mỗi file tự đối chiếu manifest lúc nạp
-   (MANIFEST_MISMATCH) để file cũ trên host tự tố mình. */
+   (MANIFEST_MISMATCH) để file cũ trên host tự tố mình.
+   Đợt G (9.3): shade mode (layout main|shade 354×25), sửa lằn đen menubar
+   (meta color-scheme: dark chống Chrome force-dark), tab ngăn kéo ẩn khi
+   đóng, ngăn kéo trượt bằng CSS transition (renderer.toggleDrawerAnimated). */
 /* BẮT BUỘC: bind rõ từng phần tử theo id ngay đầu script — không dựa vào
    biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
 var $ = function (s) { return document.querySelector(s); };
 var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
-    reportEl = $("#report"), versionEl = $("#versionline"), dropZone = $("#drop"),
     drawerCheckEl = $("#drawer-check"),
-    btnZoom1 = $("#btn-1x"), btnZoom2 = $("#btn-2x"), btnZoom3 = $("#btn-3x"),
-    btnZoomFit = $("#btn-fit"), btnStack = $("#btn-stack"), btnDrawer = $("#btn-drawer"),
-    btnVideo = $("#btn-video"), btnVis = $("#btn-vis"),
-    btnLocal = $("#btn-local"),
-    btnLoad = $("#btn-skin"), fileInput = $("#skinpick");
+    btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"),
+    fileInput = $("#skinpick");
 
-var VERSION = "9.2";
+var VERSION = "9.3";
 var zoom = "1";
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 13px + nút mở) */
+var shadeMode = false; /* đợt G: shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
 var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
 
+/* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN: không còn dòng version thường
+   trực trên màn hình. Thông báo thường → console (im lặng trên màn
+   hình); chỉ LỖI mới hiện banner đỏ #status (version lệch, không nạp
+   được skin...). Self-check vẫn dùng banner riêng #drawer-check. */
 function setStatus(msg, isErr) {
-  statusEl.innerHTML = isErr ? '<span class="err">' + msg + "</span>" : msg;
+  if (isErr) {
+    statusEl.textContent = msg;
+    statusEl.classList.add("show");
+  } else if (window.console && console.info) {
+    console.info("[Amp] " + msg);
+  }
 }
-function setVersionLine(extra) {
-  var fromCache = RES ? String(RES.fromCache) : "?";
-  versionEl.textContent = "Amp v9 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+/* Version chỉ ghi vào console + tiêu đề tab (không hiện ra màn hình).
+   Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
+   setStatus(..., true) và dừng boot. */
+function logVersion(extra) {
+  var line = "Amp v9 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
-    + " · model fromCache: " + fromCache + (extra ? " · " + extra : "");
+    + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
+  if (window.console && console.info) console.info("[Amp] " + line);
+  try { document.title = "Amp v9.3 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -138,7 +150,7 @@ function checkVersions() {
   if (window.AmpAudio && window.AmpAudio.MANIFEST_MISMATCH) bad.push("audio.js v" + window.AmpAudio.AUDIO_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpRenderer && window.AmpRenderer.MANIFEST_MISMATCH) bad.push("renderer.js v" + window.AmpRenderer.RENDERER_VERSION + " (manifest v" + VERSION + ")");
   if (bad.length) {
-    versionEl.innerHTML = '<span class="bad">BẢN MIX — version lệch, dừng lại: ' + bad.join(" + ") + " (cần v" + VERSION + " ở mọi file)</span>";
+    setStatus("BẢN MIX — version lệch, dừng lại: " + bad.join(" + ") + " (cần v" + VERSION + " ở mọi file)", true);
     return false;
   }
   return true;
@@ -169,14 +181,17 @@ function ensureJSZip() {
     document.head.appendChild(s);
   });
 }
+/* Đợt G — chỉ 2 chế độ zoom: "1" (cỡ gốc) và "fit" (Vừa màn hình).
+   Nút 2x/3x đã bỏ khỏi thanh công cụ (người dùng chốt 3/11: web chỉ
+   cần 1x + fit). Mọi mode khác "fit" đều về 1x. Zoom giữ mượt như cũ
+   (scale transform + image-rendering:auto, KHÔNG pixelated). */
 function setZoom(mode) {
+  if (mode !== "fit") mode = "1";
   zoom = mode;
   var LW = parseInt(stage.style.width) || 354;
   var LH = parseInt(stage.style.height) || 143;
   var s = 1;
-  if (mode === "2") s = 2;
-  else if (mode === "3") s = 3;
-  else if (mode === "fit") {
+  if (mode === "fit") {
     var availW = Math.max(200, stageWrap.parentElement.clientWidth - 24);
     var availH = Math.max(120, window.innerHeight - 340);
     s = Math.min(availW / LW, availH / LH, 2.5);
@@ -186,9 +201,13 @@ function setZoom(mode) {
   stageWrap.style.width = "100%";
   stageWrap.style.height = Math.round(LH * s) + "px";
   stage.style.margin = (LW * s > stageWrap.clientWidth) ? "0" : "0 auto";
-  var btns = [[btnZoom1, "1"], [btnZoom2, "2"], [btnZoom3, "3"], [btnZoomFit, "fit"]];
-  for (var i = 0; i < btns.length; i++) {
-    if (btns[i][0]) btns[i][0].classList.toggle("on", btns[i][1] === mode);
+  /* Đánh dấu chế độ đang chọn trong menu ⋯ (không còn nút zoom trên
+     thanh công cụ). */
+  if (menuPop) {
+    var z1 = menuPop.querySelector('[data-act="zoom1"]');
+    var zf = menuPop.querySelector('[data-act="zoomfit"]');
+    if (z1) z1.classList.toggle("on", mode === "1");
+    if (zf) zf.classList.toggle("on", mode === "fit");
   }
 }
 async function renderCurrent() {
@@ -196,8 +215,16 @@ async function renderCurrent() {
   /* Đợt C: playlist mở thì xếp chồng Player + Playlist (stage rộng 436);
      đóng thì chỉ cửa sổ chính (354). Tổng cao = playerH + playlistH:
      ngăn kéo đóng 156+164=320 (đỉnh ngăn kéo lộ 13px), ngăn kéo mở
-     259+164=423. */
-  if (playlistOpen) {
+     259+164=423.
+     Đợt G — shadeMode: vẽ layout shade 354×25 (không ngăn kéo, không AVS
+     nhúng); playlist rời vẫn xếp dưới shade nếu đang mở (25+164=189). */
+  if (shadeMode) {
+    if (playlistOpen) {
+      await renderer.renderStacked(stage, { shadeMode: true });
+    } else {
+      await renderer.renderLayout("main", "shade", "WINAMP", {}, stage);
+    }
+  } else if (playlistOpen) {
     await renderer.renderStacked(stage, { drawerOpen: drawerOpen });
   } else {
     await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
@@ -205,12 +232,20 @@ async function renderCurrent() {
   setZoom(zoom);
   checkDrawer();
 }
-/* Đợt C: mở/đóng playlist (nút PL trong skin, menu View, nút Xếp chồng,
-   nút đóng X của cửa sổ Playlist). Đóng/mở thì các cửa sổ xếp lại theo
-   đúng thứ tự chồng (main → drawer → playlist). */
+/* Đợt G — chuyển normal<->shade (nút winshade trong skin / bấm đúp nền
+   shade). Lưu localStorage để tải lại trang giữ nguyên chế độ. Khi sang
+   shade thì ẩn ngăn kéo + vùng AVS nhúng (chỉ còn thanh bar 25px);
+   avsState được giữ nguyên nên về normal thì AVS hiện lại như cũ. */
+function setShadeMode(open) {
+  shadeMode = !!open;
+  try { localStorage.setItem("amp9-shade-v9", shadeMode ? "1" : "0"); } catch (e) { /* private mode */ }
+  renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+}
+/* Đợt C: mở/đóng playlist (nút PL trong skin, menu View, nút đóng X của
+   cửa sổ Playlist). Đóng/mở thì các cửa sổ xếp lại theo đúng thứ tự
+   chồng (main → drawer → playlist). */
 function setPlaylistOpen(open) {
   playlistOpen = !!open;
-  if (btnStack) btnStack.textContent = playlistOpen ? "Đóng Playlist" : "Xếp chồng: Player + Playlist";
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
 }
 /* Self-check sau khi vẽ (đợt B + đợt F): sai thì hiện cảnh báo đỏ, không vẽ
@@ -223,11 +258,17 @@ function setPlaylistOpen(open) {
 function checkDrawer() {
   if (!renderer) return;
   var errs = [];
-  try { errs = renderer.runDrawerSelfCheck(stage) || []; } catch (e) { errs = ["self-check loi: " + (e.message || e)]; }
-  /* Ngăn kéo đóng (chỉ lộ dải 13px) thì self-check hình học mở không áp;
-     chỉ báo khi đang mở mà lệch. AVS/tiếng kiểm luôn, không phụ thuộc ngăn kéo. */
-  if (!drawerOpen) errs = [];
-  try { errs = errs.concat(renderer.runAvsSelfCheck(stage) || []); } catch (e) { errs.push("self-check AVS loi: " + (e.message || e)); }
+  /* Đợt G — shadeMode: không có ngăn kéo trong DOM (runDrawerSelfCheck
+     báo "không thấy ngăn kéo") và AVS nhúng bị ẩn theo thiết kế dù
+     avsState đang mở — cả hai đều là false positive, bỏ qua. Self-check
+     tiếng vẫn chạy (engine độc lập với layout). */
+  if (!shadeMode) {
+    try { errs = renderer.runDrawerSelfCheck(stage) || []; } catch (e) { errs = ["self-check loi: " + (e.message || e)]; }
+    /* Ngăn kéo đóng (chỉ lộ dải 13px) thì self-check hình học mở không áp;
+       chỉ báo khi đang mở mà lệch. AVS/tiếng kiểm luôn, không phụ thuộc ngăn kéo. */
+    if (!drawerOpen) errs = [];
+    try { errs = errs.concat(renderer.runAvsSelfCheck(stage) || []); } catch (e) { errs.push("self-check AVS loi: " + (e.message || e)); }
+  }
   try { errs = errs.concat(renderer.runAudioSelfCheck() || []); } catch (e) { errs.push("self-check tieng loi: " + (e.message || e)); }
   if (errs.length) {
     drawerCheckEl.textContent = "⚠ SELF-CHECK: " + errs.join(" | ");
@@ -237,13 +278,32 @@ function checkDrawer() {
     drawerCheckEl.classList.remove("show");
   }
 }
-function setDrawerButton() {
-  if (btnDrawer) btnDrawer.textContent = drawerOpen ? "Đóng ngăn kéo" : "Mở ngăn kéo";
-}
+/* Đợt G — mở/đóng ngăn kéo TRƯỢT MƯỢT bằng CSS transition trên transform
+   (renderer.toggleDrawerAnimated): mở trượt xuống, đóng trượt lên, ~250ms.
+   Vị trí cuối luôn do renderLayout đặt thẳng bằng `top` nên không kẹt
+   giữa chừng (bấm liên tục: lần sau hủy timer lần trước, nội suy từ vị
+   trí hiện tại). Sau khi trượt xong (promise) kiểm lại 1 lần: lệch thì
+   vẽ lại + báo rõ. Không có toggleDrawerAnimated (renderer cũ) thì về
+   đường cũ: setDrawerOpen + render + fallback 50ms. */
 function toggleDrawer(open) {
   drawerOpen = !!open;
+  if (renderer && renderer.toggleDrawerAnimated) {
+    renderer.toggleDrawerAnimated(drawerOpen).then(function () {
+      setTimeout(function () {
+        if (!renderer) return;
+        var errs = [];
+        try { errs = renderer.runDrawerSelfCheck(stage) || []; } catch (e) { errs = []; }
+        if (drawerOpen && errs.length) {
+          renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+          setTimeout(checkDrawer, 60);
+        } else {
+          checkDrawer();
+        }
+      }, 50);
+    }).catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+    return;
+  }
   if (renderer) renderer.setDrawerOpen(drawerOpen);
-  setDrawerButton();
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
   /* Fallback 50ms (V8-BUGS Lỗi 2): kiểm lại vị trí mở, lệch thì vẽ lại. */
   setTimeout(function () {
@@ -260,14 +320,18 @@ function toggleDrawer(open) {
 }
 async function bootSkin(file, name) {
   setStatus("Đang mở " + name + " …");
-  reportEl.textContent = "";
   try {
     await ensureJSZip();
     var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
     SKIN = loaded.skin; RES = loaded.resolve;
     renderer = window.AmpRenderer.createRenderer(RES, document, {
-      onRerender: function () { renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
+      /* Đợt G — onRerender TRẢ VỀ promise của renderCurrent để
+         toggleDrawerAnimated chờ vẽ xong mới bắt đầu trượt. */
+      onRerender: function () { return renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
       onDrawerToggle: function (open) { toggleDrawer(open); },
+      /* Đợt G — nút winshade trong skin (SWITCH param=shade/normal) /
+         bấm đúp nền shade: chuyển chế độ + lưu localStorage. */
+      onShadeToggle: function (open) { setShadeMode(open); },
       /* Đợt C: nút PL trong skin / menu View / nút đóng X của playlist. */
       onPlaylistToggle: function (open) {
         if (open === undefined) setPlaylistOpen(!playlistOpen);
@@ -316,8 +380,12 @@ async function bootSkin(file, name) {
       var savedAvs = JSON.parse(localStorage.getItem("amp9-avs-v9") || "null");
       if (savedAvs) renderer.restoreAvsState(savedAvs);
     } catch (e) { /* state lưu hỏng thì mở mặc định (đóng) */ }
-    var finalH = await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
-    setDrawerButton();
+    /* Đợt G — khôi phục shadeMode đã lưu TRƯỚC lần render đầu (mặc định
+       normal). Shade vẽ layout main|shade 354×25, không ngăn kéo/AVS. */
+    try { shadeMode = localStorage.getItem("amp9-shade-v9") === "1"; } catch (e) { shadeMode = false; }
+    var finalH = shadeMode
+      ? await renderer.renderLayout("main", "shade", "WINAMP", {}, stage)
+      : await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
     checkDrawer();
     /* Đợt C: nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
        (41 kênh, giữ tên + thứ tự gốc; Demo ở cuối). Không có file thì
@@ -350,6 +418,10 @@ async function bootSkin(file, name) {
     if (lay) lines.push("Layout main|normal: " + lay.w + "×" + lay.h + " · contentH=" + lay.contentH
       + " (frameOffsetY=" + lay.frameOffsetY + ") · snapadjustbottom=" + lay.snapadjustbottom
       + " · drawerRestY=" + lay.drawerRestY + " · cửa sổ chính sau trim: 354×" + finalH);
+    var layShade = RES.layouts["main|shade"];
+    if (layShade) lines.push("Layout main|shade: " + layShade.w + "×" + layShade.h
+      + " · group shademain (thanh transport 25px, gọn khít, không ngăn kéo/AVS; về normal bằng nút winshade hoặc bấm đúp nền)"
+      + (shadeMode ? " · ĐANG Ở SHADE (sau trim: 354×" + finalH + ")" : ""));
     if (RES.drawer) lines.push("Ngăn kéo: cao " + RES.drawer.fullH + " · contentX=" + RES.drawer.contentX
       + " · tabs=(" + (RES.drawer.tabsPos ? RES.drawer.tabsPos.x + "," + RES.drawer.tabsPos.y : "?") + ")");
     if (RES.embeddedAvs) {
@@ -363,48 +435,53 @@ async function bootSkin(file, name) {
     lines.push("AVS hiện tại: " + (avsNow.open ? ("mở, chế độ " + avsNow.mode + (avsNow.detached ? ", cửa sổ rời" : ", vùng nhúng") + ", scale " + avsNow.videoScale + "x") : "đóng"));
     lines.push(playlistInfo);
     if (loaded.report.notes.length) lines.push("Ghi chú: " + loaded.report.notes.join(" | "));
-    reportEl.textContent = lines.join("\n");
-    setVersionLine("skin: " + (SKIN.name || name));
+    /* Thông tin skin chỉ ghi console (màn hình chỉ hiện giao diện). */
+    if (window.console && console.info) console.info("[Amp]\n" + lines.join("\n"));
+    logVersion("skin: " + (SKIN.name || name));
     setZoom(zoom);
     if (RES.kind === "classic") {
-      setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — skin Classic không có vùng AVS nhúng và cửa sổ chính chưa vẽ được ở v9; bấm “Video” / “Hiệu ứng (Vis)” để mở cửa sổ rời (đợt E đã phát tiếng qua chuỗi EQ).");
+      setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — skin Classic không có vùng AVS nhúng và cửa sổ chính chưa vẽ được ở v9; mở Video / Hiệu ứng (Vis) từ menu View trong skin để mở cửa sổ rời (đợt E đã phát tiếng qua chuỗi EQ).");
     } else {
-      setStatus("Đã nạp: " + (SKIN.name || name) + " — bấm “Mở ngăn kéo” để xem tab EQ/Options/Color Themes; bấm nút PL (hoặc menu View) để mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
+      setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
     }
   } catch (e) {
     setStatus("Lỗi: " + (e.message || e), true);
-    reportEl.textContent = "Không nạp được skin: " + (e.message || e);
   }
 }
-function wireToolbar() {
-  btnZoom1.addEventListener("click", function () { setZoom("1"); });
-  btnZoom2.addEventListener("click", function () { setZoom("2"); });
-  btnZoom3.addEventListener("click", function () { setZoom("3"); });
-  btnZoomFit.addEventListener("click", function () { setZoom("fit"); });
-  btnStack.addEventListener("click", function () {
-    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
-    setPlaylistOpen(!playlistOpen);
+/* Đợt G — menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
+   Chứa những thứ skin không làm được: nạp skin .wal/.zip (chọn file),
+   thêm nhạc local, đổi zoom 1x/fit. Mọi chức năng khác (ngăn kéo,
+   playlist, Video/Vis) dùng qua chính skin: nút trong skin + menu View
+   (File/Play/Options/View/Help) — xem viewMenuItems trong renderer.js.
+   Kéo-thả file .wal/.zip vào trang vẫn giữ (không cần chữ hướng dẫn). */
+function wireMenu() {
+  function closeMenu() { if (menuPop) menuPop.hidden = true; }
+  function toggleMenu() {
+    if (!menuPop) return;
+    menuPop.hidden = !menuPop.hidden;
+    if (!menuPop.hidden) setZoom(zoom); /* cập nhật dấu ✓ zoom hiện tại */
+  }
+  if (btnMenu) btnMenu.addEventListener("click", function (e) {
+    if (e.stopPropagation) e.stopPropagation();
+    toggleMenu();
   });
-  btnDrawer.addEventListener("click", function () {
-    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
-    toggleDrawer(!drawerOpen);
+  document.addEventListener("click", function (e) {
+    if (!menuPop || menuPop.hidden) return;
+    if (e.target === btnMenu || (menuPop.contains && menuPop.contains(e.target))) return;
+    closeMenu();
   });
-  /* Đợt D — nút Video/Vis trên thanh công cụ: mở vùng nhúng (Modern)
-     hoặc cửa sổ rời (Classic). openAvs tự gọi onRerender nên không cần
-     renderCurrent thêm ở đây. */
-  btnVideo.addEventListener("click", function () {
-    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
-    renderer.openAvs("video");
-  });
-  btnVis.addEventListener("click", function () {
-    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
-    renderer.openAvs("vis");
-  });
-  /* Đợt E — chọn thư mục nhạc local (webkitdirectory). Trình duyệt không
-     nhớ file local nên mỗi lần chọn lại thư mục. */
-  btnLocal.addEventListener("click", function () {
-    if (!renderer) { setStatus("Chưa nạp skin nào."); return; }
-    renderer.openLocalFolderPicker();
+  if (menuPop) menuPop.addEventListener("click", function (e) {
+    var t = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
+    if (!t) return;
+    var act = t.getAttribute("data-act");
+    if (act === "skin") { fileInput.click(); }
+    else if (act === "local") {
+      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
+      renderer.openLocalFolderPicker();
+    }
+    else if (act === "zoom1") { setZoom("1"); }
+    else if (act === "zoomfit") { setZoom("fit"); }
+    closeMenu();
   });
   /* Đợt E — phím Space: Play/Pause khi focus không nằm trong ô nhập. */
   document.addEventListener("keydown", function (e) {
@@ -415,25 +492,22 @@ function wireToolbar() {
     if (e.preventDefault) e.preventDefault();
     renderer.togglePlay();
   });
-  btnLoad.addEventListener("click", function () { fileInput.click(); });
   fileInput.addEventListener("change", function () {
     if (fileInput.files.length) bootSkin(fileInput.files[0], fileInput.files[0].name);
   });
   window.addEventListener("resize", function () { if (zoom === "fit") setZoom("fit"); });
-  ["dragover", "dragenter"].forEach(function (ev) {
-    document.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.add("over"); });
-  });
-  ["dragleave", "drop"].forEach(function (ev) {
-    document.addEventListener(ev, function (e) { e.preventDefault(); dropZone.classList.remove("over"); });
+  /* Kéo-thả file .wal/.zip vào trang (giữ nguyên, không chữ hướng dẫn). */
+  ["dragover", "dragenter", "dragleave", "drop"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); });
   });
   document.addEventListener("drop", function (e) {
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) bootSkin(f, f.name);
   });
 }
-wireToolbar();
+wireMenu();
 if (checkVersions()) {
-  setVersionLine("");
+  logVersion("");
   (async function () {
     try {
       var r = await fetch("winampmodern566.wal");
@@ -443,10 +517,10 @@ if (checkVersions()) {
         return;
       }
     } catch (e) { /* không có file cùng thư mục -> chờ kéo thả */ }
-    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.zip vào trang, hoặc bấm “Nạp skin .wal/.zip khác”.");
+    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.zip vào trang, hoặc bấm ⋯ (góc dưới-phải) → “Nạp skin .wal/.zip…”.", true);
   })();
 } else {
-  setStatus("Version lệch — dừng lại, xem dòng version ở trên.", true);
+  setStatus("Version lệch — dừng lại, xem banner đỏ ở trên.", true);
 }
 </script>
 </body>

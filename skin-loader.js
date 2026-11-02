@@ -18,10 +18,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "9.2";
-  var EXPECTED_LOADER_VERSION = "9.2";
+  var LOADER_VERSION = "9.3";
+  var EXPECTED_LOADER_VERSION = "9.3";
   /* ĐỢT F — version manifest duy nhất: index.html đặt window.AMP_VERSION
-     = "9.2" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
+     = "9.3" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
      manifest có mà khác version của file thì MANIFEST_MISMATCH = true để
      trang báo "bản mix" thay vì vẽ sai trong im lặng (bài học v7.4/v8).
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */

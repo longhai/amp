@@ -30,6 +30,13 @@
    thẻ <video>/canvas di chuyển theo, không tạo lại); Reattach đưa về.
    Đóng AVS không dừng tiếng (chỉ ẩn hình). PHÁT THẬT (native/HLS/
    crossOrigin/EQ) là đợt E — đợt D chỉ tạo + đặt đúng vị trí + đổi hộp.
+   ĐỢT G (9.3): chế độ shade (layout main|shade 354×25 từ model, nút
+   transport + volume/mute/EJECT/PL/ML/winshade nối qua onShadeToggle);
+   nút mute shade (SHADE_MUTE); dblClickAction SWITCH;normal/shade trên
+   layer; tab ngăn kéo ẨN khi đóng (không thò ra bị cắt); ngăn kéo trượt
+   bằng CSS transition trên transform (mở trượt xuống, đóng trượt lên,
+   ~250ms, có fallback ép về vị trí cuối — KHÔNG dùng rAF hai bước kiểu
+   v8); renderStacked hỗ trợ shadeMode (shade 25px + playlist).
    ===================================================================== */
 (function (root, factory) {
   if (typeof module !== "undefined" && module.exports) module.exports = factory();
@@ -37,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.2";
-  var EXPECTED_RENDERER_VERSION = "9.2";
+  var RENDERER_VERSION = "9.3";
+  var EXPECTED_RENDERER_VERSION = "9.3";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.2" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.3" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -305,6 +312,7 @@
     var onTabChange = opts.onTabChange || null;
     var onRerender = opts.onRerender || null;
     var onDrawerToggle = opts.onDrawerToggle || null;
+    var onShadeToggle = opts.onShadeToggle || null; /* đợt G: normal<->shade (nút winshade / dblclick nền shade) */
     var onPlaylistToggle = opts.onPlaylistToggle || null; /* đợt C: mở/đóng playlist */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
@@ -330,6 +338,159 @@
       requestRerender();
     }
     function getDrawerState() { return drawerState; }
+
+    /* ---------- trượt ngăn kéo đợt G (CSS transition trên transform) ----------
+       Mở trượt xuống, đóng trượt lên, ~250ms. NGUYÊN TẮC AN TOÀN (rút từ
+       lỗi kẹt rAF hai bước của v8): vị trí CUỐI luôn do renderLayout đặt
+       thẳng bằng `top` (không qua rAF); transition chỉ làm MƯỢT đường đi
+       từ vị trí hiện tại tới vị trí cuối (transform translateY). Nếu
+       transition bị gián đoạn (bấm liên tục) thì CSS tự nội suy từ vị trí
+       hiện tại; cuối mỗi lần trượt có timeout ép transform về đúng giá trị
+       cuối (0 khi mở xong, -dy khi đóng xong) + re-render chốt trạng thái.
+       - drawerAnimStartDy: độ dời transform ban đầu cho lần render mở sắp
+         tới (âm = ngăn kéo đang ở vị trí đóng). renderLayout đọc + xóa cờ.
+       - drawerAnimTimer/token: hủy lần trượt cũ khi bấm liên tục. */
+    var DRAWER_ANIM_MS = 250;
+    var drawerAnimTimer = 0, drawerAnimToken = 0;
+    /* pendingDrawerStartDy: {dy, token} — độ dời transform ban đầu cho lần
+       render mở sắp tới. Gắn token của lần gọi toggleDrawerAnimated để
+       lần render bay dở của lần gọi CŨ không áp transform cũ lên DOM mới
+       khi đã có lần gọi mới hơn chen vào (bấm liên tục: render của lần
+       mở cũ đáp xuống sau lần đóng/mở sau → bỏ transform, drawer ở đúng
+       vị trí cuối thay vì kẹt ở -103px). */
+    var pendingDrawerStartDy = null;
+    function drawerAnimDyNow() {
+      var T = lastStage;
+      if (!T) return null;
+      var d = null;
+      try { d = T.querySelector('[data-gid="player.normal.drawer"]'); } catch (e) { d = null; }
+      if (!d || !d.style.transform) return 0;
+      var m = /translateY\(\s*(-?\d+(?:\.\d+)?)px\s*\)/.exec(d.style.transform);
+      return m ? parseFloat(m[1]) : 0;
+    }
+    function setDrawerTransform(d, dy, animate) {
+      if (!d) return;
+      if (animate) d.style.transition = "transform " + DRAWER_ANIM_MS + "ms ease";
+      else d.style.transition = "none";
+      d.style.transform = "translateY(" + dy + "px)";
+    }
+    function clearDrawerTransform(d) {
+      if (!d) return;
+      d.style.transition = "";
+      d.style.transform = "";
+    }
+    /* Đọc vị trí transform hiện tại của ngăn kéo + bóng (dùng khi đảo chiều
+       giữa chừng: bắt đầu lần trượt mới từ đúng chỗ đang dừng). */
+    function drawerAnimEls() {
+      var T = lastStage, out = { d: null, sh: null };
+      if (!T) return out;
+      try { out.d = T.querySelector('[data-gid="player.normal.drawer"]'); } catch (e) { out.d = null; }
+      try { out.sh = T.querySelector('[data-gid="player.normal.drawer.shadow"]'); } catch (e) { out.sh = null; }
+      return out;
+    }
+    /* Trượt ngăn kéo có animation. Trả về Promise hoàn thành khi về đúng
+       vị trí cuối (để index.html chạy self-check sau đó). Bấm liên tục:
+       lần gọi sau hủy timer lần trước (token) và bắt đầu từ transform
+       hiện tại nên không bao giờ kẹt giữa chừng. */
+    function toggleDrawerAnimated(open) {
+      open = !!open;
+      var myToken = ++drawerAnimToken;
+      if (drawerAnimTimer) { clearTimeout(drawerAnimTimer); drawerAnimTimer = 0; }
+      /* Chưa vẽ lần nào / không có ngăn kéo trong DOM: vẽ thẳng, không animation. */
+      var els = drawerAnimEls();
+      if (!els.d) { setDrawerOpen(open); return Promise.resolve(false); }
+      if (open === drawerState.open) {
+        /* Đã đúng trạng thái: nếu đang dở animation (transform != 0) thì
+           trượt MƯỢT về 0 thay vì nhảy thẳng (bấm đảo chiều giữa chừng). */
+        var cur = drawerAnimDyNow() || 0;
+        if (cur !== 0) {
+          setDrawerTransform(els.d, 0, true);
+          setDrawerTransform(els.sh, 0, true);
+          drawerAnimTimer = setTimeout(function () {
+            if (myToken !== drawerAnimToken) return;
+            var e3 = drawerAnimEls();
+            clearDrawerTransform(e3.d); clearDrawerTransform(e3.sh);
+            drawerAnimTimer = 0;
+          }, DRAWER_ANIM_MS + 80);
+          return new Promise(function (resolve) { setTimeout(function () { resolve(myToken === drawerAnimToken); }, DRAWER_ANIM_MS + 120); });
+        }
+        clearDrawerTransform(els.d); clearDrawerTransform(els.sh);
+        return Promise.resolve(true);
+      }
+      if (open) {
+        /* MỞ: render trạng thái mở (top cuối = 130) với transform ban đầu
+           = vị trí đóng hiện tại (âm), rồi trượt về 0. */
+        var startDy = drawerAnimDyNow();
+        if (!startDy) {
+          /* Đang ở vị trí đóng (transform 0, top 27): độ dời = top đóng - top mở. */
+          var tops = lastDrawerTops();
+          startDy = (tops.closed !== null && tops.open !== null) ? (tops.closed - tops.open) : -103;
+        }
+        if (startDy >= 0) startDy = -103; /* phòng thủ: mở luôn đi xuống */
+        pendingDrawerStartDy = { dy: startDy, token: myToken };
+        drawerState.open = true;
+        var p = null;
+        try { p = onRerender ? onRerender() : null; } catch (e) { p = null; }
+        var done = false;
+        var finish = function () {
+          if (done || myToken !== drawerAnimToken) return;
+          done = true;
+          var e2 = drawerAnimEls();
+          /* Ép reflow để transition đăng ký trước khi đổi transform
+             (không thì lần trượt đầu có thể nhảy thẳng thay vì trượt). */
+          if (e2.d) { try { void e2.d.offsetHeight; } catch (e) { /* jsdom */ } }
+          setDrawerTransform(e2.d, 0, true);
+          setDrawerTransform(e2.sh, 0, true);
+          drawerAnimTimer = setTimeout(function () {
+            if (myToken !== drawerAnimToken) return;
+            var e3 = drawerAnimEls();
+            clearDrawerTransform(e3.d); clearDrawerTransform(e3.sh);
+            drawerAnimTimer = 0;
+          }, DRAWER_ANIM_MS + 80);
+        };
+        if (p && typeof p.then === "function") p.then(function () { finish(); }, function () { finish(); });
+        else setTimeout(finish, 30);
+        /* Fallback cứng: render treo thì vẫn ép về vị trí cuối sau 600ms. */
+        setTimeout(function () { if (!done) finish(); }, 600);
+        return new Promise(function (resolve) { setTimeout(function () { resolve(myToken === drawerAnimToken); }, DRAWER_ANIM_MS + 120); });
+      }
+      /* ĐÓNG: trượt ngăn kéo đang mở lên vị trí đóng, rồi re-render chốt. */
+      var tops2 = lastDrawerTops();
+      var targetDy = (tops2.closed !== null && tops2.open !== null) ? (tops2.closed - tops2.open) : -103;
+      if (targetDy >= 0) targetDy = -103;
+      setDrawerTransform(els.d, targetDy, true);
+      setDrawerTransform(els.sh, targetDy, true);
+      drawerAnimTimer = setTimeout(function () {
+        if (myToken !== drawerAnimToken) return;
+        drawerAnimTimer = 0;
+        drawerState.open = false;
+        if (onRerender) { try { onRerender(); } catch (e) { /* bỏ qua */ } }
+      }, DRAWER_ANIM_MS + 30);
+      return new Promise(function (resolve) { setTimeout(function () { resolve(myToken === drawerAnimToken); }, DRAWER_ANIM_MS + 120); });
+    }
+    /* Vị trí top của ngăn kéo khi đóng/mở theo lần render gần nhất
+       (dùng để tính độ dời animation; null khi chưa render). */
+    var lastDrawerTopCache = { open: null, closed: null };
+    function lastDrawerTops() { return lastDrawerTopCache; }
+
+    /* ---------- mute shade (đợt G) ----------
+       shademute là togglebutton không có cfgattrib/action trong XML nên
+       dùng khóa cfg tổng hợp "SHADE_MUTE" (ảnh activeImage =
+       shade.button.mute.on khi bật). Mute chỉ tắt tiếng ở engine
+       (setVolume 0), GIỮ NGUYÊN demo.volume + volumebar (Winamp gốc
+       cũng không hạ thanh volume khi mute). Kéo slider volume lúc đang
+       mute thì đổi demo.volume nhưng engine vẫn 0 cho tới khi bỏ mute. */
+    function isShadeMuted() { return cfgState.get("SHADE_MUTE") === "on"; }
+    function applyEngineVolume() {
+      if (!audioEngine) return;
+      try { audioEngine.setVolume(isShadeMuted() ? 0 : demo.volume); } catch (e) { /* bỏ qua */ }
+    }
+    function toggleShadeMute() {
+      var on = !isShadeMuted();
+      cfgState.set("SHADE_MUTE", on ? "on" : "off");
+      applyEngineVolume();
+      refreshCfgGroup("SHADE_MUTE");
+    }
 
     /* ---------- state AVS/Video (đợt D) ----------
        - open: vùng AVS/cửa sổ rời đang mở hay đóng.
@@ -558,7 +719,8 @@
       if (typeof saved.volume === "number") {
         demo.volume = Math.max(0, Math.min(1, saved.volume));
         updateVolumebar();
-        if (audioEngine) audioEngine.setVolume(demo.volume);
+        /* Đợt G — đang mute shade thì engine vẫn 0, không đẩy volume vào. */
+        applyEngineVolume();
       }
       if (saved.repeat === 0 || saved.repeat === 1 || saved.repeat === -1) demo.repeat = saved.repeat;
       if (typeof saved.shuffle === "boolean") demo.shuffle = saved.shuffle;
@@ -1847,13 +2009,21 @@
         return;
       }
       /* config.tabs: chỉ tab chọn ở trạng thái ".on", còn lại ".off".
-         Rộng tab đo từ text (autowidthsource) — xem measureTabWidth (D7).
-         z-index 2: tab vẽ ĐÈ lên nền panel ColorThemes (D10: bbox panel
-         310×98 tại (22,14) đáy 112, chồng đỉnh tab 108 đúng 4px; Winamp
-         thật cũng vẽ tab đè lên nền nên chỉ cắt phần nền, không cắt tab).
-         pointer-events:auto: div nhóm cha đều none (kế thừa) nên tab đợt A
-         có onclick nhưng không bấm được trên trình duyệt thật. */
+         Đợt G — khi ngăn kéo ĐÓNG thì KHÔNG vẽ tab: tab ở đáy ngăn kéo
+         (drawer y=108, cao 19, đáy 127) trong khi dải nghỉ khi đóng chỉ
+         lộ 13px (drawer y=116..129) nên 9px dưới của tab lọt ra ngoài
+         cửa sổ chính, bị cắt ngang nửa chữ (ảnh điện thoại thật 2/11).
+         Ẩn tab khi đóng → dải nghỉ chỉ còn vỏ ngăn kéo + nút mở (nút
+         mở ở drawer y=118, trong dải nghỉ nên vẫn hiện). Khi mở, tab ở
+         đáy ngăn kéo là đúng XML nên vẽ đủ 3 tab như cũ. */
       if (gid === "config.tabs") {
+        if (!ctx.drawerOpen) {
+          /* Đợt G — gỡ luôn hộp rỗng khỏi DOM (hộp đã append ở đầu hàm):
+             chỉ return thì hộp rỗng 127px vẫn nằm trong DOM (không chữ
+             nhưng test/DOM vẫn thấy config.tabs); gỡ hẳn cho sạch. */
+          if (div.parentElement) div.parentElement.removeChild(div);
+          return;
+        }
         div.style.zIndex = "2";
         var tabs = [["config.tab.eq", "eq"], ["config.tab.options", "options"], ["config.tab.colorthemes", "colorthemes"]];
         var tx = 0;
@@ -1988,6 +2158,23 @@
         if (el.getAttribute("relatw") === "1") spr.dataset.stretch = "1";
         setAbs(spr, parentEl, x, y);
         parentEl.appendChild(spr);
+        /* Đợt G — dblClickAction SWITCH;normal/shade trên layer (nền shade
+           bấm đúp để về normal; nền normal bấm đúp để sang shade). Chỉ
+           gắn khi có onShadeToggle; các layer khác không có thuộc tính
+           này nên không đổi gì. */
+        var dca = el.getAttribute("dblClickAction") || el.getAttribute("dblclickaction") || "";
+        if (dca && onShadeToggle) {
+          var dparts = String(dca).split(";");
+          if (dparts.length >= 2 && dparts[0].toUpperCase() === "SWITCH") {
+            var dtgt = dparts[1].toLowerCase();
+            if (dtgt === "normal" || dtgt === "shade") {
+              spr.style.pointerEvents = "auto";
+              (function (toShade) {
+                spr.ondblclick = function () { onShadeToggle(toShade); };
+              })(dtgt === "shade");
+            }
+          }
+        }
         if (id === "volumebar" || id === "volumebarShade") {
           volumebarEls.push({ div: spr, maxW: id === "volumebar" ? VOLUMEBAR_MAXW : VOLUMEBAR_SHADE_MAXW, baseW: lw || 10 });
           updateVolumebar();
@@ -2225,8 +2412,10 @@
         if (action === "VOLUME") {
           demo.volume = rec.frac; updateVolumebar();
           /* Đợt E — âm lượng thật: master gain khi qua chuỗi EQ, el.volume
-             khi phát native/bypass (engine tự chọn đường). */
-          if (audioEngine) audioEngine.setVolume(rec.frac);
+             khi phát native/bypass (engine tự chọn đường).
+             Đợt G — đang mute shade thì engine vẫn 0 (applyEngineVolume),
+             chỉ đổi demo.volume (volumebar theo demo.volume). */
+          applyEngineVolume();
           persistPlayback();
         }
         else if (action === "SEEK") {
@@ -2315,6 +2504,10 @@
          trạng thái (EQ_TOGGLE / EQ_AUTO); các nút khác dùng cfgattrib. */
       var cfgattrib = el.getAttribute("cfgattrib") || "";
       var cfgKey = cfgattrib || ((action === "EQ_TOGGLE" || action === "EQ_AUTO") ? action : "");
+      /* Đợt G — nút mute shade (togglebutton, không có cfgattrib/action
+         trong XML): dùng khóa cfg tổng hợp "SHADE_MUTE" để ảnh đổi theo
+         trạng thái (activeImage = shade.button.mute.on). */
+      if (id === "shademute") cfgKey = "SHADE_MUTE";
       /* Nút mở/đóng ngăn kéo: chỉ hiện nút phù hợp trạng thái (cả 2 cùng
          ở (-72,118) trong groupdef ngăn kéo, Winamp thật cũng chỉ hiện 1). */
       if (id === "drawer.button.open" && ctx.drawerOpen) return;
@@ -2372,6 +2565,21 @@
         if (action === "PREV") { prevTrack(); return; }
         if (action === "NEXT") { nextTrack(demo.repeat === 1 || demo.shuffle); return; }
         if (action === "EJECT") { openLocalFolderPicker(); return; }
+        /* Đợt G — chuyển normal<->shade (nút winshade trên cửa sổ chính:
+           action SWITCH param=shade; nút shadeWinshade trên shade:
+           action SWITCH param=normal). Qua onShadeToggle để index.html
+           đổi chế độ + lưu localStorage; renderer không tự đổi layout. */
+        if (action === "SWITCH") {
+          var tgt = (param || "").toLowerCase();
+          if (onShadeToggle) {
+            if (tgt === "shade") { onShadeToggle(true); return; }
+            if (tgt === "normal") { onShadeToggle(false); return; }
+          }
+          return;
+        }
+        /* Đợt G — nút mute trên shade: đảo SHADE_MUTE (tắt tiếng ở engine,
+           giữ nguyên demo.volume + volumebar). */
+        if (id === "shademute") { toggleShadeMute(); return; }
         /* Đợt C — nút PL trên cửa sổ chính (XML: id="pl", action="TOGGLE"
            param="guid:pl", player-normal-group.xml:1163): mở/đóng playlist.
            Các nút TOGGLE khác (ML, Video...) chưa làm ở đợt C. */
@@ -3211,6 +3419,22 @@
             sh.style.top = (parseInt(sh.style.top || "0", 10) + dy) + "px";
             shiftSubtree(sh, dy);
           }
+          /* Đợt G — ghi lại top đóng/mở để tính độ dời animation, và áp
+             transform ban đầu của lần trượt mở (pendingDrawerStartDy):
+             render đặt thẳng top cuối, transform chỉ làm mượt đường đi. */
+          lastDrawerTopCache.open = restY + drawerInnerY(true, mainB, snap, dH, restY);
+          lastDrawerTopCache.closed = restY + drawerInnerY(false, mainB, snap, dH, restY);
+          if (pendingDrawerStartDy !== null) {
+            var pds = pendingDrawerStartDy;
+            pendingDrawerStartDy = null;
+            /* Chỉ áp transform khi token còn là lần gọi mới nhất: render
+               của lần mở cũ đáp xuống sau lần gọi mới hơn thì bỏ transform
+               (drawer ở đúng vị trí cuối, không kẹt ở -103px). */
+            if (pds.token === drawerAnimToken) {
+              setDrawerTransform(d, pds.dy, false);
+              setDrawerTransform(sh, pds.dy, false);
+            }
+          }
           shift = dH || 129;
         }
       } else if (videoShifted) {
@@ -3241,7 +3465,10 @@
 
     /* Xếp chồng (viewer): player (+ ngăn kéo) rồi playlist xếp dưới.
        opts.drawerOpen: true = ngăn kéo mở (259), false = đóng (156).
-       Đợt D: cửa sổ rời (nếu đang tách) xếp SAU playlist. */
+       Đợt D: cửa sổ rời (nếu đang tách) xếp SAU playlist.
+       Đợt G — opts.shadeMode: vẽ layout shade 354×25 thay cho main
+       (không ngăn kéo, không AVS nhúng); playlist xếp dưới shade như
+       xếp dưới main (stage = 25 + 145). */
     async function renderStacked(stage, opts) {
       opts = opts || {};
       var T = stage || lastStage;
@@ -3259,7 +3486,8 @@
       playerDiv.style.position = "absolute"; playerDiv.style.left = "0px"; playerDiv.style.top = "0px";
       playerDiv._absX = 0; playerDiv._absY = 0;
       T.appendChild(playerDiv);
-      var playerH = await renderLayout("main", "normal", "WINAMP", { drawerOpen: opts.drawerOpen !== undefined ? opts.drawerOpen : true, videoOpen: !!opts.videoOpen, applyTheme: false, noDetached: true }, playerDiv);
+      var shadeMode = !!opts.shadeMode;
+      var playerH = await renderLayout("main", shadeMode ? "shade" : "normal", "WINAMP", shadeMode ? { applyTheme: false, noDetached: true } : { drawerOpen: opts.drawerOpen !== undefined ? opts.drawerOpen : true, videoOpen: !!opts.videoOpen, applyTheme: false, noDetached: true }, playerDiv);
       /* Đợt E — renderLayout reset registry mỗi lần vẽ nên lượt Pledit sẽ
          xóa registry của cửa sổ chính (ticker/timer/status/thanh trượt/
          EQ...). Giữ lại registry của player rồi GỘP với registry của
@@ -3353,6 +3581,8 @@
       drawVisStatic: drawVisStatic,
       getDrawerTab: getDrawerTab, setDrawerTab: setDrawerTab,
       getDrawerState: getDrawerState, setDrawerOpen: setDrawerOpen,
+      toggleDrawerAnimated: toggleDrawerAnimated, DRAWER_ANIM_MS: DRAWER_ANIM_MS,
+      isShadeMuted: isShadeMuted, toggleShadeMute: toggleShadeMute,
       runDrawerSelfCheck: runDrawerSelfCheck, cfgOn: cfgOn,
       runAvsSelfCheck: runAvsSelfCheck, runAudioSelfCheck: runAudioSelfCheck,
       applyColorTheme: applyColorTheme, selectColorTheme: selectColorTheme,
