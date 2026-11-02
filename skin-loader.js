@@ -122,7 +122,32 @@ const SkinLoader = (() => {
     return size;
   }
 
-  const KNOWN_FONT_CHARSETS = { "player.songinfo.font": "0123456789._:  -'! +/\\     ,=  " };
+  /* Bảng ký tự THEO TỪNG FONT, đo từ chính file PNG của skin (khớp skin-sim.html):
+     hàng 0 = chữ hoa A-Z + " @, hàng 1 = số + ký tự, hàng 2 = ký tự có dấu.
+     Hàng 1 KHÔNG thừa dấu cách (thừa 1 dấu làm ":", "(", ")", "-" lệch 1 cột,
+     chữ chạy "(3:45)" thành ")3(45"). Font số (BIGNUM / pe.time / songinfo) chỉ
+     có hàng số ở hàng 1; ô trống trong chuỗi (vd BIGNUM cột 10-11, 13-14) là ô
+     ma, vẽ thành khoảng trắng. */
+  const FONT_ROWS = {
+    "player.songticker.font": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+    "player.smallfont":       ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+    "shade.songticker.font":  ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+    "player.BIGNUM":          ["", "0123456789  :  -"],
+    "player.songinfo.font":   ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
+    "player.pe.time.font":    ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
+  };
+  function fontCharPos(fontId, ch) {
+    const rows = FONT_ROWS[fontId];
+    if (!rows) return null;
+    const up = ch.toUpperCase();
+    for (let r = 0; r < rows.length; r++) {
+      const c = rows[r].indexOf(up);
+      if (c >= 0) return { row: r, col: c };
+      if (rows[r].indexOf(ch) >= 0) return { row: r, col: rows[r].indexOf(ch) };
+    }
+    return null;
+  }
+  /* Bảng phẳng cũ, chỉ giữ làm fallback cho skin lạ không có trong FONT_ROWS. */
   const WASABI_BITMAP_CHARSET =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@   " +
     "0123456789….:()-'!_+\\/[]^&%,=$#" +
@@ -176,6 +201,9 @@ const SkinLoader = (() => {
     const blobFor = async p => fileMap[(p || "").toLowerCase()] || null;
     const resolve = makeResolver(bitmaps, blobFor);
     const skin = cached.skin;
+    for (const [fid, f] of Object.entries(skin.fonts || {})) {
+      if (f && f.tag === "bitmapfont") { f.id = fid; if (!f.rows) f.rows = FONT_ROWS[fid] || null; }
+    }
     for (const f of Object.values(skin.fonts || {})) {
       if (f.tag === "bitmapfont") { try { await detectFontRow(f, bitmaps, resolve.fileURL, findPath, pathMap); } catch (e) { } }
     }
@@ -389,11 +417,14 @@ const SkinLoader = (() => {
     const bitmaps = {};
     const fonts = {};
     const colors = {};
+    const colorGamma = {};
     for (const { path, doc } of docs) {
       for (const c of elList(doc, "color")) {
         const id = c.getAttribute("id");
         const v = c.getAttribute("value");
         if (id && v && !colors[id]) colors[id] = v;
+        const gg = c.getAttribute("gammagroup");
+        if (id && gg && !colorGamma[id]) colorGamma[id] = gg;
       }
       for (const b of elList(doc, "bitmap")) {
         const id = b.getAttribute("id");
@@ -403,7 +434,8 @@ const SkinLoader = (() => {
         const rootRel = normPath("", f);
         const entry = { file: findPath(pathMap, rootRel)
           ? rootRel
-          : (findPath(pathMap, normPath(dirOf(path), f)) || rootRel) };
+          : (findPath(pathMap, normPath(dirOf(path), f)) || rootRel),
+          gammagroup: b.getAttribute("gammagroup") || null };
         if (b.getAttribute("x") !== null) {
           const cw = intAttr(b, "w", 0), ch = intAttr(b, "h", 0);
           if (cw > 0 && ch > 0) entry.crop = { x: intAttr(b, "x", 0), y: intAttr(b, "y", 0), w: cw, h: ch };
@@ -413,10 +445,11 @@ const SkinLoader = (() => {
       for (const tag of ["bitmapfont", "truetypefont"]) {
         for (const b of elList(doc, tag)) {
           const id = b.getAttribute("id");
-          if (id && !fonts[id]) fonts[id] = { tag, file: b.getAttribute("file") || "",
+          if (id && !fonts[id]) fonts[id] = { tag, id, file: b.getAttribute("file") || "",
             charwidth: intAttr(b, "charwidth", 0), charheight: intAttr(b, "charheight", 0),
             hspacing: intAttr(b, "hspacing", 0), vspacing: intAttr(b, "vspacing", 0),
-            charset: KNOWN_FONT_CHARSETS[id] || (tag === "bitmapfont" ? WASABI_BITMAP_CHARSET : null) };
+            rows: FONT_ROWS[id] || null,
+            charset: FONT_ROWS[id] ? FONT_ROWS[id].join("") : (tag === "bitmapfont" ? WASABI_BITMAP_CHARSET : null) };
         }
       }
     }
@@ -502,7 +535,7 @@ const SkinLoader = (() => {
 
     function newOut() {
       return { buttons: [], layers: [], texts: [], sliders: [],
-        vis: [], listRects: [], backgrounds: [], unresolved: [], frame: null, grid: null, hiddenIds: [] };
+        vis: [], listRects: [], rects: [], backgrounds: [], unresolved: [], frame: null, grid: null, hiddenIds: [], status: [] };
     }
     const mainOut = newOut();
     const buttons = mainOut.buttons, layers = mainOut.layers,
@@ -516,6 +549,10 @@ const SkinLoader = (() => {
       return null;
     }
     function addButton(out, el, x, y, kind, pw, ph, groupId) {
+      /* activeAlpha="0": bản nút khi cửa sổ KHÔNG hoạt động — Amp luôn vẽ trạng
+         thái hoạt động nên bỏ bản này, chỉ giữ bản inactiveAlpha="0" (vd cặp
+         Min/Close/shade trong player-normal.xml, không thì vẽ chồng cả 2). */
+      if (el.getAttribute("activeAlpha") === "0") return;
       let image = attrCI(el, "image", "Image");
       const hover = attrCI(el, "hoverImage", "hoverimage", "HoverImage");
       const down = attrCI(el, "downImage", "downimage", "DownImage");
@@ -535,15 +572,19 @@ const SkinLoader = (() => {
         downImage: down, downFile: down ? resolveImageRef(down) : null,
         activeImage: active, activeFile: active ? resolveImageRef(active) : null,
         tooltip: el.getAttribute("tooltip") || el.getAttribute("Tooltip") || null,
+        gammagroup: (bitmaps[image] && bitmaps[image].gammagroup) || null,
         _imageId: image, _hoverId: hover, _downId: down, _activeId: active
       });
     }
     function addLayer(out, el, x, y, pw, ph, groupId) {
+      if (el.getAttribute("activeAlpha") === "0") return;
       const image = attrCI(el, "image", "Image");
       out.layers.push({
         id: el.getAttribute("id"), image, imageFile: resolveImageRef(image),
         x, y, w: posSize(relSize(el, "w", pw)), h: posSize(relSize(el, "h", ph)),
         alpha: el.getAttribute("alpha"), ghost: el.getAttribute("ghost"),
+        tile: el.getAttribute("tile"),
+        gammagroup: (bitmaps[image] && bitmaps[image].gammagroup) || null,
         _imageId: image, _group: groupId || null
       });
     }
@@ -559,6 +600,7 @@ const SkinLoader = (() => {
         font: el.getAttribute("font"), color: el.getAttribute("color"),
         fontsize: el.getAttribute("fontsize"), align: el.getAttribute("align"),
         altfont: el.getAttribute("altfont"),
+        gammagroup: colorGamma[el.getAttribute("color")] || null,
         ticker: el.getAttribute("ticker") || (isSongTicker ? "1" : null),
         showlen: el.getAttribute("showlen"), default: def, _group: groupId || null
       });
@@ -582,6 +624,7 @@ const SkinLoader = (() => {
         hoverThumb, hoverThumbFile: hoverThumb ? resolveImageRef(hoverThumb) : null,
         downThumb, downThumbFile: downThumb ? resolveImageRef(downThumb) : null,
         tooltip: el.getAttribute("tooltip") || el.getAttribute("Tooltip") || null,
+        gammagroup: (thumb && bitmaps[thumb] && bitmaps[thumb].gammagroup) || null,
         thumbW: null, thumbH: null
       });
     }
@@ -616,10 +659,30 @@ const SkinLoader = (() => {
         if (!s.orientationExplicit && s.w && s.h)
           s.orientation = s.w >= s.h ? "horizontal" : "vertical";
       }
+      for (const s of out.status) {
+        if (s.w && s.h) continue;
+        const [w, h] = await bitmapSize(s.stopBitmap || s.playBitmap || s.pauseBitmap);
+        if (!s.w) s.w = w; if (!s.h) s.h = h;
+      }
     }
     function dispatchEl(el, ax, ay, depth, parentW, parentH, out, sendParams, groupId) {
+      const tag0 = (el.tagName || "").toLowerCase();
+      if (tag0 === "componentbucket" || tag0 === "groupxfade" ||
+          tag0 === "list" || tag0.indexOf("list") >= 0) {
+        /* Vùng do engine tự vẽ (menu config, trang config, danh sách theme):
+           không có ảnh/nút trong XML nhưng vị trí + kích thước là dữ liệu
+           skin thật — ghi lại để drawer.js vẽ mô phỏng đúng vùng đó. Ghi
+           trước kiểm tra visible: vd ColorThemes:List có visible="0"
+           (mặc định ẩn, hiện khi mở tab) nhưng vùng của nó vẫn là thật. */
+        out.rects.push({ id: el.getAttribute("id") || null, kind: tag0,
+          xuid: el.getAttribute("data-xuitag") || null,
+          wndtype: el.getAttribute("wndtype") || null,
+          x: ax, y: ay, w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)),
+          _group: groupId || null });
+        return;
+      }
       if (!isVisible(el)) return;
-      const tag = (el.tagName || "").toLowerCase();
+      const tag = tag0;
       const content = el.getAttribute("content");
       if (content && groupdefs[content]) {
         if (!groupVisible(content, el)) return;
@@ -650,6 +713,21 @@ const SkinLoader = (() => {
         out.vis.push({ id: el.getAttribute("id"), x: ax, y: ay,
           w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)), _group: groupId || null });
       }
+      else if (tag === "status") {
+        /* Chỉ báo trạng thái phát: 3 bitmap stop/play/pause, index.html đổi
+           theo trạng thái phát (như vis đã làm). Vị trí/kích thước lấy đúng
+           từ XML (vd x=30 y=0 không w/h, và x=19 y=15 w=10 h=23). */
+        const stop = attrCI(el, "stopBitmap", "stopbitmap");
+        const play = attrCI(el, "playBitmap", "playbitmap");
+        const pause = attrCI(el, "pauseBitmap", "pausebitmap");
+        out.status.push({ id: el.getAttribute("id"), x: ax, y: ay,
+          w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)),
+          stopBitmap: stop, playBitmap: play, pauseBitmap: pause,
+          stopFile: stop ? resolveImageRef(stop) : null,
+          playFile: play ? resolveImageRef(play) : null,
+          pauseFile: pause ? resolveImageRef(pause) : null,
+          _group: groupId || null });
+      }
       else if (tag === "windowholder" || tag === "component" || tag === "albumart") {
         out.listRects.push({ id: el.getAttribute("id"), x: ax, y: ay,
           w: posSize(relSize(el, "w", parentW)), h: posSize(relSize(el, "h", parentH)), _group: groupId || null });
@@ -659,9 +737,7 @@ const SkinLoader = (() => {
           right: el.getAttribute("right") };
       }
       else if (tag === "animatedlayer") addLayer(out, el, ax, ay, parentW, parentH, groupId);
-      else if (tag === "rect" || tag === "guiobject" || tag === "componentbucket" ||
-               tag === "groupxfade" ||
-               (tag === "list" && /ColorThemes/i.test(el.getAttribute("data-xuitag") || ""))) {
+      else if (tag === "rect" || tag === "guiobject") {
         return;
       }
       else if (tag === "group") {
@@ -674,8 +750,10 @@ const SkinLoader = (() => {
         const gd = groupdefEls[gid];
         if (gd && gd.getAttribute("background")) {
           const [gw0, gh0] = groupSize(gid, parentW, parentH, el);
-          out.backgrounds.push({ image: gd.getAttribute("background"),
-            imageFile: resolveImageRef(gd.getAttribute("background")),
+          const bgId = gd.getAttribute("background");
+          out.backgrounds.push({ image: bgId,
+            imageFile: resolveImageRef(bgId),
+            gammagroup: (bitmaps[bgId] && bitmaps[bgId].gammagroup) || null,
             x: ax, y: ay, w: gw0, h: gh0 });
         }
         if (depth < 5) {
@@ -684,8 +762,15 @@ const SkinLoader = (() => {
         } else out.unresolved.push("nested group quá sâu: " + gid);
       }
       else if (tag === "hideobject") {
+        /* target có thể liệt kê nhiều id cách nhau ";" (vd "close;close.inactive"):
+           tách ra từng id riêng, bỏ trùng — không đẩy cả chuỗi làm 1 mục. */
         const t = el.getAttribute("target");
-        if (t) { out.hiddenIds.push(t); }
+        if (t) {
+          for (const id of t.split(";")) {
+            const s = id.trim();
+            if (s && out.hiddenIds.indexOf(s) < 0) out.hiddenIds.push(s);
+          }
+        }
         return;
       }
       else if (tag === "sendparams" || tag === "script" || tag === "mousetrap") {
@@ -737,24 +822,40 @@ const SkinLoader = (() => {
       if (!keepClose) fOut.buttons = fOut.buttons.filter(b => b.id !== "Close" && b.id !== "Close.inactive");
       return offsetY;
     }
+    /* Menu xếp ngang SÁT nhau (menualign.maki): không khe hở giữa các mục.
+       Rộng đo từ window/menu/*.png — chính: File 31, Play 35, Options 51,
+       View 38, Help 37; menu.group nằm ở x=1 trong wasabi.menubar nên vị
+       trí tuyệt đối là 1, 32, 67, 118, 156. Playlist (menu.group.pl):
+       File 31, Playlist 47, Sort 34, Help 37. ML: File, View, Help.
+       Chọn bộ nhóm theo nhóm thật sự có trong khung (vd khung ML chỉ có
+       menugroup.ml_*; khung chính không có menugroup.pe_*). */
     function layoutMenuLabels(fOut) {
       if (!fOut || fOut.menubarY === undefined) return;
-      const order = [];
-      for (const gid of ["menugroup.file", "menugroup.play", "menugroup.options", "menugroup.view", "menugroup.help"]) {
-        for (const el of groupdefs[gid] || []) {
-          if ((el.tagName || "").toLowerCase() === "layer") {
-            const img = attrCI(el, "image", "Image");
-            if (img) order.push(img);
-          }
-        }
+      const sets = [
+        ["menugroup.file", "menugroup.play", "menugroup.options", "menugroup.view", "menugroup.help"],
+        ["menugroup.pe_file", "menugroup.pe_playlist", "menugroup.pe_sort", "menugroup.pe_help"],
+        ["menugroup.ml_file", "menugroup.ml_view", "menugroup.ml_help"],
+      ];
+      const groupImgs = gid => (groupdefs[gid] || [])
+        .filter(el => (el.tagName || "").toLowerCase() === "layer")
+        .map(el => attrCI(el, "image", "Image")).filter(Boolean);
+      const groupPresent = gid => fOut.layers.some(l => l._group === gid)
+        || groupImgs(gid).some(img => fOut.layers.some(l => l.image === img));
+      let best = null, bestScore = -1;
+      for (const gids of sets) {
+        const score = gids.filter(groupPresent).length;
+        if (score === gids.length) { best = gids; bestScore = score; break; }
+        if (score > bestScore) { best = gids; bestScore = score; }
       }
-      if (!order.length) return;
+      if (!best || bestScore <= 0) return;
       let cursor = 1;
-      for (const img of order) {
-        const lay = fOut.layers.find(l => l.image === img);
-        if (!lay) continue;
-        lay.x = cursor; lay.y = fOut.menubarY;
-        cursor += (lay.w || 0) + 8;
+      for (const gid of best) {
+        for (const img of groupImgs(gid)) {
+          const lay = fOut.layers.find(l => l.image === img);
+          if (!lay) continue;
+          lay.x = cursor; lay.y = fOut.menubarY;
+          cursor += (lay.w || 0);
+        }
       }
     }
     function walkLayoutChildren(layEl, layoutW, layoutH, out, opts) {
@@ -773,7 +874,12 @@ const SkinLoader = (() => {
         if (child === frameEl) {
           const content = child.getAttribute("content");
           if (content && groupdefs[content] && groupVisible(content, child)) {
-            const [gw, gh] = groupSize(content, layoutW, layoutH, child);
+            /* Nội dung frame nằm dưới titlebar (frameOffsetY, vd 18): chiều cao vùng
+               nội dung là layoutH - frameOffsetY, để relat (vd player.main y=-263
+               relaty=1) neo theo 262 chứ không phải 280 — không thì cửa sổ chính
+               lệch xuống 18px, cao 161 thay vì 143. */
+            const contentH = layoutH - frameOffsetY;
+            const [gw, gh] = groupSize(content, layoutW, contentH, child);
             walkGroupChildren(resolveGroup(content, gw, gh),
               relPos(child, "x", layoutW), relPos(child, "y", layoutH) + frameOffsetY,
               0, gw, gh, out, sendParams, content);
@@ -864,7 +970,9 @@ const SkinLoader = (() => {
       layout = {
         id: layoutEl.getAttribute("id"), w: lw, h: lh,
         background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
-        backgroundSize: null, note: "Layout lấy từ <layout> trong XML."
+        backgroundGamma: (bg && bitmaps[bg] && bitmaps[bg].gammagroup) || null,
+        backgroundSize: null, snapadjustbottom: intAttr(layoutEl, "snapadjustbottom", 0) || null,
+        note: "Layout lấy từ <layout> trong XML."
       };
       if (bg) {
         const s = await pngSize(zip, pathMap, resolveImageRef(bg));
@@ -1043,11 +1151,33 @@ const SkinLoader = (() => {
           texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
           preamp, bands, native: true, source };
       }
+      /* Màu danh sách playlist từ system-colors.xml (wasabi.list.*):
+         nền 28,61,125; chữ trắng; nền chọn 103,136,201; chữ chọn
+         214,228,255; chữ bài đang phát 187,210,255. Fallback = đúng các
+         giá trị đó nếu skin lạ không có system-colors. */
+      function listColors() {
+        const c = (id, fb) => {
+          const v = colors[id];
+          if (v) {
+            const m = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/.exec(v);
+            if (m) return "rgb(" + (+m[1]) + "," + (+m[2]) + "," + (+m[3]) + ")";
+          }
+          return fb;
+        };
+        return {
+          bg: c("wasabi.list.background", "rgb(28,61,125)"),
+          normal: c("wasabi.list.text", "rgb(255,255,255)"),
+          selectedBg: c("wasabi.list.text.selected.background", "rgb(103,136,201)"),
+          selected: c("wasabi.list.text.selected", "rgb(214,228,255)"),
+          current: c("wasabi.list.text.current", "rgb(187,210,255)")
+        };
+      }
       async function extractPlaylist() {
-        let layEl = null, defaultVisible = true, containerId = null;
+        let layEl = null, defaultVisible = true, containerId = null, containerName = null;
         const found = findContainer(id => id === "pledit" || id === "playlist" || id === "playlisteditor");
         if (found) {
           containerId = found.container.getAttribute("id");
+          containerName = found.container.getAttribute("name") || null;
           defaultVisible = found.container.getAttribute("default_visible") !== "0";
           const lays = layoutsForDoc(found.docPath);
           layEl = lays.find(l => (l.getAttribute("id") || "") === "normal") || lays[0] || null;
@@ -1057,16 +1187,35 @@ const SkinLoader = (() => {
         const out = newOut();
         let bg = layEl.getAttribute("background") || layEl.getAttribute("alphabackground");
         if (bg && !resolveImageRef(bg)) bg = null;
-        walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: false });
+        /* Đi qua frame như extractWindow (trước đây handleFrame:false nên
+           listRect lệch lên 18px: (6,23) thay vì (6,41) — frame titlebar
+           18px không được cộng vào; đồng thời khung (titlebar + menubar
+           menu.group.pl) không được trích xuất, playlist.js phải vẽ tiêu
+           đề "Playlist" hardcode). */
+        walkLayoutChildren(layEl, sz.w, sz.h, out, { handleFrame: true, keepFrameClose: true });
         await fillSizes(out);
+        if (out.frame) {
+          await fillSizes(out.frame);
+          layoutMenuLabels(out.frame);
+          /* Tiêu đề cửa sổ ":componentname" -> tên container ("Playlist
+             Editor"), như Winamp thật (forceuppercase ở titlebar sẽ
+             thành "PLAYLIST EDITOR"). */
+          if (containerName) {
+            for (const t of out.frame.texts) {
+              if (t.default && /:componentname/i.test(t.default))
+                t.default = t.default.replace(/:componentname/gi, containerName);
+            }
+          }
+        }
         const listRect = out.listRects[0] || null;
         report.notes.push("Playlist: container:" + containerId + " " + sz.w + "x" + sz.h +
           (listRect ? (" — list " + listRect.w + "x" + listRect.h + " tại (" + listRect.x + "," + listRect.y + ")")
                     : " — KHÔNG thấy vùng list, dùng fallback"));
         return { w: sz.w, h: sz.h, background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
           defaultVisible, layers: out.layers, buttons: out.buttons, sliders: out.sliders,
-          texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
-          listRect, native: true, source: "container:" + containerId };
+          texts: out.texts, vis: out.vis, backgrounds: out.backgrounds, status: out.status,
+          listRect, frame: out.frame || null, colors: listColors(),
+          native: true, source: "container:" + containerId };
       }
 
       function mergePlayPause(out) {
@@ -1085,6 +1234,7 @@ const SkinLoader = (() => {
         return { w, h, background: bg, backgroundFile: bgFile, defaultVisible,
           layers: out.layers, buttons: out.buttons, sliders: out.sliders,
           texts: out.texts, vis: out.vis, backgrounds: out.backgrounds,
+          status: out.status,
           listRect: out.listRects[0] || null, frame: out.frame || null,
           grid: out.grid || null, unresolved: out.unresolved,
           native: true, source };
@@ -1180,24 +1330,42 @@ const SkinLoader = (() => {
         const gd = groupdefEls["player.normal.drawer"];
         if (!gd) return null;
         const w = layout.w, h = intAttr(gd, "h", 129) || 129;
+        /* Nội dung ngăn kéo (326) hẹp hơn ngăn kéo (354): Winamp thật căn giữa
+           nội dung trong ngăn kéo, nên cộng contentX = (354−326)/2 = 14px vào
+           mọi vị trí x của con của content (nền trong, tab eq/options/
+           colorthemes, tabs). Không áp cho vỏ ngăn kéo (nút đóng/mở...). */
+        const contentW = 326, contentX = Math.round((w - contentW) / 2);
         const shell = newOut();
         const contentPos = {};
+        let tabsPos = null;
         const items = resolveGroup("player.normal.drawer", w, h);
         for (const { el, x, y } of items) {
           const id = el.getAttribute("id") || "";
           if (id === "player.normal.drawer.content") {
             for (const c of resolveGroup("player.normal.drawer.content", 326, 127)) {
               const cid = c.el.getAttribute("id") || "";
-              if (cid === "config.tabs") continue;
-              if (cid === "player.normal.drawer.eq" || cid === "player.normal.drawer.options" || cid === "player.normal.drawer.colorthemes") contentPos[cid.split(".").pop()] = { x: c.x + x, y: c.y + y };
+              if (cid === "config.tabs") { tabsPos = { x: c.x + x + contentX, y: c.y + y }; continue; }
+              if (cid === "player.normal.drawer.eq" || cid === "player.normal.drawer.options" || cid === "player.normal.drawer.colorthemes") contentPos[cid.split(".").pop()] = { x: c.x + x + contentX, y: c.y + y };
               if (/player\.normal\.drawer\.(eq|options|colorthemes)$/.test(cid)) continue;
-              dispatchEl(c.el, c.x + x, c.y + y, 0, 326, 127, shell, {});
+              dispatchEl(c.el, c.x + x + contentX, c.y + y, 0, 326, 127, shell, {});
             }
             continue;
           }
           dispatchEl(el, x, y, 0, w, h, shell, {});
         }
         await fillSizes(shell);
+        /* Bóng ngăn kéo (player.normal.drawer.shadow, cao 15): groupdef anh em
+           của drawer, mặc định visible="0" — chỉ hiện khi ngăn kéo mở, luôn ở
+           mép dưới ngăn kéo (đi theo cùng độ dời với ngăn kéo). */
+        let shadow = null;
+        const shGd = groupdefEls["player.normal.drawer.shadow"];
+        if (shGd) {
+          const shOut = newOut();
+          const shH = intAttr(shGd, "h", 15) || 15;
+          walkGroupChildren(resolveGroup("player.normal.drawer.shadow", w, shH), 0, 0, 0, w, shH, shOut, {});
+          await fillSizes(shOut);
+          shadow = { w, h: shH, layers: shOut.layers, buttons: shOut.buttons };
+        }
         const tabs = [];
         for (const name of ["eq", "options", "colorthemes"]) {
           const tab = { name, label: name === "eq" ? "EQ" : name === "options" ? "Options" : "Color Themes" };
@@ -1232,17 +1400,19 @@ const SkinLoader = (() => {
           contents[key] = { w: cw, h: ch, x: (contentPos[key] || {}).x || 0, y: (contentPos[key] || {}).y || 0,
             layers: cout.layers, buttons: cout.buttons,
             sliders: cout.sliders, texts: cout.texts, vis: cout.vis,
-            backgrounds: cout.backgrounds, listRect: cout.listRects[0] || null };
+            backgrounds: cout.backgrounds, rects: cout.rects, listRect: cout.listRects[0] || null };
         }
         const bg = gd.getAttribute("background");
         const win = { w, h, background: bg, backgroundFile: bg ? resolveImageRef(bg) : null,
+          backgroundGamma: (bg && bitmaps[bg] && bitmaps[bg].gammagroup) || null,
           defaultVisible: false, layers: shell.layers, buttons: shell.buttons,
           sliders: shell.sliders, texts: shell.texts, vis: shell.vis,
           backgrounds: shell.backgrounds, listRect: null, frame: null, grid: null,
-          unresolved: shell.unresolved, tabs, contents, native: true,
+          unresolved: shell.unresolved, tabs, contents, shadow, contentX, tabsPos, native: true,
           source: "groupdef:player.normal.drawer" };
         report.notes.push("Drawer: " + w + "x" + h + " — tabs " + tabs.map(t => t.name).join("/") +
-          " — nội dung: " + Object.keys(contents).join(", "));
+          " — nội dung: " + Object.keys(contents).join(", ") +
+          (shadow ? " — bóng: " + shadow.w + "x" + shadow.h + " (" + shadow.layers.length + " lớp)" : " — không có bóng"));
         return win;
       }
       eq = await extractEQ();
@@ -1275,6 +1445,7 @@ const SkinLoader = (() => {
       if (!bgSize) throw new Error("không đọc được kích thước ảnh nền chính");
       layout = { id: "main", w: bgSize.w, h: bgSize.h, background: bgId || "mainframe",
         backgroundFile: bgFile, backgroundSize: bgSize,
+        backgroundGamma: (bgId && bitmaps[bgId] && bitmaps[bgId].gammagroup) || null,
         note: "ClassicPro: nền lấy từ mainframe.png (không có <layout> trong XML)." };
       const resolveXY = (x, y) => ({
         x: x < 0 ? layout.w + x : x,
@@ -1409,11 +1580,14 @@ const SkinLoader = (() => {
     }
     if ((mainOut.hiddenIds || []).length)
       report.notes.push("hideobject: ẩn lúc mở " + mainOut.hiddenIds.join(", "));
+    const bitmapGamma = {};
+    for (const [id, e] of Object.entries(bitmaps)) if (e.gammagroup) bitmapGamma[id] = e.gammagroup;
     const skin = {
       skin: { ...info, source_files: docs.map(d => d.path), source_zip: file.name || "" },
       layout, buttons, layers, texts, sliders,
-      display, seek, volume, spectrum, fonts, colors,
+      display, seek, volume, spectrum, fonts, colors, colorGamma, bitmapGamma,
       frame: mainOut.frame, vis: mainOut.vis, eq, playlist,
+      status: mainOut.status,
       ml, video, avs, albumart, notifier, about, drawer, remote, stick, colorPresets,
       hiddenIds: mainOut.hiddenIds || [], groupRects,
       unresolved: unresolved.concat(report.missing, report.notes)
@@ -1434,6 +1608,7 @@ const SkinLoader = (() => {
     if (avs && avs.frame) stripOut(avs.frame);
     if (drawer) {
       stripOut(drawer);
+      if (drawer.shadow) stripOut(drawer.shadow);
       for (const c of Object.values(drawer.contents || {})) stripOut(c);
     }
     const files = {};
@@ -1444,5 +1619,5 @@ const SkinLoader = (() => {
     return { skin, resolve, report: { ...report, unresolved: skin.unresolved }, bitmaps, files };
   }
 
-  return { loadSkinFile, loadSkinFromCache, ensureJSZip, VERSION: LOADER_VERSION };
+  return { loadSkinFile, loadSkinFromCache, ensureJSZip, VERSION: LOADER_VERSION, FONT_ROWS, fontCharPos };
 })();

@@ -186,7 +186,9 @@ async function buildEQSlider(s, bandIndex, win, res, eq, isDrawer){
     stripUrl = await resolveImg(res, s.strip.image, s.strip.imageFile);
     if (stripUrl) track.style.backgroundImage = "url(" + JSON.stringify(stripUrl) + ")";
   }
-  if (!stripUrl) {
+  /* Winamp gốc chỉ có track + thumb, không có fill: chỉ vẽ fill khi KHÔNG
+     phải slider trong ngăn kéo (cửa sổ EQ riêng giữ nguyên tới Đợt 8). */
+  if (!stripUrl && !isDrawer) {
     const fillLay = (eq.layers || []).find(l => isEqFillLayer(l) && Math.abs((l.x || 0) - s.x) < 6 && Math.abs((l.y || 0) - s.y) < 6);
     let fillImg = null;
     if (fillLay && fillLay.imageFile) fillImg = await resolveImg(res, fillLay.image, fillLay.imageFile);

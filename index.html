@@ -28,7 +28,7 @@
   #viewport{position:relative;margin:10px auto 0;}
   #viewport.dragover{outline:2px dashed #6a0;outline-offset:4px;}
   #stage{position:relative;margin:0 auto;}
-  #shell{position:relative;width:354px;max-width:96vw;height:161px;margin:0 auto;
+  #shell{position:relative;width:354px;max-width:96vw;height:143px;margin:0 auto;
     background:#0a0a12;border:1px solid #2a2a3a;color:#9fb7d6;text-align:center;
     padding-top:50px;box-sizing:border-box;}
   #shell .shell-t{font-size:20px;color:#dfe8ff;letter-spacing:2px;}
@@ -76,17 +76,22 @@
     text-align:left;scrollbar-width:thin;}
   .eqlist .row{padding:0 6px;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;cursor:pointer;}
-  .eqlist .row.plrow{display:flex;align-items:baseline;}
+  /* Hàng playlist vẽ bằng font bitmap của skin (player.smallfont 6x8):
+     canvas 8px nên hàng cao tối thiểu 13px như Winamp thật, căn giữa. */
+  .eqlist .row.plrow{display:flex;align-items:center;min-height:13px;}
+  .eqlist .row canvas{display:block;flex:none;}
   .eqlist .row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .eqlist .row .dur{flex:none;margin-left:8px;color:#888;}
-  .eqlist .row.cur .dur{color:#cde;}
-  .eqlist .row.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
-  .eqlist .row.sel{background:#2c4a6a;color:#fff;}
+  .eqlist .row.cur .dur{color:#bbd2ff;}
+  /* Màu đúng system-colors (wasabi.list.*): đang phát -> chữ 187,210,255
+     trên nền list; chọn -> nền 103,136,201 + chữ 214,228,255. */
+  .eqlist .row.cur{background:rgb(28,61,125);color:#bbd2ff;font-weight:bold;}
+  .eqlist .row.sel{background:rgb(103,136,201);color:#d6e4ff;}
   .resize-grip{position:absolute;right:0;bottom:0;width:20px;height:20px;
     cursor:nwse-resize;touch-action:none;z-index:5;
     background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.65) 50%,rgba(255,255,255,.65) 60%,transparent 60%,transparent 70%,rgba(255,255,255,.65) 70%,rgba(255,255,255,.65) 80%,transparent 80%);}
   .eqlist .row .num{color:#888;margin-right:6px;}
-  .eqlist .row.cur .num{color:#cde;}
+  .eqlist .row.cur .num{color:#bbd2ff;}
   .plfallback{background:#181818;border:1px solid #333;}
   .plfallback .title{position:absolute;left:0;right:0;top:0;height:20px;
     background:#222;color:#ccc;font-size:12px;line-height:20px;
@@ -117,6 +122,24 @@
     line-height:18px;text-align:left;scrollbar-width:thin;}
   .win .themelist .trow{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
   .win .themelist .trow.cur{background:#3a5a8a;color:#fff;font-weight:bold;}
+  /* Đợt 5 — danh sách trong ngăn kéo vẽ bằng dữ liệu skin thật (không dùng
+     .optrow/.themelist bịa tràn khung nữa): hàng menu Options trong vùng
+     bucket 81x55 (cao 14px như bucket.entry của skin), danh sách theme
+     trong vùng ColorThemes:List (nền tile wasabi.list.background). */
+  .win .bucketlist{position:absolute;overflow:hidden;text-align:left;}
+  .win .bucketlist .brows{position:absolute;left:0;top:0;width:100%;}
+  .win .bucketlist .brow{display:flex;align-items:center;height:14px;line-height:14px;
+    font-size:11px;color:#000;padding:0 3px;cursor:pointer;white-space:nowrap;overflow:hidden;}
+  .win .bucketlist .brow .bl{flex:1;overflow:hidden;text-overflow:ellipsis;}
+  .win .bucketlist .brow .bs{flex:none;margin-left:4px;font-size:10px;color:#222;}
+  .win .bucketlist .brow:hover{background:rgba(255,255,255,.45);}
+  .win .ctlist{position:absolute;overflow-y:auto;overflow-x:hidden;text-align:left;
+    scrollbar-width:none;-ms-overflow-style:none;}
+  .win .ctlist::-webkit-scrollbar{display:none;}
+  .win .ctlist .ctrow{height:13px;line-height:13px;padding:0 4px;font-size:11px;
+    color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  .win .ctlist .ctrow.sel{font-weight:bold;}
+  .win .ctlist .ctrow:hover{background:rgba(255,255,255,.18);}
   #notifier{position:fixed;top:10px;right:10px;z-index:50;display:none;overflow:hidden;
     background:#111 no-repeat 0 0;box-shadow:0 4px 18px rgba(0,0,0,.7);cursor:pointer;}
   #notifier .nt{position:absolute;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#222;}
@@ -302,28 +325,87 @@ function drawTimerBitmap(cv, text){
 }
 const bitmapFontImgs = new Map();
 async function bitmapFontImage(font){
-  if (bitmapFontImgs.has(font.file)) return bitmapFontImgs.get(font.file);
+  const key = font.file + (font.inverse ? "|inv" : "");
+  if (bitmapFontImgs.has(key)) return bitmapFontImgs.get(key);
   const im = await new Promise(resolve => {
     const i = new Image();
     i.onload = () => resolve(i);
     i.onerror = () => resolve(null);
     i.src = font.imageURL;
   });
-  bitmapFontImgs.set(font.file, im);
-  return im;
+  let out = im;
+  if (im && font.inverse) {
+    /* Font "khuôn" (songinfo): nền đục trắng, glyph là lỗ trong suốt -> đảo alpha
+       (255-alpha, RGB trắng) để glyph hiện trắng trên nền tối, vẽ 1 lần rồi cache. */
+    try {
+      const c = document.createElement("canvas");
+      c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const cx = c.getContext("2d");
+      cx.drawImage(im, 0, 0);
+      const d = cx.getImageData(0, 0, c.width, c.height);
+      for (let i = 0; i < d.data.length; i += 4) {
+        d.data[i + 3] = 255 - d.data[i + 3];
+        d.data[i] = d.data[i + 1] = d.data[i + 2] = 255;
+      }
+      cx.putImageData(d, 0, 0);
+      out = c;
+    } catch (e) { out = im; }
+  }
+  bitmapFontImgs.set(key, out);
+  return out;
 }
-function bitmapCharIndex(font, ch){
-  if (!font || !font.charset) return -1;
-  let i = font.charset.indexOf(ch);
-  if (i >= 0) return i;
-  i = font.charset.indexOf(ch.toUpperCase());
-  if (i >= 0) return i;
+/* Bảng ký tự THEO TỪNG FONT (khớp skin-loader.js / skin-sim.html): vị trí 1 ký tự
+   là (hàng, cột) trong bảng của font đó, tọa độ pixel = cột*charwidth, hàng*charheight.
+   Hàng 1 không thừa dấu cách; font số chỉ có hàng 1, ô trống trong chuỗi là ô ma. */
+const FONT_ROWS = {
+  "player.songticker.font": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+  "player.smallfont":       ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+  "shade.songticker.font":  ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
+  "player.BIGNUM":          ["", "0123456789  :  -"],
+  "player.songinfo.font":   ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
+  "player.pe.time.font":    ["", "0123456789._-: ' !+\\/ ^&%,=$#"],
+};
+function fontCharPos(fontId, ch) {
+  const rows = FONT_ROWS[fontId];
+  if (!rows) return null;
+  const up = ch.toUpperCase();
+  for (let r = 0; r < rows.length; r++) {
+    const c = rows[r].indexOf(up);
+    if (c >= 0) return { row: r, col: c };
+    if (rows[r].indexOf(ch) >= 0) return { row: r, col: rows[r].indexOf(ch) };
+  }
+  return null;
+}
+function bitmapCharIndex(font, ch, cols){
+  if (!font) return null;
+  const rows = font.rows || (font.id && FONT_ROWS[font.id]);
+  const tryRows = (rs, c) => {
+    if (!rs) return null;
+    const up = c.toUpperCase();
+    for (let r = 0; r < rs.length; r++) {
+      const i = rs[r].indexOf(up);
+      if (i >= 0) return { row: r, col: i };
+      if (rs[r].indexOf(c) >= 0) return { row: r, col: rs[r].indexOf(c) };
+    }
+    return null;
+  };
+  let pos = tryRows(rows, ch);
+  if (pos) return pos;
   const stripped = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/đ/g, "d");
-  i = font.charset.indexOf(stripped.toUpperCase());
-  if (i >= 0) return i;
+  pos = tryRows(rows, stripped.toUpperCase());
+  if (pos) return pos;
   const punct = { "—": "-", "–": "-", "“": "\"", "”": "\"", "‘": "'", "’": "'", "…": "…" };
-  if (punct[ch]) { i = font.charset.indexOf(punct[ch]); if (i >= 0) return i; }
-  return -1;
+  if (punct[ch]) { pos = tryRows(rows, punct[ch]); if (pos) return pos; }
+  if (!font.charset) return null;
+  /* Fallback bảng phẳng cũ (skin lạ không có trong FONT_ROWS). */
+  let i = font.charset.indexOf(ch);
+  if (i < 0) i = font.charset.indexOf(ch.toUpperCase());
+  if (i < 0) i = font.charset.indexOf(stripped.toUpperCase());
+  if (i < 0 && punct[ch]) i = font.charset.indexOf(punct[ch]);
+  if (i < 0) return null;
+  const ncols = cols || 1;
+  if (font.charset.length > ncols) return { row: Math.floor(i / ncols), col: i % ncols };
+  return { row: font.glyphRow || 0, col: i };
 }
 async function drawBitmapFontText(t, font, skinName){
   const img = await bitmapFontImage(font);
@@ -332,25 +414,42 @@ async function drawBitmapFontText(t, font, skinName){
   const cv = document.createElement("canvas");
   cv.className = "wtext";
   cv.style.left = t.x + "px"; cv.style.top = t.y + "px";
-  paintBitmapText(cv, img, font, text);
+  if (t.gammagroup) cv.dataset.gammagroup = t.gammagroup;
+  paintBitmapText(cv, img, font, text, t.color ? skinColor(t.color) : "");
   return cv;
 }
-function paintBitmapText(cv, img, font, text){
+/* Tra màu system-colors.xml (loader gom vào SKIN.colors dạng id -> "r,g,b"):
+   id màu (vd "font.display") -> rgb(r,g,b); giá trị "r,g,b" trực tiếp ->
+   rgb(...); tên màu/CSS khác giữ nguyên. Chữ bitmap và .wtext đều dùng chung. */
+function skinColor(c){
+  if (c === null || c === undefined || c === "") return "";
+  const v = (typeof SKIN !== "undefined" && SKIN && SKIN.colors) ? SKIN.colors[c] : null;
+  const raw = (v !== null && v !== undefined) ? v : c;
+  const m = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/.exec(String(raw));
+  if (m) return "rgb(" + (+m[1]) + "," + (+m[2]) + "," + (+m[3]) + ")";
+  return String(raw);
+}
+function paintBitmapText(cv, img, font, text, color){
   const cw = font.charwidth, ch = font.charheight;
-  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
-  cv.width = Math.max(1, text.length * cw);
+  const step = cw + (font.hspacing || 0);
+  const iw = img.naturalWidth || img.width || 0;
+  const cols = Math.max(1, Math.floor(iw / cw));
+  cv.width = Math.max(1, text.length * step - (font.hspacing || 0));
   cv.height = ch;
   cv.style.width = cv.width + "px"; cv.style.height = ch + "px";
   const cx = cv.getContext("2d");
   cx.clearRect(0, 0, cv.width, cv.height);
   for (let i = 0; i < text.length; i++) {
-    let idx = bitmapCharIndex(font, text[i]);
-    if (idx < 0) idx = font.charset.indexOf(" ");
-    if (idx < 0) idx = 0;
-    let col, rowPx;
-    if (font.charset.length > cols) { col = idx % cols; rowPx = Math.floor(idx / cols) * ch; }
-    else { col = idx; rowPx = (font.glyphRow || 0) * ch; }
-    cx.drawImage(img, col * cw, rowPx, cw, ch, i * cw, 0, cw, ch);
+    const pos = bitmapCharIndex(font, text[i], cols);
+    if (!pos) continue; /* ký tự lạ / ô ma / dấu cách: để trống */
+    cx.drawImage(img, pos.col * cw, pos.row * ch, cw, ch, i * step, 0, cw, ch);
+  }
+  /* Glyph font bitmap vốn trắng: tô màu chữ (color) bằng source-in như
+     skin-sim (chỉ tô khi màu khác trắng, trắng thì giữ nguyên). */
+  if (color && color !== "#fff" && color !== "rgb(255,255,255)") {
+    cx.globalCompositeOperation = "source-in";
+    cx.fillStyle = color;
+    cx.fillRect(0, 0, cv.width, cv.height);
   }
 }
 const VISCLASSIC = ["rgb(239,49,16)","rgb(206,41,16)","rgb(214,90,0)","rgb(214,102,0)","rgb(214,115,0)","rgb(198,123,8)","rgb(222,165,24)","rgb(214,181,33)","rgb(189,222,41)","rgb(148,222,33)","rgb(41,206,16)","rgb(50,190,16)","rgb(57,181,16)","rgb(49,156,8)","rgb(41,148,0)","rgb(24,132,8)"];
@@ -416,13 +515,22 @@ function drawerStripH(){
 function drawerRestY(){
   return (SKIN && SKIN.layout && typeof SKIN.layout.drawerRestY === "number") ? SKIN.layout.drawerRestY : 17;
 }
+/* Độ dài thò ra dưới cửa sổ chính khi ngăn kéo mở: snapadjustbottom của
+   layout (116 với WinampModern566) — ngăn kéo cao 129 nên 13px đầu chìm
+   dưới cửa sổ chính; skin không có snap thì rơi về chiều cao đầy đủ. */
+function drawerSnap(skinObj){
+  const sk = skinObj || SKIN;
+  const v = sk && sk.layout && sk.layout.snapadjustbottom;
+  if (typeof v === "number" && v > 0) return v;
+  return drawerWin ? (+drawerWin.dataset.h || 129) : 129;
+}
 function drawerInnerY(open, skinObj, fullH){
   const sk = skinObj || SKIN;
   const lay = sk && sk.layout;
   const full = fullH || (drawerWin ? (+drawerWin.dataset.h || 129) : 129);
   const restY = (lay && typeof lay.drawerRestY === "number") ? lay.drawerRestY : 17;
-  const mainH = lay ? lay.h : 161;
-  const slot = open ? full : Math.max(8, Math.round(full * 0.1));
+  const mainH = lay ? lay.h : 143;
+  const slot = open ? drawerSnap(sk) : Math.max(8, Math.round(full * 0.1));
   return mainH + slot - full - restY;
 }
 function drawerWrapH(open, skinObj, fullH){
@@ -432,7 +540,7 @@ function drawerWrapH(open, skinObj, fullH){
 function applyScale(){
   if (!SKIN || !mainWin) return;
   const wins = [{ el: mainWin, w: SKIN.layout.w, h: SKIN.layout.h }];
-  if (drawerWin) wins.push({ el: drawerWin, w: +drawerWin.dataset.w, h: drawerOpen ? +drawerWin.dataset.h : drawerStripH(), drawer: true });
+  if (drawerWin) wins.push({ el: drawerWin, w: +drawerWin.dataset.w, h: drawerOpen ? drawerSnap() : drawerStripH(), drawer: true });
   const stackKinds = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
     ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
   for (const [kind, wEl] of stackKinds) {
@@ -604,6 +712,7 @@ async function ensurePlWindow(){
   await ensurePlJs();
   plWin = await buildPlaylistWindow(SKIN, curRes);
   stage.appendChild(plWin);
+  await ensurePlRowFont();
   renderPlaylist(true);
   applyScale();
   return plWin;
@@ -860,7 +969,7 @@ async function renderFrameInto(win, frame, res){
   for (const lay of frame.layers) {
     if (!lay.imageFile) continue;
     const src = await resolveImg(res, lay.image, lay.imageFile);
-    if (src) win.appendChild(imgElSrc(src, lay.x, lay.y, lay.w, lay.h));
+    if (src) win.appendChild(layerEl(src, lay));
   }
   for (const t of frame.texts) {
     if (!t.default) continue;
@@ -872,9 +981,25 @@ async function renderFrameInto(win, frame, res){
     el.style.lineHeight = (t.h || 14) + "px";
     el.style.overflow = "visible";
     el.textContent = compName(t.default, (SKIN && SKIN.skin && SKIN.skin.name) || "WINAMP");
+    if (t.color) el.style.color = skinColor(t.color);
+    if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
+    if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
     win.appendChild(el);
   }
   for (const b of frame.buttons) await buildButton(b, win, res, onFrameButton);
+}
+/* Chữ tiêu đề cửa sổ theo Winamp gốc (như skin-sim): Arial bold 11px, màu
+   titlebar.text.color trong system-colors.xml (trắng 255,255,255), bóng
+   1px 1px đen, chữ hoa (forceuppercase="1" trong titlebar.xml). Chỉ áp cho
+   đúng chữ titlebar, không đổi style các chữ khác. */
+function styleTitlebarText(el, t){
+  el.style.fontFamily = "Arial, sans-serif";
+  el.style.fontWeight = "bold";
+  el.style.fontSize = "11px";
+  el.style.lineHeight = (t.h || 15) + "px";
+  el.style.color = skinColor(t.color || "titlebar.text.color");
+  el.style.textShadow = "1px 1px #000";
+  el.style.textTransform = "uppercase";
 }
 async function onFrameButton(b){
   if (b.action === "CLOSE") {
@@ -885,12 +1010,41 @@ async function onFrameButton(b){
   }
   onMainButton(b);
 }
-function imgElSrc(src, x, y, w, h){
+function gammaOfImage(id){
+  if (!id || typeof SKIN === "undefined" || !SKIN || !SKIN.bitmapGamma) return "";
+  return SKIN.bitmapGamma[id] || "";
+}
+function imgElSrc(src, x, y, w, h, gamma){
   const im = document.createElement("img");
   im.src = src; im.draggable = false; im.alt = "";
   im.onerror = () => { im.style.display = "none"; };
   im.style.left = x + "px"; im.style.top = y + "px";
   if (w) im.style.width = w + "px"; if (h) im.style.height = h + "px";
+  if (gamma) im.dataset.gammagroup = gamma;
+  return im;
+}
+/* Vẽ 1 lớp (layer) đúng như skin: alpha -> opacity = alpha/255 (vd 3 lớp phủ
+   display alpha="13" chỉ ~5%, không vẽ đậm 100%); tile="1" -> lặp ảnh nền
+   thay vì kéo giãn (vd display.center, wasabi.list.background). */
+function layerEl(src, lay){
+  const a = lay.alpha !== undefined && lay.alpha !== null && lay.alpha !== "" ? parseInt(lay.alpha, 10) : 255;
+  const opacity = (isFinite(a) ? a : 255) / 255;
+  if (lay.tile === "1") {
+    const d = document.createElement("div");
+    d.style.position = "absolute";
+    d.style.left = lay.x + "px"; d.style.top = lay.y + "px";
+    d.style.width = (lay.w || 10) + "px"; d.style.height = (lay.h || 10) + "px";
+    d.style.backgroundImage = "url(" + JSON.stringify(src) + ")";
+    d.style.backgroundRepeat = "repeat";
+    d.style.backgroundSize = "auto";
+    d.style.backgroundPosition = "0 0";
+    if (opacity < 1) d.style.opacity = String(opacity);
+    if (lay.gammagroup) d.dataset.gammagroup = lay.gammagroup;
+    return d;
+  }
+  const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
+  if (opacity < 1) im.style.opacity = String(opacity);
+  if (lay.gammagroup) im.dataset.gammagroup = lay.gammagroup;
   return im;
 }
 
@@ -914,6 +1068,9 @@ async function buildButton(b, container, res, onClick){
   d.className = "btn"; d.title = b.tooltip || b.id || b.action || "";
   d.style.left = b.x + "px"; d.style.top = b.y + "px";
   d.style.width = (b.w || 10) + "px"; d.style.height = (b.h || 10) + "px";
+  /* Bộ lọc màu theo gammagroup đặt trên vỏ nút (ảnh trong đổi theo trạng
+     thái hover/pressed nhưng vẫn là cùng 1 nút) — xem applyColorTheme. */
+  if (b.gammagroup) d.dataset.gammagroup = b.gammagroup;
   b._src = await resolveImg(res, b.image, b.imageFile);
   b._hoverSrc = b.hoverImage ? await resolveImg(res, b.hoverImage, b.hoverFile) : null;
   b._downSrc = b.downImage ? await resolveImg(res, b.downImage, b.downFile) : null;
@@ -946,6 +1103,15 @@ function updatePlayState(){
       resolver.bitmapURL(id).then(u => { if (u && ind._indId === id) ind._img.src = u; });
     }
   }
+  /* <status>: đang phát -> playBitmap, tạm dừng -> pauseBitmap, dừng -> stopBitmap. */
+  const st = playing ? "play" : ((mode === "file" && au && au.currentTime > 0) ? "pause" : "stop");
+  for (const s of (SKIN.status || [])) {
+    if (!s._els) continue;
+    for (const k of ["stop", "play", "pause"]) {
+      const im = s._els[k];
+      if (im) im.style.display = (k === st) ? "" : "none";
+    }
+  }
 }
 
 async function buildMainWindow(skin, res, win){
@@ -968,7 +1134,7 @@ async function buildMainWindow(skin, res, win){
       if (!lay.imageFile) continue;
       const src = await resolveImg(res, lay.image, lay.imageFile);
       if (src) {
-        const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h);
+        const im = layerEl(src, lay);
         win.appendChild(im);
         const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
       }
@@ -983,6 +1149,9 @@ async function buildMainWindow(skin, res, win){
       el.style.lineHeight = (t.h || 14) + "px";
       el.style.overflow = "visible";
       el.textContent = compName(t.default, (skin.name || "WINAMP"));
+      if (t.color) el.style.color = skinColor(t.color);
+      if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
+      if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
       win.appendChild(el);
       const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
     }
@@ -1000,9 +1169,42 @@ async function buildMainWindow(skin, res, win){
     if (!lay.imageFile) continue;
     const src = await resolveImg(res, lay.image, lay.imageFile);
     if (src) {
-      const im = imgElSrc(src, lay.x, lay.y, lay.w, lay.h); lay._img = im; win.appendChild(im);
+      const im = layerEl(src, lay); lay._img = im; win.appendChild(im);
       const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
     }
+  }
+  /* Chỉ báo trạng thái phát (<status> trong XML): 3 bitmap stop/play/pause,
+     chỉ hiện đúng 1 theo trạng thái phát — updatePlayState() đổi khi phát/
+     dừng/tạm dừng. Vị trí/kích thước lấy từ model (vd 24,35 10x23 và
+     34,110 90x29); bitmap có crop sẵn theo từng trạng thái nên vẽ qua
+     resolveImg như layer/button thường. */
+  for (const s of (skin.status || [])) {
+    const wrap = document.createElement("div");
+    wrap.style.position = "absolute";
+    wrap.style.left = (s.x || 0) + "px"; wrap.style.top = (s.y || 0) + "px";
+    if (s.w) wrap.style.width = s.w + "px";
+    if (s.h) wrap.style.height = s.h + "px";
+    wrap.style.pointerEvents = "none";
+    s._els = {};
+    for (const k of ["stop", "play", "pause"]) {
+      const bmp = s[k + "Bitmap"], file = s[k + "File"];
+      if (!bmp && !file) continue;
+      const src = await resolveImg(res, bmp, file);
+      if (!src) continue;
+      const im = document.createElement("img");
+      im.src = src; im.draggable = false; im.alt = "";
+      im.style.position = "absolute"; im.style.left = "0px"; im.style.top = "0px";
+      if (s.w) im.style.width = s.w + "px";
+      if (s.h) im.style.height = s.h + "px";
+      im.style.display = "none";
+      const gg = gammaOfImage(bmp);
+      if (gg) im.dataset.gammagroup = gg;
+      wrap.appendChild(im);
+      s._els[k] = im;
+    }
+    win.appendChild(wrap);
+    s._wrap = wrap;
+    const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, wrap);
   }
   const tick = skin.texts.find(t => t.id && t.id.toLowerCase() === "songticker")
     || skin.texts.find(t => t.display === "songname")
@@ -1015,6 +1217,7 @@ async function buildMainWindow(skin, res, win){
     tickEl.style.left = tick.x + "px"; tickEl.style.top = tick.y + "px";
     tickEl.style.width = tick.w + "px"; tickEl.style.height = (tick.h || 14) + "px";
     tickEl.innerHTML = "<span id='tickerspan'></span>";
+    if (tick.gammagroup) tickEl.dataset.gammagroup = tick.gammagroup;
     win.appendChild(tickEl);
     tickerEl = tick; tickerFont = null; tickerFontFamily = null;
     const tfont = tick.font && skin.fonts ? skin.fonts[tick.font] : null;
@@ -1040,6 +1243,7 @@ async function buildMainWindow(skin, res, win){
     timEl.style.width = tim.w + "px"; timEl.style.height = (tim.h || 14) + "px";
     timEl.style.cursor = "pointer";
     timEl.title = "Bấm để đổi đã phát / còn lại";
+    if (tim.gammagroup) timEl.dataset.gammagroup = tim.gammagroup;
     timEl.addEventListener("click", toggleTimeMode);
     const font = tim.font && skin.fonts ? skin.fonts[tim.font] : null;
     if (font && font.tag === "bitmapfont" && font.imageURL) {
@@ -1048,12 +1252,7 @@ async function buildMainWindow(skin, res, win){
       cv.dataset.align = tim.align || "left";
       timEl.appendChild(cv);
       timerFont = font;
-      timerFontImg = await new Promise(resolve => {
-        const im = new Image();
-        im.onload = () => resolve(im);
-        im.onerror = () => resolve(null);
-        im.src = font.imageURL;
-      });
+      timerFontImg = await bitmapFontImage(font);
       if (!timerFontImg) timerFont = null;
       else timerInkColor = sampleInkColor(timerFontImg);
     }
@@ -1082,6 +1281,9 @@ async function buildMainWindow(skin, res, win){
     el.style.fontSize = "8px"; el.style.lineHeight = (t.h || 8) + "px";
     el.textContent = compName(t.default || "", (skin.name || "WINAMP"));
     el.dataset.display = t.display || "";
+    if (t.color) el.style.color = skinColor(t.color);
+    if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
+    if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
     win.appendChild(el);
     const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
   }
@@ -1100,7 +1302,7 @@ async function buildMainWindow(skin, res, win){
   const cover = skin.layers.find(l => l.image === "player.bb-songticker-endcover");
   if (cover) {
     const src = await resolveImg(res, cover.image, cover.imageFile);
-    if (src) win.appendChild(imgElSrc(src, cover.x, cover.y, cover.w, cover.h));
+    if (src) win.appendChild(layerEl(src, cover));
   }
   await buildStrip(skin, res, win);
   for (const s of skin.sliders) {
@@ -1124,19 +1326,19 @@ async function buildStrip(skin, res, win){
   d.style.left = s.x + "px"; d.style.top = s.y + "px";
   d.style.width = s.w + "px"; d.style.height = s.h + "px";
   const sEmpty = await resolveImg(res, s.emptyImage, s.emptyFile);
-  if (sEmpty) d.appendChild(imgElSrc(sEmpty, 0, 0, s.w, s.h));
+  if (sEmpty) d.appendChild(imgElSrc(sEmpty, 0, 0, s.w, s.h, gammaOfImage(s.emptyImage)));
   const fs = document.createElement("div");
   fs.className = "fill"; fs.id = "fill-seek"; fs.style.width = "0px";
   const sFull = await resolveImg(res, s.fullImage, s.fullFile);
-  if (sFull) fs.appendChild(imgElSrc(sFull, 0, 0, s.w, s.h));
+  if (sFull) fs.appendChild(imgElSrc(sFull, 0, 0, s.w, s.h, gammaOfImage(s.fullImage)));
   d.appendChild(fs);
   const vEmpty = await resolveImg(res, v.emptyImage, v.emptyFile);
-  if (vEmpty) d.appendChild(imgElSrc(vEmpty, v.x - s.x, v.y - s.y, v.w, v.h));
+  if (vEmpty) d.appendChild(imgElSrc(vEmpty, v.x - s.x, v.y - s.y, v.w, v.h, gammaOfImage(v.emptyImage)));
   const fv = document.createElement("div");
   fv.className = "fill"; fv.id = "fill-vol"; fv.style.width = "0px";
   fv.style.left = (v.x - s.x) + "px"; fv.style.top = (v.y - s.y) + "px";
   const vFull = await resolveImg(res, v.fullImage, v.fullFile);
-  if (vFull) fv.appendChild(imgElSrc(vFull, 0, 0, v.w, v.h));
+  if (vFull) fv.appendChild(imgElSrc(vFull, 0, 0, v.w, v.h, gammaOfImage(v.fullImage)));
   d.appendChild(fv);
   d.addEventListener("pointerdown", e => {
     stripSet(e);
@@ -1178,6 +1380,8 @@ async function buildMainSlider(s, win, res){
     thumb.style.width = tw + "px"; thumb.style.height = th + "px";
     const im = document.createElement("img");
     im.src = thumbSrc; im.draggable = false; im.alt = "";
+    const tgg = s.gammagroup || gammaOfImage(s.thumb);
+    if (tgg) im.dataset.gammagroup = tgg;
     im.onerror = () => { thumb.style.display = "none"; };
     thumb.appendChild(im);
     track.appendChild(thumb);
@@ -1285,6 +1489,18 @@ function probeFileDuration(entry){
   a.addEventListener("loadedmetadata", () => { if (isFinite(a.duration) && a.duration > 0) { entry.duration = a.duration; renderPlaylist(false); } a.src = ""; }, { once: true });
   a.addEventListener("error", () => { a.src = ""; }, { once: true });
 }
+/* Font bitmap cho hàng playlist: player.smallfont của skin (6x8), như chữ
+   nhỏ trong Winamp thật. Nạp 1 lần khi mở cửa sổ playlist (ensurePlWindow);
+   nếu skin không có font thì renderPlaylist rơi về chữ HTML thường. */
+let plRowFont = null, plRowFontImg = null;
+async function ensurePlRowFont(){
+  if (plRowFontImg) return plRowFontImg;
+  const f = SKIN && SKIN.fonts && SKIN.fonts["player.smallfont"];
+  if (!f || !f.file || !f.imageURL) return null;
+  plRowFont = f;
+  plRowFontImg = await bitmapFontImage(f);
+  return plRowFontImg;
+}
 function renderPlaylist(scrollToCur){
   if (window.refreshML) { try { window.refreshML(); } catch (e) {} }
   const list = plListEl; if (!list) return;
@@ -1293,17 +1509,41 @@ function renderPlaylist(scrollToCur){
   plItems.forEach((it, i) => {
     const row = document.createElement("div");
     const cur = isCurrentPlItem(it);
-    row.className = "row plrow" + (cur ? " cur" : "") + (selectedPl === it ? " sel" : "");
+    const sel = selectedPl === it;
+    row.className = "row plrow" + (cur ? " cur" : "") + (sel ? " sel" : "");
+    /* Màu đúng system-colors: chọn -> nền chọn + chữ chọn; đang phát
+       (không chọn) -> chữ bài đang phát trên nền thường; thường -> chữ
+       trắng trên nền list. */
+    const rowColor = pc ? (sel ? pc.selected : (cur ? pc.current : pc.normal)) : "";
     if (pc) {
-      row.style.color = cur ? pc.current : pc.normal;
-      row.style.background = (cur || selectedPl === it) ? pc.selectedBg : pc.bg;
+      row.style.color = rowColor;
+      row.style.background = sel ? pc.selectedBg : pc.bg;
     }
-    let durHtml = "";
+    let durText = "";
     if (it.kind === "file") {
       const lf = localFiles.find(l => l.blobURL === it.blobURL);
-      if (lf && lf.duration > 0) durHtml = "<span class='dur'>" + fmtDur(lf.duration) + "</span>";
+      if (lf && lf.duration > 0) durText = fmtDur(lf.duration);
     }
-    row.innerHTML = "<span class='num'>" + (i + 1) + ".</span><span class='nm'>" + escapeHtml(it.name) + "</span>" + durHtml;
+    if (plRowFontImg && plRowFont) {
+      /* Hàng vẽ bằng font bitmap của skin: tên (kèm số thứ tự) + thời
+         lượng, tô màu theo trạng thái hàng (paintBitmapText tô source-in;
+         chữ trắng giữ nguyên không tô). */
+      const nm = document.createElement("div");
+      nm.className = "nm";
+      const cv = document.createElement("canvas");
+      paintBitmapText(cv, plRowFontImg, plRowFont, (i + 1) + ". " + it.name, rowColor || "rgb(255,255,255)");
+      nm.appendChild(cv);
+      row.appendChild(nm);
+      if (durText) {
+        const dc = document.createElement("canvas");
+        dc.className = "dur";
+        paintBitmapText(dc, plRowFontImg, plRowFont, durText, rowColor || "rgb(255,255,255)");
+        row.appendChild(dc);
+      }
+    } else {
+      const durHtml = durText ? "<span class='dur'>" + durText + "</span>" : "";
+      row.innerHTML = "<span class='num'>" + (i + 1) + ".</span><span class='nm'>" + escapeHtml(it.name) + "</span>" + durHtml;
+    }
     row.addEventListener("click", () => selectPlItem(it));
     list.appendChild(row);
   });
@@ -1436,6 +1676,7 @@ async function applySkinFile(file){
     await new Promise(r => setTimeout(r, 0));
     stage.replaceChildren(built.main);
     SKIN = res.skin; resolver = res.resolve; curRes = res.resolve;
+    plRowFont = null; plRowFontImg = null; /* font hàng playlist theo skin mới */
     mainWin = built.main; eqWin = null; plWin = null;
     mlWin = null; vidWin = null; avsWin = null; aaWin = null; aboutWin = null;
     remoteWin = null; stickWin = null; drawerWin = null; drawerOpen = false;
@@ -1519,7 +1760,7 @@ function flashTicker(msg, ms){
 function sampleInkColor(img){
   try {
     const c = document.createElement("canvas");
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
     const cx = c.getContext("2d");
     cx.drawImage(img, 0, 0);
     const d = cx.getImageData(0, 0, c.width, c.height).data;
@@ -1532,14 +1773,15 @@ function sampleInkColor(img){
   return "#fff";
 }
 let tickerFont = null, tickerFontFamily = null, tickerEl = null, tickerDrawSeq = 0;
-function tickerCharIndex(font, ch){ return bitmapCharIndex(font, ch); }
+function tickerCharIndex(font, ch, cols){ return bitmapCharIndex(font, ch, cols); }
 async function drawTickerCanvas(box){
   const seq = ++tickerDrawSeq;
   const img = await bitmapFontImage(tickerFont);
   if (seq !== tickerDrawSeq || !img || !box.isConnected) return;
   const f = tickerFont;
   const cw = f.charwidth, ch = f.charheight, step = cw + (f.hspacing || 0);
-  const cols = Math.max(1, Math.floor(img.naturalWidth / cw));
+  const iw = img.naturalWidth || img.width || 0;
+  const cols = Math.max(1, Math.floor(iw / cw));
   const text = tickerText;
   const cv = document.createElement("canvas");
   cv.className = "ticker-cv";
@@ -1550,8 +1792,9 @@ async function drawTickerCanvas(box){
   let w = 0;
   const runs = [];
   for (const chr of text) {
-    const idx = tickerCharIndex(f, chr);
-    if (idx >= 0) { runs.push({ idx, w: step }); w += step; }
+    if (chr === " ") { runs.push({ blank: true, w: step }); w += step; continue; }
+    const pos = tickerCharIndex(f, chr, cols);
+    if (pos) { runs.push({ pos, w: step }); w += step; }
     else {
       const aw = Math.max(2, Math.ceil(meas.measureText(chr).width));
       runs.push({ chr, w: aw + (f.hspacing || 0) }); w += aw + (f.hspacing || 0);
@@ -1562,16 +1805,23 @@ async function drawTickerCanvas(box){
   const ctx = cv.getContext("2d");
   let x = 0;
   for (const r of runs) {
-    if (r.idx !== undefined) {
-      const col = r.idx % cols, row = Math.floor(r.idx / cols);
-      ctx.drawImage(img, col * cw, row * ch, cw, ch, x, 0, cw, ch);
-    } else {
+    if (r.pos !== undefined) {
+      ctx.drawImage(img, r.pos.col * cw, r.pos.row * ch, cw, ch, x, 0, cw, ch);
+    } else if (!r.blank) {
       ctx.fillStyle = ink;
       ctx.font = ch + "px " + altfam;
       ctx.textBaseline = "top";
       ctx.fillText(r.chr, x, 0);
     }
     x += r.w;
+  }
+  /* Màu chữ chạy (color="font.display.songticker" -> trắng): tô như
+     paintBitmapText, chỉ tô khi khác trắng. */
+  const tickCol = tickerEl && tickerEl.color ? skinColor(tickerEl.color) : "";
+  if (tickCol && tickCol !== "#fff" && tickCol !== "rgb(255,255,255)") {
+    ctx.globalCompositeOperation = "source-in";
+    ctx.fillStyle = tickCol;
+    ctx.fillRect(0, 0, cv.width, cv.height);
   }
   if (seq !== tickerDrawSeq || !box.isConnected) return;
   const elH = (tickerEl && tickerEl.h) || 14;
@@ -1582,7 +1832,7 @@ async function drawTickerCanvas(box){
   cv.dataset.x = "0";
   cv.style.transform = "translateX(0px)";
   box.replaceChildren(cv);
-  window.__ticker = { font: f ? "bitmapfont" : null, glyphs: runs.filter(r => r.idx !== undefined).length, altchars: runs.filter(r => r.idx === undefined).length, text };
+  window.__ticker = { font: f ? "bitmapfont" : null, glyphs: runs.filter(r => r.pos !== undefined).length, altchars: runs.filter(r => r.chr !== undefined).length, text };
 }
 function renderTicker(){
   for (const el of extraTickers) {
@@ -1598,7 +1848,7 @@ function renderTicker(){
   span.textContent = tickerText;
   if (tickerFontFamily) span.style.fontFamily = tickerFontFamily;
   if (tickerEl && tickerEl.fontsize) span.style.fontSize = Math.min(18, +tickerEl.fontsize) + "px";
-  if (tickerEl && tickerEl.color && /^\d+,\d+,\d+$/.test(tickerEl.color)) span.style.color = "rgb(" + tickerEl.color + ")";
+  if (tickerEl && tickerEl.color) span.style.color = skinColor(tickerEl.color);
   span.dataset.x = "0"; span.style.transform = "translateX(0px)";
 }
 function tickTicker(){
@@ -1687,8 +1937,18 @@ let hiddenGroups = {};
 function isHiddenEl(skin, el){
   const ids = (skin && skin.hiddenIds) || [];
   if (!ids.length) return null;
-  if (el.id && ids.indexOf(el.id) >= 0) return el.id;
-  if (el._group && ids.indexOf(el._group) >= 0) return el._group;
+  /* So khớp không phân biệt hoa/thường: XML ghi target="close" nhưng nút
+     trong khung là id="Close". Trả về đúng mục trong hiddenIds để khóa
+     hiddenGroups khớp với toggleHiddenGroup (nó tra theo mục đó). */
+  const low = s => (s || "").toLowerCase();
+  if (el.id) {
+    const hit = ids.find(id => low(id) === low(el.id));
+    if (hit) return hit;
+  }
+  if (el._group) {
+    const hit = ids.find(id => low(id) === low(el._group));
+    if (hit) return hit;
+  }
   return null;
 }
 function registerHidden(gid, node){

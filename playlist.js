@@ -60,15 +60,13 @@ async function buildPlaylistWindow(skin, res){
       const src = await resolveImg(res, bg.image, bg.imageFile);
       if (src) win.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h));
     }
-    if (pl.frame !== "classic") {
-      const ptitle = document.createElement("div");
-      ptitle.className = "wtext";
-      ptitle.style.left = "8px"; ptitle.style.top = "3px";
-      ptitle.style.width = "120px"; ptitle.style.height = "14px";
-      ptitle.style.color = "#fff"; ptitle.style.textShadow = "0 1px 2px rgba(0,0,0,.8)";
-      ptitle.style.fontSize = "12px"; ptitle.style.lineHeight = "14px";
-      ptitle.textContent = "Playlist";
-      win.appendChild(ptitle);
+    if (pl.frame && pl.frame !== "classic") {
+      /* Khung thật từ skin (loader trích qua frame): titlebar "PLAYLIST
+         EDITOR" + menubar menu.group.pl (File/Playlist/Sort/Help) thay cho
+         tiêu đề "Playlist" hardcode trước đây. Nút Close của khung đóng
+         cửa sổ playlist (đánh dấu _winKind để onFrameButton nhận ra). */
+      await renderFrameInto(win, pl.frame, res);
+      for (const b of (pl.frame.buttons || [])) b._winKind = "pl";
     }
     for (const lay of pl.layers) {
       if (!lay.imageFile) continue;
