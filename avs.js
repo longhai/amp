@@ -27,20 +27,35 @@ function drawAVS(){
   else { const c = AVS_COLORS[avsMode]; ramp = [[0, c[2]], [0.5, c[1]], [1, c[0]]]; peakColor = "#ffffff"; }
   paintVisBars(avsCtx, data, w, h, avsState, bars, ramp, peakColor);
 }
-async function openAVSMonitor(){
+async function openAVSMonitor(quiet){
   visMonitor = true;
   try { await ensureEqJs(); } catch (e) {}
   if (typeof refreshMonitor === "function") await refreshMonitor();
-  if (!eqState.on) setStatus("Hiệu ứng đang mở: tiếng đi qua bộ phân tích (nhẹ như khi EQ bật) — đóng cửa sổ này để về bypass thẳng ra loa");
+  if (!quiet && !eqState.on) setStatus("Hiệu ứng đang mở: tiếng đi qua bộ phân tích (nhẹ như khi EQ bật) — đóng hiệu ứng để về bypass thẳng ra loa");
   if (!avsRaf) drawAVS();
 }
 window.__avsOpened = openAVSMonitor;
-window.__avsClosed = async () => {
+window.__avsClosed = async (quiet) => {
   visMonitor = false;
   if (avsRaf) { cancelAnimationFrame(avsRaf); avsRaf = null; }
   if (typeof refreshMonitor === "function") { try { await refreshMonitor(); } catch (e) {} }
-  setStatus("Đã đóng Hiệu ứng — tiếng về bypass thẳng ra loa");
+  if (!quiet) setStatus("Đã đóng Hiệu ứng — tiếng về bypass thẳng ra loa");
 };
+/* Gắn canvas hiệu ứng vào một container cho trước (vùng AVS nhúng trong
+   cửa sổ chính). Dùng chung vòng vẽ drawAVS với cửa sổ Hiệu ứng rời. */
+function attachAvsCanvas(parent, rect){
+  const cv = document.createElement("canvas");
+  cv.className = "avscv";
+  cv.style.position = "absolute";
+  cv.style.left = rect.x + "px"; cv.style.top = rect.y + "px";
+  cv.style.width = rect.w + "px"; cv.style.height = rect.h + "px";
+  cv.width = Math.max(40, rect.w); cv.height = Math.max(20, rect.h);
+  parent.appendChild(cv);
+  avsCanvas = cv; avsCtx = cv.getContext("2d");
+  return cv;
+}
+window.__attachAvsCanvas = attachAvsCanvas;
+window.__getAvsCanvas = () => avsCanvas;
 async function buildAVSWindow(skin, res){
   const win = document.createElement("div");
   win.className = "win"; win.id = "avswin";

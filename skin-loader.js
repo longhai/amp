@@ -2,7 +2,7 @@
 
 const SkinLoader = (() => {
 
-  const LOADER_VERSION = "7.4";
+  const LOADER_VERSION = "8";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -959,7 +959,7 @@ const SkinLoader = (() => {
 
     let eq = null, playlist = null;
     let ml = null, video = null, avs = null, albumart = null, notifier = null;
-    let about = null, drawer = null, remote = null, stick = null, colorPresets = [];
+    let about = null, drawer = null, embeddedAvs = null, remote = null, stick = null, colorPresets = [];
     if (layoutEl) {
       let bg = layoutEl.getAttribute("background");
       if (bg && !resolveImageRef(bg)) {
@@ -1415,6 +1415,65 @@ const SkinLoader = (() => {
           (shadow ? " — bóng: " + shadow.w + "x" + shadow.h + " (" + shadow.layers.length + " lớp)" : " — không có bóng"));
         return win;
       }
+      /* Vùng AVS/Video NHÚNG trong cửa sổ chính (AVSGroup, groupdef có
+         visible="0" nên bước đi chính bỏ qua — đi thẳng groupdef như
+         extractDrawer). Winamp thật: vùng này nằm dưới menubar, player.main
+         lùi xuống snapadjustbottom (116) khi mở, tổng cao cửa sổ 259.
+         - Khung: 9 lớp viền videoavs.* + up.bg2, nền wasabi.frame.basetexture.
+         - video.group (4,21,346x69): vùng vẽ video/vis thật.
+         - Nhóm con đi thẳng groupdef để lấy cả nhóm mặc định ẩn
+           (visible="0", vd buttons.video.switchto) — chế độ vis/video do
+           Amp chọn lúc chạy, không do visible của XML. Con của nhóm giữ
+           tọa độ tương đối trong nhóm (mẫu drawer: panel đặt ở (x,y)). */
+      async function extractEmbeddedAvs() {
+        const gd = groupdefEls["AVSGroup"];
+        if (!gd) return null;
+        const w = layout.w;
+        const h = (layout.snapadjustbottom && layout.snapadjustbottom > 0) ? layout.snapadjustbottom : 116;
+        const frameOff = (mainOut.frame && mainOut.frame.menubarY) || 18;
+        let avsX = 0, avsY = 17;
+        outer: for (const gid of Object.keys(groupdefs)) {
+          for (const el of groupdefs[gid]) {
+            if ((el.tagName || "").toLowerCase() === "group" && (el.getAttribute("id") || "") === "AVSGroup") {
+              avsX = relPos(el, "x", w);
+              avsY = relPos(el, "y", layout.h - frameOff);
+              break outer;
+            }
+          }
+        }
+        const out = newOut();
+        const groups = {};
+        let videoRect = null;
+        const bg = gd.getAttribute("background");
+        if (bg) out.backgrounds.push({ image: bg, imageFile: resolveImageRef(bg),
+          gammagroup: (bitmaps[bg] && bitmaps[bg].gammagroup) || null, x: 0, y: 0, w, h });
+        for (const { el, x, y } of resolveGroup("AVSGroup", w, h)) {
+          const tag = (el.tagName || "").toLowerCase();
+          const id = el.getAttribute("id") || "";
+          if (tag !== "group") { dispatchEl(el, x, y, 0, w, h, out, {}); continue; }
+          if (id === "video.group") {
+            const [gw, gh] = groupSize(id, w, h, el);
+            videoRect = { x, y, w: gw, h: gh };
+            continue;
+          }
+          if (!groupdefEls[id]) { out.unresolved.push("nhóm AVS không có groupdef: " + id); continue; }
+          const sub = newOut();
+          walkGroupChildren(resolveGroup(id, w, h), 0, 0, 0, w, h, sub, {});
+          await fillSizes(sub);
+          groups[id] = { x, y, layers: sub.layers, buttons: sub.buttons,
+            texts: sub.texts, sliders: sub.sliders, vis: sub.vis,
+            backgrounds: sub.backgrounds, rects: sub.rects, listRect: sub.listRects[0] || null };
+        }
+        await fillSizes(out);
+        const win = { w, h, x: avsX, y: avsY + frameOff, videoRect,
+          layers: out.layers, buttons: out.buttons, texts: out.texts,
+          sliders: out.sliders, vis: out.vis, backgrounds: out.backgrounds,
+          rects: out.rects, groups, native: true, source: "groupdef:AVSGroup" };
+        report.notes.push("AVS nhúng: " + w + "x" + h + " tại (" + avsX + "," + (avsY + frameOff) + ")" +
+          " — video.group " + (videoRect ? videoRect.x + "," + videoRect.y + " " + videoRect.w + "x" + videoRect.h : "không thấy") +
+          " — nhóm: " + Object.keys(groups).join(", "));
+        return win;
+      }
       eq = await extractEQ();
       playlist = await extractPlaylist();
       ml = await extractWindow(["mlibrary", "ml", "medialibrary"], { preferMin: true });
@@ -1424,6 +1483,7 @@ const SkinLoader = (() => {
       notifier = await extractWindow(["notifier"], { preferMin: false });
       about = extractAbout();
       drawer = await extractDrawer();
+      embeddedAvs = await extractEmbeddedAvs();
       remote = await extractStandaloneLayout("remote");
       stick = await extractStandaloneLayout("stick");
       colorPresets = extractColorPresets();
@@ -1588,7 +1648,7 @@ const SkinLoader = (() => {
       display, seek, volume, spectrum, fonts, colors, colorGamma, bitmapGamma,
       frame: mainOut.frame, vis: mainOut.vis, eq, playlist,
       status: mainOut.status,
-      ml, video, avs, albumart, notifier, about, drawer, remote, stick, colorPresets,
+      ml, video, avs, albumart, notifier, about, drawer, embeddedAvs, remote, stick, colorPresets,
       hiddenIds: mainOut.hiddenIds || [], groupRects,
       unresolved: unresolved.concat(report.missing, report.notes)
     };
@@ -1610,6 +1670,10 @@ const SkinLoader = (() => {
       stripOut(drawer);
       if (drawer.shadow) stripOut(drawer.shadow);
       for (const c of Object.values(drawer.contents || {})) stripOut(c);
+    }
+    if (embeddedAvs) {
+      stripOut(embeddedAvs);
+      for (const g of Object.values(embeddedAvs.groups || {})) stripOut(g);
     }
     const files = {};
     for (const [key, real] of pathMap) {

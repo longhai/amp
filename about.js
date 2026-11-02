@@ -71,7 +71,7 @@ async function buildAboutWindow(skin, res){
     body.innerHTML = "<b>" + escapeHtml(info.name || "Skin") + "</b><br>Tác giả: " + escapeHtml(info.author || "?")
       + "<br>Phiên bản: " + escapeHtml(info.version || "?")
       + (info.comment ? "<br>" + escapeHtml(info.comment) : "")
-      + "<br><br>Amp v6 · loader v6 · chạy skin Winamp Modern (.wal) trên web";
+      + "<br><br>Amp v8 · loader v8 · chạy skin Winamp Modern (.wal) trên web";
     win.appendChild(body);
   }
   addResizeHandle(win, "about");

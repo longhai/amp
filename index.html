@@ -7,11 +7,11 @@
      Ninh Bình, Điện Biên) trả 403 khi thấy Referer longhai.github.io/amp/,
      200 khi không có Referer. Cùng 1 dòng đã sửa ở Webamp fork 2026-10-30. -->
 <meta name="referrer" content="no-referrer">
-<title>Amp — v6 (ML · Video · Vis · Album Art · Notifier · About · Drawer · Remote/Stick)</title>
+<title>Amp — v8 (ML · Video · Vis · Album Art · Notifier · About · Drawer · Remote/Stick)</title>
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=7.4"></script>
+<script defer src="skin-loader.js?v=8"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -176,7 +176,7 @@ let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "7.4";
+const EXPECTED_LOADER_VERSION = "8";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -486,6 +486,27 @@ let mlWin = null, vidWin = null, avsWin = null, aaWin = null, aboutWin = null;
 let remoteWin = null, stickWin = null, drawerWin = null, drawerOpen = false;
 let visMonitor = false, visMonitorBusy = null;
 let extraTimers = [], extraTickers = [];
+/* Vùng AVS/Video NHÚNG trong cửa sổ chính (đợt 7): AVSGroup của skin nằm
+   dưới menubar (y=35), cao snapadjustbottom (116); mở lên thì nội dung
+   player.main lùi xuống 116px, cửa sổ chính cao 143+116=259. Các nút
+   Video/Vis/Switch/1x/2x/Fullscreen giờ tác động vùng này, không còn mở
+   cửa sổ Video/Hiệu ứng rời (2 cửa sổ rời chỉ còn làm đích cho Detach,
+   chưa làm đợt 7). */
+let avsEmbeddedOpen = false, embAvsMode = "vis", embVideoScale = 1, embVisRandom = false;
+let mainContentEl = null, avsStripEl = null, embVideoBoxEl = null, embVisBoxEl = null;
+let videoavsOpenEl = null, videoavsCloseEl = null;
+try {
+  const s = JSON.parse(localStorage.getItem("amp-emb-avs") || "null");
+  if (s) { avsEmbeddedOpen = !!s.open; embAvsMode = s.mode === "video" ? "video" : "vis"; }
+} catch (e) {}
+function saveEmbAvsState(){
+  try { localStorage.setItem("amp-emb-avs", JSON.stringify({ open: avsEmbeddedOpen, mode: embAvsMode })); } catch (e) {}
+}
+function avsH(){ return (SKIN && SKIN.embeddedAvs) ? SKIN.embeddedAvs.h : 116; }
+function mainWinH(){
+  if (!SKIN || !SKIN.layout) return 143;
+  return SKIN.layout.h + ((avsEmbeddedOpen && SKIN.embeddedAvs) ? avsH() : 0);
+}
 let winVisMap = {};
 try { winVisMap = JSON.parse(localStorage.getItem("amp-win-visible-v6") || "{}"); } catch (e) {}
 function setWinVisible(kind, v){
@@ -529,7 +550,10 @@ function drawerInnerY(open, skinObj, fullH){
   const lay = sk && sk.layout;
   const full = fullH || (drawerWin ? (+drawerWin.dataset.h || 129) : 129);
   const restY = (lay && typeof lay.drawerRestY === "number") ? lay.drawerRestY : 17;
-  const mainH = lay ? lay.h : 143;
+  /* mainH là chiều cao cửa sổ chính HIỆU DỤNG: khi vùng AVS nhúng mở,
+     main cao thêm snapadjustbottom (116) nên ngăn kéo phải bám dưới 259
+     chứ không phải 143. */
+  const mainH = (sk === SKIN) ? mainWinH() : (lay ? lay.h : 143);
   const slot = open ? drawerSnap(sk) : Math.max(8, Math.round(full * 0.1));
   return mainH + slot - full - restY;
 }
@@ -539,7 +563,9 @@ function drawerWrapH(open, skinObj, fullH){
 }
 function applyScale(){
   if (!SKIN || !mainWin) return;
-  const wins = [{ el: mainWin, w: SKIN.layout.w, h: SKIN.layout.h }];
+  /* Chiều cao cửa sổ chính hiệu dụng: 143 khi đóng AVS, 259 khi mở vùng
+     AVS nhúng (mainWinH). Các cửa sổ dưới xếp theo sau cho đúng. */
+  const wins = [{ el: mainWin, w: SKIN.layout.w, h: mainWinH() }];
   if (drawerWin) wins.push({ el: drawerWin, w: +drawerWin.dataset.w, h: drawerOpen ? drawerSnap() : drawerStripH(), drawer: true });
   const stackKinds = [["eq", eqWin], ["pl", plWin], ["ml", mlWin], ["video", vidWin],
     ["avs", avsWin], ["albumart", aaWin], ["about", aboutWin], ["remote", remoteWin], ["stick", stickWin]];
@@ -588,14 +614,14 @@ let curRes = null;
 let eqJsPromise = null, plJsPromise = null;
 let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
 let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
-function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=7.4"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=7.4"); return videoJsPromise; }
-function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=7.4"); return avsJsPromise; }
-function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=7.4"); return aaJsPromise; }
-function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=7.4"); return aboutJsPromise; }
-function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=7.4"); return drawerJsPromise; }
-function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=7.4"); return remoteJsPromise; }
-function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=7.4"); return notifierJsPromise; }
+function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=8"); return mlJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=8"); return videoJsPromise; }
+function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=8"); return avsJsPromise; }
+function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=8"); return aaJsPromise; }
+function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=8"); return aboutJsPromise; }
+function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=8"); return drawerJsPromise; }
+function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=8"); return remoteJsPromise; }
+function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=8"); return notifierJsPromise; }
 async function ensureMlWindow(){
   if (mlWin) return mlWin;
   await ensureMlJs();
@@ -673,16 +699,16 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=7.4");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=8");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=7.4");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=8");
   return plJsPromise;
 }
 let classicJsPromise = null;
 function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=7.4");
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=8");
   return classicJsPromise;
 }
 async function detectSkinKind(file){
@@ -838,6 +864,15 @@ const WIN_LABELS = { eq: "EQ", pl: "Playlist", ml: "Thư viện", video: "Video"
   avs: "Hiệu ứng", albumart: "Ảnh bìa", about: "Giới thiệu", remote: "Remote", stick: "Stick" };
 async function toggleWindow(kind){
   if (kind === "drawer") { await toggleDrawer(); return; }
+  /* Skin có vùng AVS nhúng: Video/Hiệu ứng là chế độ của vùng đó trong
+     cửa sổ chính, không mở cửa sổ rời nữa. Toggle: đóng -> mở ở chế độ
+     đó; đang mở ở chế độ đó -> đóng; đang mở ở chế độ kia -> đổi chế độ. */
+  if ((kind === "video" || kind === "avs") && SKIN && SKIN.embeddedAvs) {
+    const mode = kind === "video" ? "video" : "vis";
+    if (avsEmbeddedOpen && embAvsMode === mode) await setEmbAvs(false);
+    else await setEmbAvs(true, mode);
+    return;
+  }
   const ensure = WIN_ENSURERS[kind];
   if (!ensure) return;
   const winVar = { eq: () => eqWin, pl: () => plWin, ml: () => mlWin, video: () => vidWin,
@@ -1118,6 +1153,8 @@ async function buildMainWindow(skin, res, win){
   const L = skin.layout;
   hiddenGroups = {};
   siBitrate = null; siFreq = null;
+  mainContentEl = null; avsStripEl = null; embVideoBoxEl = null; embVisBoxEl = null;
+  videoavsOpenEl = null; videoavsCloseEl = null;
   const bgSrc = L.backgroundFile ? await resolveImg(res, L.background, L.backgroundFile) : null;
   if (bgSrc) {
     win.style.backgroundImage = "url(" + JSON.stringify(bgSrc) + ")";
@@ -1160,6 +1197,25 @@ async function buildMainWindow(skin, res, win){
       const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
     }
   }
+  /* Nội dung player.main nằm trong mainContent để khi mở vùng AVS nhúng,
+     cả khối lùi xuống 116px bằng transform (khung titlebar/menubar và nút
+     videoavs.open/close ở ngoài nên đứng yên). */
+  const mainContent = document.createElement("div");
+  mainContent.id = "mainContent";
+  mainContent.style.cssText = "position:absolute;left:0px;top:0px;width:" + L.w + "px;height:" + L.h + "px;";
+  win.appendChild(mainContent);
+  mainContentEl = mainContent;
+  /* Vùng AVS nhúng (AVSGroup): dưới menubar, trên mainContent khi mở (DOM
+     sau mainContent nên đè lên 18px chồng lấn 133..151 — đúng thứ tự dummy
+     group: player.main trước, AVSGroup sau). Ẩn mặc định. */
+  let avsStrip = null;
+  if (skin.embeddedAvs) {
+    avsStrip = document.createElement("div");
+    avsStrip.id = "avsStrip";
+    avsStrip.style.cssText = "position:absolute;left:" + (skin.embeddedAvs.x || 0) + "px;top:" + skin.embeddedAvs.y + "px;width:" + skin.embeddedAvs.w + "px;height:" + skin.embeddedAvs.h + "px;display:none;";
+    win.appendChild(avsStrip);
+  }
+  avsStripEl = avsStrip;
   const skip = new Set(["player.bb-seek-empty", "player.bb-seek-full",
     "player.bb-volume-min", "player.bb-volume-max",
     "player.bb-spectrum-left", "player.bb-spectrum-right", "player.bb-spectrum-on",

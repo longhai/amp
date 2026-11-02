@@ -1,5 +1,15 @@
 "use strict";
-let videoHls = null, videoEl = null, videoChan = null;
+let videoHls = null, videoEl = null, videoChan = null, videoNativeTrying = false;
+function videoEqOn(){
+  /* EQ bật mới cần CORS (đưa tiếng qua AudioContext, đợt 9); EQ tắt thì
+     video phát native không cần crossOrigin — vd TV360 qua vmttv redirect
+     302 thiếu CORS vẫn xem được. eqState nằm ở index.html (mặc định off). */
+  try {
+    if (typeof eqState !== "undefined" && eqState) return !!eqState.on;
+    if (typeof window !== "undefined" && window.__eqState) return !!window.__eqState.on;
+  } catch (e) {}
+  return false;
+}
 function onVideoButton(b){
   const a = b.action;
   if (a === "CLOSE") toggleWindow("video");
@@ -18,7 +28,13 @@ function playVideoChannel(c, autoplay){
   destroyVideoHls();
   const url = c.url;
   const go = () => { if (autoplay) videoEl.play().catch(() => {}); };
-  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
+  /* crossOrigin theo EQ lúc nạp kênh (đổi trước khi gán src mới có tác
+     dụng): EQ bật -> "anonymous" để sau này đưa qua AudioContext; EQ tắt
+     -> bỏ hẳn để phát native (redirect thiếu CORS vẫn xem được). */
+  if (videoEqOn()) videoEl.crossOrigin = "anonymous";
+  else videoEl.removeAttribute("crossorigin");
+  const useHls = () => {
+    if (!window.Hls || !Hls.isSupported()) { videoEl.src = url; go(); return; }
     videoHls = new Hls({ maxBufferLength: 30 });
     videoHls.loadSource(url);
     videoHls.attachMedia(videoEl);
@@ -29,6 +45,33 @@ function playVideoChannel(c, autoplay){
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { try { videoHls.recoverMediaError(); } catch (e) {} return; }
       handleFail("Video HLS " + (data.type || "") + " " + (data.details || ""));
     });
+  };
+  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
+    /* Native trước: nhiều link .m3u8 (TV360/vmttv, VTVGo) phát native được
+       nhờ redirect có CORS; chỉ khi native lỗi hoặc 6s chưa phát mới rơi
+       về HLS.js — cùng cách IPTV Viewer v10 đã xác nhận trên máy thật. */
+    let fellBack = false;
+    const toHls = () => {
+      if (fellBack) return; fellBack = true; videoNativeTrying = false;
+      try { videoEl.removeAttribute("src"); videoEl.load(); } catch (e) {}
+      useHls();
+    };
+    const onErr = () => { videoEl.removeEventListener("error", onErr); toHls(); };
+    const onPlay = () => { videoNativeTrying = false; videoEl.removeEventListener("error", onErr); };
+    videoEl.addEventListener("error", onErr);
+    videoEl.addEventListener("playing", onPlay);
+    videoNativeTrying = true;
+    videoEl.src = url;
+    if (autoplay) {
+      setTimeout(() => {
+        if (!fellBack && videoEl && videoEl.readyState < 2) {
+          videoEl.removeEventListener("error", onErr);
+          videoEl.removeEventListener("playing", onPlay);
+          toHls();
+        }
+      }, 6000);
+    }
+    go();
   } else {
     videoEl.src = url;
     go();
@@ -40,6 +83,10 @@ window.stopVideoPlayback = stopVideoPlayback;
 function bindVideoEl(el){
   el.addEventListener("playing", () => { playing = true; updatePlayState(); onPlayStart(); failCount = 0; });
   el.addEventListener("pause", () => { playing = false; updatePlayState(); onPlayPause(); });
+  el.addEventListener("loadedmetadata", () => {
+    const info = (typeof window !== "undefined") ? window.__embVidInfoEl : null;
+    if (info) info.textContent = (el.videoWidth || 0) + "x" + (el.videoHeight || 0);
+  });
   el.addEventListener("dblclick", e => {
     e.stopPropagation();
     if (document.fullscreenElement) { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
@@ -47,29 +94,38 @@ function bindVideoEl(el){
     if (el.webkitEnterFullscreen) { try { el.webkitEnterFullscreen(); } catch (err) {} }
   });
   el.addEventListener("error", () => {
+    if (videoNativeTrying) return; /* đang thử native: lỗi sẽ tự rơi về HLS, chưa phải lỗi thật */
     if (videoChan && videoEl && videoEl.error) handleFail("Video: " + (videoEl.error.message || videoEl.error.code || ""));
   });
 }
+/* Tạo hộp video (nền đen + thẻ <video>) trong một container cho trước.
+   Không đặt crossOrigin lúc tạo — playVideoChannel đặt theo EQ lúc nạp
+   kênh. Dùng chung cho cửa sổ Video rời và vùng AVS nhúng trong main. */
+function createVideoBox(parent, rect){
+  const box = document.createElement("div");
+  box.style.position = "absolute";
+  box.style.left = rect.x + "px"; box.style.top = rect.y + "px";
+  box.style.width = rect.w + "px"; box.style.height = rect.h + "px";
+  box.style.background = "#000";
+  const v = document.createElement("video");
+  v.playsInline = true; v.controls = false; v.preload = "none";
+  v.style.width = "100%"; v.style.height = "100%";
+  box.appendChild(v);
+  parent.appendChild(box);
+  videoEl = v;
+  bindVideoEl(v);
+  return { box, video: v };
+}
+window.__attachVideoEl = (parent, rect) => createVideoBox(parent, rect);
+window.__getVideoEl = () => videoEl;
 async function buildVideoWindow(skin, res){
   const win = document.createElement("div");
   win.className = "win"; win.id = "vidwin";
   const vd = skin.video;
   const mkVideo = (rect) => {
-    const box = document.createElement("div");
-    box.style.position = "absolute";
-    box.style.left = rect.x + "px"; box.style.top = rect.y + "px";
-    box.style.width = rect.w + "px"; box.style.height = rect.h + "px";
-    box.style.background = "#000";
-    const v = document.createElement("video");
-    v.playsInline = true; v.controls = false; v.preload = "none";
-    v.crossOrigin = "anonymous";
-    v.style.width = "100%"; v.style.height = "100%";
-    box.appendChild(v);
-    win.appendChild(box);
-    videoEl = v;
-    bindVideoEl(v);
+    const { box, video } = createVideoBox(win, rect);
     win._flexBox = box; win._flexRect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    win._flexVideo = v;
+    win._flexVideo = video;
     return box;
   };
   if (vd) {
