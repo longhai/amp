@@ -11,7 +11,7 @@
 <link rel="icon" href="data:,">
 <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="skin-loader.js?v=8"></script>
+<script defer src="skin-loader.js?v=8.1"></script>
 <style>
   html,body{margin:0;padding:0;background:#000;color:#ccc;
     font-family:Verdana,Arial,sans-serif;}
@@ -150,7 +150,7 @@
 </style>
 </head>
 <body>
-<h1><b id="skinname">WinampModern566</b> — Amp v7.4 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
+<h1><b id="skinname">WinampModern566</b> — Amp v8 · Classic .wsz · ML + Video + Vis + Album Art + Notifier + About + Drawer · <span id="loaderver">loader …</span> · <span id="skinsub">skin mặc định Winamp5 Base Skin (Sven Kistner), đổi skin bằng file .wal/.zip/.wsz</span></h1>
 <div id="viewport"><div id="stage"><div id="shell"><div class="shell-t">&#9834; Amp</div><div class="shell-s">Đang tải skin WinampModern566…</div><div class="shell-bar"><i></i></div></div></div></div>
 
 <input type="file" id="filepick" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac" hidden>
@@ -176,7 +176,7 @@ let timerFontImg = null, timerFont = null, visCanvas = null, visCtx = null;
 </script>
 
 <script>
-const EXPECTED_LOADER_VERSION = "8";
+const EXPECTED_LOADER_VERSION = "8.1";
 function loaderVersion(){
   return (typeof SkinLoader !== "undefined" && SkinLoader.VERSION) ? SkinLoader.VERSION : null;
 }
@@ -614,14 +614,14 @@ let curRes = null;
 let eqJsPromise = null, plJsPromise = null;
 let mlJsPromise = null, videoJsPromise = null, avsJsPromise = null, aaJsPromise = null;
 let aboutJsPromise = null, drawerJsPromise = null, remoteJsPromise = null, notifierJsPromise = null;
-function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=8"); return mlJsPromise; }
-function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=8"); return videoJsPromise; }
-function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=8"); return avsJsPromise; }
-function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=8"); return aaJsPromise; }
-function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=8"); return aboutJsPromise; }
-function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=8"); return drawerJsPromise; }
-function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=8"); return remoteJsPromise; }
-function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=8"); return notifierJsPromise; }
+function ensureMlJs(){ if (!mlJsPromise) mlJsPromise = loadScriptFile("ml.js?v=8.1"); return mlJsPromise; }
+function ensureVideoJs(){ if (!videoJsPromise) videoJsPromise = loadScriptFile("video.js?v=8.1"); return videoJsPromise; }
+function ensureAvsJs(){ if (!avsJsPromise) avsJsPromise = loadScriptFile("avs.js?v=8.1"); return avsJsPromise; }
+function ensureAaJs(){ if (!aaJsPromise) aaJsPromise = loadScriptFile("albumart.js?v=8.1"); return aaJsPromise; }
+function ensureAboutJs(){ if (!aboutJsPromise) aboutJsPromise = loadScriptFile("about.js?v=8.1"); return aboutJsPromise; }
+function ensureDrawerJs(){ if (!drawerJsPromise) drawerJsPromise = loadScriptFile("drawer.js?v=8.1"); return drawerJsPromise; }
+function ensureRemoteJs(){ if (!remoteJsPromise) remoteJsPromise = loadScriptFile("remote.js?v=8.1"); return remoteJsPromise; }
+function ensureNotifierJs(){ if (!notifierJsPromise) notifierJsPromise = loadScriptFile("notifier.js?v=8.1"); return notifierJsPromise; }
 async function ensureMlWindow(){
   if (mlWin) return mlWin;
   await ensureMlJs();
@@ -699,16 +699,16 @@ function loadScriptFile(src){
   });
 }
 function ensureEqJs(){
-  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=8");
+  if (!eqJsPromise) eqJsPromise = loadScriptFile("eq.js?v=8.1");
   return eqJsPromise;
 }
 function ensurePlJs(){
-  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=8");
+  if (!plJsPromise) plJsPromise = loadScriptFile("playlist.js?v=8.1");
   return plJsPromise;
 }
 let classicJsPromise = null;
 function ensureClassicJs(){
-  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=8");
+  if (!classicJsPromise) classicJsPromise = loadScriptFile("classic-skin.js?v=8.1");
   return classicJsPromise;
 }
 async function detectSkinKind(file){
@@ -1225,7 +1225,11 @@ async function buildMainWindow(skin, res, win){
     if (!lay.imageFile) continue;
     const src = await resolveImg(res, lay.image, lay.imageFile);
     if (src) {
-      const im = layerEl(src, lay); lay._img = im; win.appendChild(im);
+      const im = layerEl(src, lay); lay._img = im;
+      /* Lớp nền nút videoavs.open/close: đứng yên cùng nút, không lùi
+         theo player.main khi mở vùng AVS. */
+      if ((lay.image || "").toLowerCase() === "player.button.videoavs.up.bg") win.appendChild(im);
+      else mainContent.appendChild(im);
       const hid = isHiddenEl(skin, lay); if (hid) registerHidden(hid, im);
     }
   }
@@ -1258,7 +1262,7 @@ async function buildMainWindow(skin, res, win){
       wrap.appendChild(im);
       s._els[k] = im;
     }
-    win.appendChild(wrap);
+    mainContent.appendChild(wrap);
     s._wrap = wrap;
     const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, wrap);
   }
@@ -1274,7 +1278,7 @@ async function buildMainWindow(skin, res, win){
     tickEl.style.width = tick.w + "px"; tickEl.style.height = (tick.h || 14) + "px";
     tickEl.innerHTML = "<span id='tickerspan'></span>";
     if (tick.gammagroup) tickEl.dataset.gammagroup = tick.gammagroup;
-    win.appendChild(tickEl);
+    mainContent.appendChild(tickEl);
     tickerEl = tick; tickerFont = null; tickerFontFamily = null;
     const tfont = tick.font && skin.fonts ? skin.fonts[tick.font] : null;
     if (tfont) {
@@ -1313,7 +1317,7 @@ async function buildMainWindow(skin, res, win){
       else timerInkColor = sampleInkColor(timerFontImg);
     }
     if (!timerFont) timEl.textContent = "0:00";
-    win.appendChild(timEl);
+    mainContent.appendChild(timEl);
   }
   for (const t of skin.texts) {
     if (t === tick || t === tim) continue;
@@ -1322,7 +1326,7 @@ async function buildMainWindow(skin, res, win){
     if (tfont && tfont.tag === "bitmapfont" && tfont.imageURL && tfont.charset && tfont.charwidth) {
       const cv = await drawBitmapFontText(t, tfont, skin.name);
       if (cv) {
-        win.appendChild(cv);
+        mainContent.appendChild(cv);
         const lid = (t.id || "").toLowerCase();
         if (lid === "bitrate") siBitrate = { cv, font: tfont, def: t.default || "(___)" };
         else if (lid === "frequency") siFreq = { cv, font: tfont, def: t.default || "(__)" };
@@ -1340,7 +1344,7 @@ async function buildMainWindow(skin, res, win){
     if (t.color) el.style.color = skinColor(t.color);
     if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
     if (t.id === "window.titlebar.title") styleTitlebarText(el, t);
-    win.appendChild(el);
+    mainContent.appendChild(el);
     const hid = isHiddenEl(skin, t); if (hid) registerHidden(hid, el);
   }
   visCanvas = null; visCtx = null;
@@ -1351,28 +1355,238 @@ async function buildMainWindow(skin, res, win){
     cv.width = v.w || 72; cv.height = v.h || 25;
     cv.style.left = v.x + "px"; cv.style.top = v.y + "px";
     cv.style.width = (v.w || 72) + "px"; cv.style.height = (v.h || 25) + "px";
-    win.appendChild(cv);
+    mainContent.appendChild(cv);
     visCanvas = cv; visCtx = cv.getContext("2d");
     const hid = isHiddenEl(skin, v); if (hid) registerHidden(hid, cv);
   }
   const cover = skin.layers.find(l => l.image === "player.bb-songticker-endcover");
   if (cover) {
     const src = await resolveImg(res, cover.image, cover.imageFile);
-    if (src) win.appendChild(layerEl(src, cover));
+    if (src) mainContent.appendChild(layerEl(src, cover));
   }
-  await buildStrip(skin, res, win);
+  await buildStrip(skin, res, mainContent);
   for (const s of skin.sliders) {
     if (s.action === "VOLUME" || s.action === "SEEK" || s.action === "EQ_PREAMP" || s.action === "EQ_BAND") {
-      const tr = await buildMainSlider(s, win, res);
+      const tr = await buildMainSlider(s, mainContent, res);
       const hid = isHiddenEl(skin, s); if (hid) registerHidden(hid, tr);
     }
   }
   for (const b of skin.buttons) {
-    const bel = await buildButton(b, win, res, onMainButton);
+    /* Nút videoavs.open/close: đứng yên ở góc phải (không lùi theo
+       player.main), chỉ đổi hiện/ẩn theo trạng thái vùng AVS. */
+    const bid = (b.id || "").toLowerCase();
+    const isVideoavsBtn = bid === "videoavs.open" || bid === "videoavs.close";
+    const bel = await buildButton(b, isVideoavsBtn ? win : mainContent, res, onMainButton);
+    if (isVideoavsBtn) {
+      if (bid === "videoavs.open") videoavsOpenEl = bel;
+      else videoavsCloseEl = bel;
+    }
     const hid = isHiddenEl(skin, b); if (hid) registerHidden(hid, bel);
   }
   for (const b of skin.buttons) if (b.action === "EQ_TOGGLE" && b._img) b._stateBase = () => eqState.on ? (b._activeSrc || b._downSrc || b._src) : b._src;
   refreshModeLEDs(skin, res);
+  /* Vẽ vùng AVS nhúng (nếu skin có) rồi áp trạng thái đã lưu. Monitor/scale
+     do syncEmbAvs ở applySkinFile lo (lúc này SKIN/mainWin chưa gán xong). */
+  if (skin.embeddedAvs && avsStrip) {
+    await buildEmbeddedAvs(skin, res, avsStrip);
+    applyEmbAvsVisual(win, skin);
+  }
+}
+/* ---- Vùng AVS/Video nhúng trong cửa sổ chính (đợt 7) ---- */
+async function buildEmbeddedAvs(skin, res, strip){
+  /* Vẽ vùng AVS nhúng (AVSGroup) vào strip: nền + khung + vùng vẽ
+     video.group (canvas vis + thẻ video) + các nhóm nút (video/vis/
+     switchto/detach). Vị trí nhóm lấy từ model, tọa độ con tương đối
+     trong nhóm, panel đặt ở (x,y) — mẫu drawer. */
+  const ea = skin.embeddedAvs;
+  if (!ea) return;
+  strip.style.background = "#000";
+  for (const bg of (ea.backgrounds || [])) {
+    if (!bg.imageFile) continue;
+    const src = await resolveImg(res, bg.image, bg.imageFile);
+    if (src) strip.appendChild(imgElSrc(src, bg.x, bg.y, bg.w, bg.h, bg.gammagroup));
+  }
+  for (const lay of ea.layers) {
+    if (!lay.imageFile) continue;
+    const src = await resolveImg(res, lay.image, lay.imageFile);
+    if (src) strip.appendChild(layerEl(src, lay));
+  }
+  /* Vùng vẽ video.group (4,21,346x69): hộp đen chứa canvas vis + video.
+     Canvas vis hiện ở chế độ vis, video hiện ở chế độ video. */
+  const vr = ea.videoRect || { x: 4, y: 21, w: 346, h: 69 };
+  const drawBox = document.createElement("div");
+  drawBox.id = "embDrawBox";
+  drawBox.style.cssText = "position:absolute;left:" + vr.x + "px;top:" + vr.y + "px;width:" + vr.w + "px;height:" + vr.h + "px;background:#000;overflow:hidden;";
+  strip.appendChild(drawBox);
+  try {
+    await ensureAvsJs();
+    if (typeof window !== "undefined" && window.__attachAvsCanvas) {
+      embVisBoxEl = window.__attachAvsCanvas(drawBox, { x: 0, y: 0, w: vr.w, h: vr.h });
+    }
+  } catch (e) {}
+  try {
+    await ensureVideoJs();
+    if (typeof window !== "undefined" && window.__attachVideoEl) {
+      const created = window.__attachVideoEl(drawBox, { x: 0, y: 0, w: vr.w, h: vr.h });
+      if (created && created.box) { created.box.style.overflow = "hidden"; embVideoBoxEl = created.box; }
+    }
+  } catch (e) {}
+  for (const [gid, g] of Object.entries(ea.groups || {})) {
+    const panel = document.createElement("div");
+    panel.dataset.embGroup = gid;
+    panel.style.cssText = "position:absolute;left:" + (g.x || 0) + "px;top:" + (g.y || 0) + "px;";
+    strip.appendChild(panel);
+    for (const lay of (g.layers || [])) {
+      if (!lay.imageFile) continue;
+      const src = await resolveImg(res, lay.image, lay.imageFile);
+      if (src) panel.appendChild(layerEl(src, lay));
+    }
+    for (const t of (g.texts || [])) {
+      if (!t.default && !t.display) continue;
+      const el = document.createElement("div");
+      el.className = "wtext";
+      el.style.left = t.x + "px"; el.style.top = t.y + "px";
+      el.style.width = (t.w || 30) + "px"; el.style.height = (t.h || 8) + "px";
+      el.style.fontSize = (t.fontsize ? Math.min(14, +t.fontsize) : 8) + "px";
+      el.style.lineHeight = (t.h || 8) + "px";
+      el.textContent = t.default || "";
+      el.dataset.display = t.display || "";
+      if (t.color) el.style.color = skinColor(t.color);
+      if (t.gammagroup) el.dataset.gammagroup = t.gammagroup;
+      if (t.display === "VID_Info" && typeof window !== "undefined") window.__embVidInfoEl = el;
+      panel.appendChild(el);
+    }
+    for (const b of (g.buttons || [])) {
+      await buildButton(b, panel, res, onEmbAvsButton);
+    }
+  }
+  /* Nút random + LED random: đổi ảnh theo trạng thái (LED hiện led.on). */
+  const vg = ea.groups && ea.groups["buttons.vis"];
+  if (vg) for (const b of (vg.buttons || [])) {
+    if (!/random/i.test(b.id || "")) continue;
+    b._stateBase = () => embVisRandom ? (b._activeSrc || b._downSrc || b._src) : b._src;
+  }
+  refreshEmbRandomVisual();
+  syncEmbAvsMode(skin);
+}
+function refreshVideoavsButtons(){
+  if (videoavsOpenEl) videoavsOpenEl.style.display = avsEmbeddedOpen ? "none" : "";
+  if (videoavsCloseEl) videoavsCloseEl.style.display = avsEmbeddedOpen ? "" : "none";
+}
+function setEmbGroupVisible(gid, show){
+  if (!avsStripEl) return;
+  const p = avsStripEl.querySelector("[data-emb-group='" + gid + "']");
+  if (p) p.style.display = show ? "" : "none";
+}
+function syncEmbAvsMode(skin){
+  /* skin: truyền vào lúc build (SKIN toàn cục chưa gán xong); lúc chạy
+     bỏ trống để dùng SKIN. */
+  skin = skin || SKIN;
+  if (!skin || !skin.embeddedAvs || !avsStripEl) return;
+  const vis = embAvsMode !== "video";
+  setEmbGroupVisible("buttons.vis", vis);
+  setEmbGroupVisible("buttons.video", !vis);
+  setEmbGroupVisible("buttons.vis.switchto", vis);
+  setEmbGroupVisible("buttons.video.switchto", !vis);
+  if (embVisBoxEl) embVisBoxEl.style.display = vis ? "" : "none";
+  if (embVideoBoxEl) embVideoBoxEl.style.display = vis ? "none" : "";
+  setEmbGroupVisible("buttons.vis.detach", avsEmbeddedOpen && vis);
+  setEmbGroupVisible("buttons.video.detach", avsEmbeddedOpen && !vis);
+}
+function applyEmbAvsVisual(win, skin){
+  /* Áp trạng thái mở/đóng + chế độ lên DOM (không đụng monitor/scale).
+     Dùng được cả lúc build (win/skin cục bộ) lẫn lúc chạy (mainWin/SKIN). */
+  if (!skin || !skin.embeddedAvs || !win) return;
+  const open = avsEmbeddedOpen;
+  if (mainContentEl) mainContentEl.style.transform = open ? "translateY(" + skin.embeddedAvs.h + "px)" : "";
+  if (avsStripEl) avsStripEl.style.display = open ? "" : "none";
+  win.style.height = (skin.layout.h + (open ? skin.embeddedAvs.h : 0)) + "px";
+  refreshVideoavsButtons();
+  syncEmbAvsMode(skin);
+}
+async function syncEmbAvs(){
+  if (!SKIN || !SKIN.embeddedAvs || !mainWin) return;
+  applyEmbAvsVisual(mainWin, SKIN);
+  if (avsEmbeddedOpen && embAvsMode === "vis") {
+    try { await ensureAvsJs(); if (window.__avsOpened) await window.__avsOpened(true); } catch (e) {}
+  } else {
+    if (window.__avsClosed) { try { await window.__avsClosed(true); } catch (e) {} }
+  }
+  applyScale();
+}
+async function setEmbAvs(open, mode){
+  /* Đặt trạng thái vùng AVS nhúng rồi đồng bộ DOM. open=false: đóng hẳn.
+     mode: "vis" | "video" (chỉ có nghĩa khi open=true). */
+  if (!SKIN || !SKIN.embeddedAvs) return false;
+  if (typeof open === "boolean") avsEmbeddedOpen = open;
+  if (mode) embAvsMode = mode;
+  saveEmbAvsState();
+  await syncEmbAvs();
+  return true;
+}
+async function setEmbAvsMode(mode){
+  if (!SKIN || !SKIN.embeddedAvs) return false;
+  embAvsMode = mode;
+  if (!avsEmbeddedOpen) { await setEmbAvs(true, mode); return true; }
+  saveEmbAvsState();
+  syncEmbAvsMode();
+  if (mode === "vis") {
+    try { await ensureAvsJs(); if (window.__avsOpened) await window.__avsOpened(true); } catch (e) {}
+    setStatus("Đã chuyển sang Hiệu ứng (Visualizer)");
+  } else {
+    if (window.__avsClosed) { try { await window.__avsClosed(true); } catch (e) {} }
+    setStatus("Đã chuyển sang Video");
+  }
+  return true;
+}
+function setEmbVideoScale(n){
+  embVideoScale = (n === 2) ? 2 : 1;
+  const v = (typeof window !== "undefined" && window.__getVideoEl) ? window.__getVideoEl() : null;
+  if (v) {
+    /* 1x: vừa khung video.group (contain). 2x: phóng 2x, căn giữa, phần
+       thừa cắt bởi overflow hidden của hộp video. */
+    v.style.objectFit = "contain";
+    v.style.transform = embVideoScale === 2 ? "scale(2)" : "";
+    v.style.transformOrigin = "center center";
+  }
+  setStatus(embVideoScale === 2 ? "Video: 2x (phóng gấp đôi trong khung)" : "Video: 1x (vừa khung)");
+}
+function embAvsFullscreen(){
+  const v = (typeof window !== "undefined" && window.__getVideoEl) ? window.__getVideoEl() : null;
+  const target = (embAvsMode === "video" && v) ? v : (embVisBoxEl || avsStripEl);
+  if (!target) return;
+  if (document.fullscreenElement) { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); return; }
+  if (target.requestFullscreen) { const p = target.requestFullscreen(); if (p && p.catch) p.catch(() => {}); }
+}
+function refreshEmbRandomVisual(){
+  if (!SKIN || !SKIN.embeddedAvs) return;
+  const g = SKIN.embeddedAvs.groups && SKIN.embeddedAvs.groups["buttons.vis"];
+  if (!g) return;
+  for (const b of (g.buttons || [])) {
+    if (!/random/i.test(b.id || "")) continue;
+    if (b._img && b._base) b._img.src = b._base();
+  }
+}
+function onEmbAvsButton(b){
+  const a = b.action, id = (b.id || "").toLowerCase();
+  if (a === "VID_FS" || a === "VIS_FS") { embAvsFullscreen(); return; }
+  if (a === "VID_1X") { setEmbVideoScale(1); return; }
+  if (a === "VID_2X") { setEmbVideoScale(2); return; }
+  if (a === "VIS_PREV" || a === "VIS_NEXT") {
+    if (typeof window !== "undefined" && window.onAVSButton) { window.onAVSButton(b); return; }
+    setStatus("Chưa nạp được hiệu ứng"); return;
+  }
+  if (a === "VID_MISC" || a === "VIS_MENU") { setStatus("Menu Video/Vis chưa làm trong đợt này"); return; }
+  if (/switchto/i.test(b.id || "")) { setEmbAvsMode(embAvsMode === "vis" ? "video" : "vis"); return; }
+  if (/detach/i.test(b.id || "")) { setStatus("Tách cửa sổ Video/Vis ra ngoài chưa làm trong đợt này"); return; }
+  if (/button\.vid\.max/i.test(id) || /button\.vid\.restore/i.test(id)) { setStatus("Phóng to/thu nhỏ cửa sổ Video chưa làm trong đợt này (đang nhúng trong cửa sổ chính)"); return; }
+  if (/random/i.test(id)) {
+    embVisRandom = !embVisRandom;
+    refreshEmbRandomVisual();
+    setStatus("Hiệu ứng ngẫu nhiên: " + (embVisRandom ? "BẬT" : "TẮT"));
+    return;
+  }
+  onMainButton(b);
 }
 async function buildStrip(skin, res, win){
   const s = skin.seek, v = skin.volume;
@@ -1742,11 +1956,25 @@ async function applySkinFile(file){
     if (winVisible("pl")) { try { await ensurePlWindow(); } catch (e) { setStatus("không mở được Playlist: " + e.message, true); } }
     if (SKIN.drawer) { try { await ensureDrawerWindow(); } catch (e) {} }
     for (const kind of ["ml", "video", "avs", "albumart", "about"]) {
+      /* Skin có vùng AVS nhúng: video/avs là chế độ của vùng đó, không phải
+         cửa sổ rời — bỏ qua ở đây, khôi phục bằng syncEmbAvs bên dưới. */
+      if (SKIN.embeddedAvs && (kind === "video" || kind === "avs")) continue;
       if (winVisible(kind)) { try { await WIN_ENSURERS[kind](); } catch (e) { setStatus("không mở được " + (WIN_LABELS[kind] || kind) + ": " + e.message, true); } }
     }
     if (winVisible("remote") && SKIN.remote) { try { await ensureRemoteWindow(); } catch (e) {} }
     if (winVisible("stick") && SKIN.stick) { try { await ensureStickWindow(); } catch (e) {} }
-    if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && winVisible("video") && window.playVideoChannel) playVideoChannel(channels[idx], playing);
+    if (SKIN.embeddedAvs) {
+      /* Khôi phục vùng AVS nhúng theo trạng thái đã lưu; kênh video đang
+         chọn thì mở ở chế độ video (ghi đè chế độ vis đã lưu). */
+      if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx])) { avsEmbeddedOpen = true; embAvsMode = "video"; }
+      await syncEmbAvs();
+    }
+    if (mode === "radio" && channels[idx] && channelIsVideo(channels[idx]) && window.playVideoChannel) {
+      /* Kênh video đang chọn: phát vào vùng AVS nhúng (đã mở ở trên) thay
+         vì cửa sổ Video rời. */
+      if (SKIN.embeddedAvs) playVideoChannel(channels[idx], playing);
+      else if (winVisible("video")) playVideoChannel(channels[idx], playing);
+    }
     if (window.applySavedColorTheme) window.applySavedColorTheme();
     applyWindowVisibility();
     renderPlaylist(true);
@@ -2098,6 +2326,15 @@ function loadChannel(i, autoplay){
   showNotifierFor(c);
   updateAlbumArtForCurrent();
   const isVid = channelIsVideo(c);
+  if (isVid && SKIN && SKIN.embeddedAvs) {
+    /* Kênh video: mở vùng AVS nhúng ở chế độ video rồi phát vào thẻ video
+       trong đó (native trước, HLS chỉ khi native lỗi — video.js). */
+    setEmbAvs(true, "video");
+    if (window.playVideoChannel) { playVideoChannel(c, autoplay); return; }
+  } else if (!isVid && SKIN && SKIN.embeddedAvs && avsEmbeddedOpen && embAvsMode === "video") {
+    /* Kênh audio: vùng đang ở chế độ video thì về vis, khỏi màn hình đen. */
+    setEmbAvsMode("vis");
+  }
   if (isVid && winVisMap.video !== false && (vidWin ? winVisible("video") : autoplay)) {
     if (!vidWin) {
       setWinVisible("video", true);
@@ -2370,15 +2607,31 @@ function onMainButton(b){
   }
   else if (a === "VIDEO" || a === "VIS" || a === "AVS" ||
       /switchto/i.test(b.id || "") || /button\.vis\.detach/i.test(b.id || "")) {
-    if (/switchto/i.test(b.id || "") || a === "VIDEO") toggleWindow("video");
-    else toggleWindow("avs");
+    /* Vùng AVS nhúng (đợt 7): VIDEO mở vùng ở chế độ video, VIS/AVS mở ở
+       chế độ vis; nút Switch đổi chế độ. Không mở cửa sổ rời nữa. */
+    if (SKIN && SKIN.embeddedAvs) {
+      if (/switchto/i.test(b.id || "")) setEmbAvsMode(embAvsMode === "vis" ? "video" : "vis");
+      else if (a === "VIDEO") setEmbAvs(true, "video");
+      else setEmbAvs(true, "vis");
+    } else {
+      if (/switchto/i.test(b.id || "") || a === "VIDEO") toggleWindow("video");
+      else toggleWindow("avs");
+    }
   }
   else if (a === "ML" || /^ml$/i.test(b.id || "")) toggleWindow("ml");
   else if (a === "ABOUT" || /^about$/i.test(b.id || "")) toggleWindow("about");
   else if (a === "CONFIG" || /drawer\.button\.(open|close)/i.test(b.id || "")) toggleDrawer();
   else if (a === "REMOTE" || /remote/i.test(b.id || "")) cycleRemoteStick();
-  else if (a === "VIS_FS" || a === "VID_FS") toggleWindow("avs");
-  else if (a === "VID_1X" || a === "VID_2X") toggleWindow("video");
+  else if (a === "VIS_FS" || a === "VID_FS") {
+    if (SKIN && SKIN.embeddedAvs) embAvsFullscreen();
+    else toggleWindow("avs");
+  }
+  else if (a === "VID_1X" || a === "VID_2X") {
+    if (SKIN && SKIN.embeddedAvs) setEmbVideoScale(a === "VID_2X" ? 2 : 1);
+    else toggleWindow("video");
+  }
+  else if (/^videoavs\.open$/i.test(b.id || "")) { setEmbAvs(true); setStatus("Đã mở Video/Hiệu ứng"); }
+  else if (/^videoavs\.close$/i.test(b.id || "")) { setEmbAvs(false); setStatus("Đã đóng Video/Hiệu ứng"); }
   else if (/^about$/i.test(b.id || "")) toggleWindow("about");
   else if (/button\.vis\.switchto/i.test(b.id || "")) toggleWindow("video");
   else if (/button\.vis\.detach/i.test(b.id || "")) toggleWindow("avs");
