@@ -18,8 +18,8 @@
    SVG feColorMatrix theo từng gammagroup), self-check lúc chạy.
    ĐỢT C (9.1 — KHÔNG đổi loader nên KHÔNG bump version): cửa sổ Playlist
    Editor 436×164 (frame playlistframe.nostatusbar, menubar File/Playlist/
-   Sort/Help đo từ PNG lúc chạy), danh sách thật từ radio.m3u (41 kênh) +
-   3 bài Demo, chọn 1 click / phát 2 click, ô tìm trong khung list, hàng
+   Sort/Help đo từ PNG lúc chạy), danh sách thật từ radio.m3u (41 kênh),
+   chọn 1 click / phát 2 click, ô tìm trong khung list, hàng
    nút Add/Rem/Sel/Misc/List mở menu, PLTime = tổng thời gian các mục có
    thời lượng. Nút PL (TOGGLE guid:pl) + menu View mở/đóng playlist.
    ĐỢT D (9.2 — renderer đổi: máy trạng thái AVS/Video + cửa sổ rời):
@@ -44,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.4";
-  var EXPECTED_RENDERER_VERSION = "9.4";
+  var RENDERER_VERSION = "9.5";
+  var EXPECTED_RENDERER_VERSION = "9.5";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.4" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.5" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -133,11 +133,12 @@
     "groupxfade": 1, "windowholder": 1, "colorthemes": 1
   };
 
-  var DEMO_TRACKS = [
-    { name: "Winamp - Llama Whippin'", len: 225 },
-    { name: "Nullsoft - Winamp Demo Song", len: 187 },
-    { name: "Sven Kistner - Base Skin Theme", len: 243 }
-  ];
+  /* Đợt 9.5: KHÔNG còn bài Demo — người dùng chốt bỏ hết bài hát demo,
+     chỉ giữ nguồn radio.m3u của mình. DEMO_TRACKS giữ lại dạng rỗng để
+     các hàm/export cũ không vỡ (demoPlaylistItems() trả [], ticker không
+     còn hiện tên bài demo). Trước đây: 3 bài Llama Whippin' / Demo Song /
+     Base Skin Theme (225s/187s/243s). */
+  var DEMO_TRACKS = [];
 
   /* ---------- helpers thuần ---------- */
   function intAttr(el, name, def) {
@@ -342,7 +343,7 @@
   function createRenderer(RES, document, opts) {
     opts = opts || {};
     var demo = {
-      playing: false, track: 0, t: 2, volume: 1,
+      playing: false, track: 0, t: 0, volume: 1,
       seekFrac: 0, shuffle: false, repeat: 0, eq: true
     };
     var drawerTab = opts.drawerTab || "eq";
@@ -415,6 +416,31 @@
       if (!d) return;
       d.style.transition = "";
       d.style.transform = "";
+    }
+    /* Đợt 9.5 (lỗi 6): đặt chiều cao stage/wrap theo độ dời ngăn kéo để
+       đáy stage bám đáy ngăn kéo lúc trượt — không lộ nền đen #000 bên
+       dưới ngăn kéo. dy âm = đóng (thu lại): chiều cao đóng = chiều cao
+       hiện tại + dy (dy = targetDy = top đóng - top mở = -snap, vd -116).
+       Wrap co theo tỉ lệ (giữ nguyên zoom scale). Lúc MỞ không cần gọi:
+       renderLayout (swapIn) đã đặt chiều cao cuối, transition height ở
+       CSS chạy cùng lúc với transform trượt (cùng 250ms ease). Không có
+       stage/wrap (test jsdom) thì bỏ qua. */
+    function setDrawerStageHeight(dy) {
+      if (!dy) return;
+      var T = lastStage;
+      if (!T) return;
+      var curH = parseInt((T.style && T.style.height) || "0", 10);
+      if (!curH) { try { curH = Math.round(T.getBoundingClientRect().height); } catch (e) { curH = 0; } }
+      if (!curH) return;
+      var newH = curH + dy;
+      if (newH < 0) newH = 0;
+      T.style.height = newH + "px";
+      var wrap = null;
+      try { wrap = document.getElementById("stage-wrap") || document.querySelector("#stage-wrap"); } catch (e) { wrap = null; }
+      if (wrap) {
+        var curW = parseInt((wrap.style && wrap.style.height) || "0", 10);
+        if (curW) wrap.style.height = Math.round(curW * newH / curH) + "px";
+      }
     }
     /* Đọc vị trí transform hiện tại của ngăn kéo + bóng (dùng khi đảo chiều
        giữa chừng: bắt đầu lần trượt mới từ đúng chỗ đang dừng). */
@@ -511,6 +537,13 @@
       } catch (e) { /* bỏ qua */ }
       setDrawerTransform(els.d, targetDy, true);
       setDrawerTransform(els.sh, targetDy, true);
+      /* Đợt 9.5 (lỗi 6): thu chiều cao stage/wrap về giá trị đóng NGAY lúc
+         bắt đầu trượt (cùng 250ms ease với transform) để đáy stage bám đáy
+         ngăn kéo đang trượt lên — không còn nền đen #000 lộ ra dưới ngăn
+         kéo. (Trước đây chiều cao chỉ thu lại SAU khi trượt xong, lúc
+         re-render, nên suốt 250ms trượt đóng vẫn lộ nền đen dưới ngăn kéo.)
+         Re-render sau đó đặt lại đúng giá trị đóng, không đổi gì thêm. */
+      setDrawerStageHeight(targetDy);
       drawerAnimTimer = setTimeout(function () {
         if (myToken !== drawerAnimToken) return;
         drawerAnimTimer = 0;
@@ -735,8 +768,8 @@
        qua setAudioEngine (tránh vòng tròn: engine cần getVideoEl/
        isVideoItem của renderer). Không có engine (test đợt A–D) thì mọi
        đường gọi đều có guard — state phát vẫn chạy như cũ (chưa có tiếng).
-       - tickerError: chữ đỏ không dấu trên dòng chữ chạy (kênh lỗi / bài
-         Demo chưa có file nhạc). setTickerText ưu tiên hiện nó, màu đỏ.
+       - tickerError: chữ đỏ không dấu trên dòng chữ chạy (kênh lỗi / mục
+         chưa có link nhạc). setTickerText ưu tiên hiện nó, màu đỏ.
        - onPlaybackChange: index.html lưu state phát vào localStorage. */
     var audioEngine = opts.audioEngine || null;
     var onPlaybackChange = opts.onPlaybackChange || null;
@@ -829,15 +862,14 @@
       for (var i = 0; i < tickerEls.length; i++) setTickerText(tickerEls[i]);
     }
     function getTickerError() { return tickerError; }
-    /* Phát mục hiện tại qua engine. Bài Demo (url rỗng) không có file
-       nhạc thật -> chỉ hiện trạng thái, không crash, không bịa tiếng
-       (state playing vẫn giữ như đợt C để test cũ không đổi). */
+    /* Phát mục hiện tại qua engine. Mục không có URL (không có file
+       nhạc thật) -> chỉ hiện trạng thái, không crash, không bịa tiếng. */
     function startPlaybackForCurrent() {
       var it = playlistState.items[playlistState.current];
       if (!it) return { ok: false, reason: "empty" };
       if (!it.url) {
-        showTickerError("bai demo chua co file nhac");
-        return { ok: false, reason: "demo" };
+        showTickerError("muc nay chua co link nhac");
+        return { ok: false, reason: "no-url" };
       }
       clearTickerError();
       if (!audioEngine) return { ok: false, reason: "no-engine" };
@@ -1011,8 +1043,9 @@
          đặt state, chưa phát ra tiếng).
        - filter: chuỗi tìm, lọc tức thì theo tên, KHÔNG đổi thứ tự gốc.
        - original: thứ tự lúc nạp (để Misc "Khôi phục thứ tự gốc").
-       Mặc định: 3 bài Demo của đợt A (nhóm "Demo"). index.html nạp
-       radio.m3u xong gọi setPlaylistData để chèn 41 kênh lên đầu, Demo ở cuối.
+       Mặc định (đợt 9.5): playlist RỖNG cho tới khi index.html nạp
+       radio.m3u xong gọi setPlaylistData để chèn 41 kênh (không còn
+       bài Demo — người dùng chốt bỏ hết, chỉ giữ nguồn của mình).
        radio.m3u thật KHÔNG có group-title nào (41 kênh đều không thẻ) nên
        nhóm mặc định của chúng là "Radio" (tên nguồn), ghi rõ ở đây — không
        phải "Không rõ" như quy ước gom nhóm của Webamp fork. */
@@ -1022,7 +1055,7 @@
     var playlistState = {
       items: demoPlaylistItems(), original: null,
       selected: 0, current: 0, playing: false, filter: "",
-      source: "Demo (3 bai mau)"
+      source: ""
     };
     playlistState.original = playlistState.items.slice();
     var plListDiv = null, plSearchInput = null, lastExportedM3U = "";
@@ -1056,12 +1089,13 @@
         groups: playlistGroups()
       };
     }
-    /* Nạp nguồn .m3u làm dữ liệu chính: kênh radio lên đầu (giữ tên +
-       thứ tự gốc), 3 bài Demo ở cuối. Trả về tổng số mục. */
+    /* Nạp nguồn .m3u làm dữ liệu chính: chỉ kênh radio (giữ tên +
+       thứ tự gốc). Đợt 9.5: không còn nối bài Demo vào cuối. Trả về
+       tổng số mục. */
     function setPlaylistData(m3uText, baseUrl, sourceName) {
       var radio = parseM3U(m3uText, baseUrl);
       for (var i = 0; i < radio.length; i++) if (!radio[i].group) radio[i].group = "Radio";
-      var items = radio.concat(demoPlaylistItems());
+      var items = radio;
       playlistState.items = items;
       playlistState.original = items.slice();
       playlistState.selected = 0; playlistState.current = 0;
@@ -1092,10 +1126,8 @@
       refreshPlaylistRows();
       return true;
     }
-    /* Nhấp đúp = phát: đặt current + playing (state cho đợt E dùng tiếp;
-       đợt C chưa phát ra tiếng). Bài Demo thì đồng bộ demo.track để đồng hồ/
-       chữ chạy cửa sổ chính hiện đúng bài; kênh radio thì ticker giữ bài
-       Demo trước đó (đợt E sẽ thống nhất). */
+    /* Nhấp đúp = phát: đặt current + playing (state cho đợt E dùng tiếp).
+       Đồng hồ/chữ chạy cửa sổ chính hiện tên mục đang phát. */
     function playPlaylistItem(idx) {
       if (!playlistState.items.length) return false;
       idx = clampPlaylistIdx(idx);
@@ -1119,7 +1151,7 @@
       var playedItem = playlistState.items[idx];
       if (isVideoItem(playedItem)) openAvs("video");
       else if (avsState.open && !avsState.detached && avsState.mode === "video" && RES.embeddedAvs) setAvsMode("vis");
-      /* Đợt E — phát thật qua audio engine (bài Demo không có file nhạc
+      /* Đợt E — phát thật qua audio engine (mục không có link nhạc
          thì chỉ hiện trạng thái, xem startPlaybackForCurrent). */
       startPlaybackForCurrent();
       persistPlayback();
@@ -1166,19 +1198,14 @@
       });
       requestRerender();
     }
-    function clearPlaylistToDemo() {
-      playlistState.items = demoPlaylistItems();
+    /* Đợt 9.5: xóa hết playlist (không còn "chỉ còn Demo" — đã bỏ hết
+       bài Demo theo yêu cầu người dùng). */
+    function clearPlaylist() {
+      playlistState.items = [];
       playlistState.original = playlistState.items.slice();
       playlistState.selected = 0; playlistState.current = 0; playlistState.playing = false;
       demo.playing = false;
       if (audioEngine) audioEngine.stop();
-      updateInfoEls();
-      requestRerender();
-    }
-    function readdDemoTracks() {
-      var have = {};
-      playlistState.items.forEach(function (it) { if (it.group === "Demo") have[it.name] = true; });
-      demoPlaylistItems().forEach(function (d) { if (!have[d.name]) playlistState.items.push(d); });
       updateInfoEls();
       requestRerender();
     }
@@ -1491,8 +1518,8 @@
     }
 
     /* Self-check hình học AVS/Video (ĐỢT F — chạy thật lúc nạp/mở qua
-       checkDrawer ở index.html, chung 1 banner #drawer-check với self-check
-       ngăn kéo). Đo từ DOM thật, KHÔNG theo state: phần tử nào có mặt thì
+       checkDrawer ở index.html, chung 1 lần chạy console với self-check
+       ngăn kéo; đợt 9.5 đã gỡ banner, chỉ ghi console). Đo từ DOM thật,
        hình học của nó phải đúng; chỉ kiểm "mở mà thiếu" khi stage hiện tại
        là cửa sổ chính (player.main có mặt, hoặc skin Classic không có main).
        Vẽ playlist riêng (Pledit) thì bỏ qua kiểm "thiếu" vì stage đó vốn
@@ -1541,7 +1568,8 @@
     }
 
     /* Self-check tiếng (ĐỢT F — chạy thật qua checkDrawer ở index.html,
-       chung 1 banner #drawer-check). Bảo đảm MediaElementSource chỉ tạo
+       chung 1 lần chạy console với các self-check khác; đợt 9.5 đã gỡ
+       banner, chỉ ghi console). Bảo đảm MediaElementSource chỉ tạo
        1 lần/thẻ nằm ở ensureSource (audio.js: cờ + so khớp element);
        kiểm lúc chạy chỉ bắt TRIỆU CHỨNG: EQ bật + đang phát + graph đã
        dựng mà thẻ đang phát chưa có source nào → tiếng đang bypass,
@@ -2548,15 +2576,14 @@
         else if (action === "SEEK") {
           if (!silent) {
             /* Đợt E — tua thật khi media có thời lượng + seek được; đài
-               live không tua; bài Demo (chưa có tiếng) thì tua đồng hồ
-               mẫu như đợt A–D. */
+               live không tua; mục track chưa có URL thì tua đồng hồ mẫu. */
             var sought = false;
             if (audioEngine) sought = audioEngine.seekToFraction(rec.frac);
             if (!sought) {
               var curSeek = playlistState.items[playlistState.current];
               if (curSeek && curSeek.kind === "track" && !curSeek.url) {
                 demo.seekFrac = rec.frac;
-                demo.t = rec.frac * (curSeek.len || DEMO_TRACKS[demo.track].len);
+                demo.t = rec.frac * (curSeek.len || (DEMO_TRACKS[demo.track] || {}).len || 0);
                 updateTimerEls(); updateProgress();
               }
             }
@@ -2946,15 +2973,14 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#ddd";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v9 · Playlist Editor (đợt C): 41 kênh radio.m3u + 3 bài Demo. Nhấp 1 lần để chọn, nhấp đúp để phát (đợt E mới có tiếng). Bấm vào đây để đóng.";
+      box.textContent = "Amp v9 · Playlist Editor (đợt C): 41 kênh radio.m3u. Nhấp 1 lần để chọn, nhấp đúp để phát (đợt E mới có tiếng). Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
     }
     function addMenuItems(anchorDiv) {
       return [
         { label: "Nạp lại radio.m3u (41 kênh)", action: function () { if (onReloadRadio) onReloadRadio(); } },
-        { label: "Thêm URL…", action: function () { showAddUrlForm(anchorDiv); } },
-        { label: "Thêm lại 3 bài Demo", action: function () { readdDemoTracks(); } }
+        { label: "Thêm URL…", action: function () { showAddUrlForm(anchorDiv); } }
       ];
     }
     function selectMenuItems() {
@@ -2974,7 +3000,7 @@
       return [
         { label: "Lưu playlist (.m3u)", action: function () { exportPlaylistM3U(); } },
         { label: "Nạp lại radio.m3u", action: function () { if (onReloadRadio) onReloadRadio(); } },
-        { label: "Xóa hết (chỉ còn Demo)", action: function () { clearPlaylistToDemo(); } }
+        { label: "Xóa hết", action: function () { clearPlaylist(); } }
       ];
     }
     function viewMenuItems() {
@@ -3050,9 +3076,9 @@
           return;
         }
         if (display === "PE_Info" || id === "PLTime") {
-          /* PLTime = TỔNG thời gian các mục có thời lượng (demo 3 bài =
-             225+187+243 = 655s = 10:55); kênh radio không có thời lượng nên
-             không tính vào tổng, không bịa số. */
+          /* PLTime = TỔNG thời gian các mục có thời lượng; kênh radio
+             không có thời lượng nên không tính vào tổng, không bịa số
+             (chỉ có radio thì tổng hiện 0:00). */
           var pdiv = await makeBitmapText(fontId, fmtTime(playlistTotalTime()), w, align, color, valign, h);
           div.appendChild(pdiv);
           infoEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color, valign: valign, boxH: h, kind: "pltime" });
@@ -3094,9 +3120,11 @@
         text = stripDiacritics(cur.name);
         if (rec.showlen && cur.len != null) text += " (" + fmtTime(cur.len) + ")";
       } else {
-        var t = DEMO_TRACKS[demo.track];
-        text = t.name;
-        if (rec.showlen) text += " (" + fmtTime(t.len) + ")";
+        /* Đợt 9.5: không còn bài Demo — chưa phát thì ticker hiện tên mục
+           đang chọn (thường là kênh radio đầu), trống nếu playlist rỗng. */
+        var cur0 = playlistState.items[playlistState.current];
+        text = cur0 ? stripDiacritics(cur0.name) : "";
+        if (rec.showlen && cur0 && cur0.len != null) text += " (" + fmtTime(cur0.len) + ")";
       }
       var tdiv = await makeBitmapText(rec.fontId, text, rec.boxW, "left", color);
       rec.holder.innerHTML = "";

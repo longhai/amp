@@ -22,9 +22,25 @@
      Chỉ còn: cửa sổ skin (#stage) + 1 nút menu nhỏ ⋯ ở góc dưới-phải
      (nạp skin / thêm nhạc / zoom) + banner đỏ chỉ hiện khi lỗi. */
   html,body{margin:0;padding:0;background:#141414;color:#ccc;font-family:Verdana,Arial,sans-serif;}
-  body{text-align:center;padding:8px;}
-  #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;}
-  .stage{position:relative;margin:0 auto;overflow:hidden;background:#000;
+  /* Đợt 9.5 (lỗi 3+4): body padding 0 — trước đây padding:8px đẩy toàn
+     bộ stage sang phải 8px (trái hở, phải bị cắt: cửa sổ chính 354px
+     tới x=362 trên viewport 360px; playlist 436px cắt 84px). Giờ các
+     cửa sổ sát mép trái, cửa sổ chính vừa khít viewport 360px.
+     Đợt 9.5 (lỗi 1): ẩn thanh cuộn ngang của #stage-wrap — thanh cuộn
+     (xuất hiện vì stage 354px rộng hơn wrap 344px) chính là "lằn ngang"
+     ở đáy ngăn kéo lúc trượt xuống: nó nằm ở đáy stage, hiện ra khi
+     stage đổi cao (mở ngăn kéo) rồi mờ đi lúc nghỉ. Ẩn thanh cuộn nhưng
+     vẫn giữ overflow-x:auto nên vẫn vuốt ngang được để xem playlist. */
+  body{text-align:center;padding:0;}
+  /* Đợt 9.5 (lỗi 6): stage/wrap co giãn chiều cao MƯỢT (250ms ease, khớp
+     DRAWER_ANIM_MS) để đáy stage bám đáy ngăn kéo lúc trượt ra/vào —
+     không còn khoản nền đen #000 lộ ra dưới ngăn kéo trong lúc trượt
+     (trước đây stage nhảy ngay lên 280px lúc mở, ngăn kéo trượt sau
+     250ms nên lộ nền đen; lúc đóng stage giữ 280 suốt lúc trượt rồi
+     mới thu lại). */
+  #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;transition:height 250ms ease;}
+  #stage-wrap::-webkit-scrollbar{display:none;}
+  .stage{position:relative;margin:0 auto;overflow:hidden;background:#000;transform-origin:0 0;transition:height 250ms ease;
     box-shadow:0 0 0 1px #333, 0 8px 30px rgba(0,0,0,.6);}
   .stage .spr{position:absolute;display:block;border:0;padding:0;background-repeat:no-repeat;
     image-rendering:auto;-webkit-user-drag:none;user-select:none;pointer-events:none;}
@@ -40,12 +56,12 @@
   .stage .pl-list .row{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:13px;padding:0 3px;cursor:default;}
   .stage .pl-list .row.sel{background:#6788c9;color:#d6e4ff;}
   .stage .pl-list .row.cur{color:#bbd2ff;font-weight:bold;}
-  /* Banner lỗi: ẩn mặc định, chỉ hiện khi lỗi (version lệch, không nạp
-     được skin, self-check). Không có chữ thường trực trên màn hình. */
+  /* Banner lỗi: ẩn mặc định, chỉ hiện khi lỗi thật (version lệch,
+     không nạp được skin). Self-check KHÔNG còn banner trên màn hình
+     (đợt 9.5: người dùng chốt bỏ — chỉ ghi console để debug).
+     Không có chữ thường trực trên màn hình. */
   #status{display:none;margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:16px;text-align:left;line-height:1.5;}
   #status.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
-  #drawer-check{margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:0;text-align:left;line-height:1.5;display:none;}
-  #drawer-check.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
   /* Nút menu tối thiểu (⋯) ở góc dưới-phải: điểm chạm duy nhất ngoài
      skin — nạp skin .wal/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
      mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
@@ -66,7 +82,6 @@
 <body>
 <div id="stage-wrap"><div class="stage" id="stage"></div></div>
 <div id="status"></div>
-<div id="drawer-check"></div>
 <button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
   <button data-act="skin">Nạp skin .wal/.zip…</button>
@@ -77,22 +92,24 @@
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.4" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.5" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
    lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
    checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
    đổi CHỖ NÀY + 3 hằng version trong 3 file JS + ?v= trên 3 thẻ script.
    Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
-   Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11). */
-window.AMP_VERSION = "9.4";
+   Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
+   Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
+   sửa lệch phải + lằn ngang đáy ngăn kéo lúc trượt = thanh cuộn #stage-wrap). */
+window.AMP_VERSION = "9.5";
 </script>
-<script src="skin-loader.js?v=9.4"></script>
-<script src="audio.js?v=9.4"></script>
-<script src="renderer.js?v=9.4"></script>
+<script src="skin-loader.js?v=9.5"></script>
+<script src="audio.js?v=9.5"></script>
+<script src="renderer.js?v=9.5"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.4" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "9.5" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -105,12 +122,11 @@ window.AMP_VERSION = "9.4";
    biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
 var $ = function (s) { return document.querySelector(s); };
 var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
-    drawerCheckEl = $("#drawer-check"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"),
     fileInput = $("#skinpick");
 
-var VERSION = "9.4";
-var zoom = "1";
+var VERSION = "9.5";
+var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
 var shadeMode = false; /* đợt G: shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
@@ -119,7 +135,8 @@ var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằn
 /* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN: không còn dòng version thường
    trực trên màn hình. Thông báo thường → console (im lặng trên màn
    hình); chỉ LỖI mới hiện banner đỏ #status (version lệch, không nạp
-   được skin...). Self-check vẫn dùng banner riêng #drawer-check. */
+   được skin...). Self-check KHÔNG còn banner (đợt 9.5: bỏ theo yêu cầu
+   người dùng) — chỉ ghi console để debug. */
 function setStatus(msg, isErr) {
   if (isErr) {
     statusEl.textContent = msg;
@@ -137,7 +154,7 @@ function logVersion(extra) {
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v9.4 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v9.5 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -183,6 +200,13 @@ function ensureJSZip() {
   });
 }
 /* Đợt G — chỉ 2 chế độ zoom: "1" (cỡ gốc) và "fit" (Vừa màn hình).
+   Đợt 9.5 (lỗi 3+4): fit được phép THU NHỎ dưới 1x để vừa màn hình
+   (trước đây max(1,s) chặn lại nên playlist 436px trên viewport 360px
+   luôn bị cắt góc phải); availW lấy đủ chiều rộng cha, không trừ 24px
+   (số 24 cũ làm fit thu nhỏ oan cả cửa sổ chính 354px dù đã vừa 360px).
+   transform-origin:0 0 (đặt ở CSS .stage) nên scale không cắt đỉnh
+   stage như lỗi fit đợt 9.4. Mặc định là "fit" để thấy hết các góc;
+   chọn 1x trong menu ⋯ để về cỡ gốc (vuốt ngang xem playlist).
    Nút 2x/3x đã bỏ khỏi thanh công cụ (người dùng chốt 3/11: web chỉ
    cần 1x + fit). Mọi mode khác "fit" đều về 1x. Zoom giữ mượt như cũ
    (scale transform + image-rendering:auto, KHÔNG pixelated). */
@@ -193,15 +217,18 @@ function setZoom(mode) {
   var LH = parseInt(stage.style.height) || 143;
   var s = 1;
   if (mode === "fit") {
-    var availW = Math.max(200, stageWrap.parentElement.clientWidth - 24);
+    var availW = Math.max(200, stageWrap.parentElement.clientWidth);
     var availH = Math.max(120, window.innerHeight - 340);
     s = Math.min(availW / LW, availH / LH, 2.5);
-    s = Math.max(1, s); /* fit chỉ phóng to, không thu nhỏ dưới 1x */
   }
   stage.style.transform = "scale(" + s + ")";
   stageWrap.style.width = "100%";
   stageWrap.style.height = Math.round(LH * s) + "px";
-  stage.style.margin = (LW * s > stageWrap.clientWidth) ? "0" : "0 auto";
+  /* Đợt 9.5 (lỗi 4): margin 0 khi stage (đã scale) gần lấp đầy wrap
+     (trong 1px) — trước đây chỉ khi ">" nên trường hợp vừa khít
+     (LW*s == clientWidth, vd 354×1.017=360) vẫn giữ "0 auto" (3px mỗi
+     bên), cộng scale khiến mép phải tràn 3px ra ngoài wrap. */
+  stage.style.margin = (LW * s > stageWrap.clientWidth - 1) ? "0" : "0 auto";
   /* Đánh dấu chế độ đang chọn trong menu ⋯ (không còn nút zoom trên
      thanh công cụ). */
   if (menuPop) {
@@ -249,13 +276,14 @@ function setPlaylistOpen(open) {
   playlistOpen = !!open;
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
 }
-/* Self-check sau khi vẽ (đợt B + đợt F): sai thì hiện cảnh báo đỏ, không vẽ
-   sai trong im lặng. Mở ngăn kéo đặt thẳng vị trí cuối trong lúc vẽ (một
-   bước, không rAF hai bước) nên chỉ cần kiểm lại sau 50ms: nếu vị trí
-   lệch thì vẽ lại một lần và báo rõ.
-   Đợt F: chung 1 banner #drawer-check cho cả 3 self-check — ngăn kéo
-   (chỉ khi đang mở), AVS/Video (hình học vùng nhúng/cửa sổ rời), tiếng
-   (EQ bật + đang phát mà chưa nối MediaElementSource). */
+/* Self-check sau khi vẽ (đợt B + đợt F): sai thì ghi console, KHÔNG
+   hiện banner trên màn hình (đợt 9.5: người dùng chốt bỏ banner
+   tự kiểm — "nếu không có gì thì bỏ luôn cũng được"). Mở ngăn kéo đặt
+   thẳng vị trí cuối trong lúc vẽ (một bước, không rAF hai bước) nên
+   chỉ cần kiểm lại sau 50ms: nếu vị trí lệch thì vẽ lại một lần.
+   Đợt F: chung 1 lần chạy cho cả 3 self-check — ngăn kéo (chỉ khi
+   đang mở), AVS/Video (hình học vùng nhúng/cửa sổ rời), tiếng (EQ bật
+   + đang phát mà chưa nối MediaElementSource). */
 function checkDrawer() {
   if (!renderer) return;
   var errs = [];
@@ -271,13 +299,8 @@ function checkDrawer() {
     try { errs = errs.concat(renderer.runAvsSelfCheck(stage) || []); } catch (e) { errs.push("self-check AVS loi: " + (e.message || e)); }
   }
   try { errs = errs.concat(renderer.runAudioSelfCheck() || []); } catch (e) { errs.push("self-check tieng loi: " + (e.message || e)); }
-  if (errs.length) {
-    drawerCheckEl.textContent = "⚠ SELF-CHECK: " + errs.join(" | ");
-    drawerCheckEl.classList.add("show");
-  } else {
-    drawerCheckEl.textContent = "";
-    drawerCheckEl.classList.remove("show");
-  }
+  /* Đợt 9.5: chỉ ghi console, không hiện banner (đã gỡ #drawer-check). */
+  if (errs.length && window.console && console.warn) console.warn("[Amp] SELF-CHECK: " + errs.join(" | "));
 }
 /* Đợt G — mở/đóng ngăn kéo TRƯỢT MƯỢT bằng CSS transition trên transform
    (renderer.toggleDrawerAnimated): mở trượt xuống, đóng trượt lên, ~250ms.
@@ -340,14 +363,14 @@ async function bootSkin(file, name) {
       },
       isPlaylistOpen: function () { return playlistOpen; },
       /* Đợt C: menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
-         thư mục rồi đặt làm dữ liệu playlist (41 kênh + 3 bài Demo). */
+         thư mục rồi đặt làm dữ liệu playlist (41 kênh). */
       onReloadRadio: async function () {
         try {
           var r = await fetch("radio.m3u");
           if (r.ok) {
             var t = await r.text();
             var n = renderer.setPlaylistData(t, "radio.m3u", "radio.m3u");
-            setStatus("Đã nạp lại radio.m3u: " + n + " mục (41 kênh + 3 bài Demo).");
+            setStatus("Đã nạp lại radio.m3u: " + n + " mục.");
           }
         } catch (e) { setStatus("Không nạp lại được radio.m3u: " + (e.message || e), true); }
       },
@@ -389,9 +412,9 @@ async function bootSkin(file, name) {
       : await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
     checkDrawer();
     /* Đợt C: nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
-       (41 kênh, giữ tên + thứ tự gốc; Demo ở cuối). Không có file thì
-       playlist chỉ có 3 bài Demo, vẫn vẽ được. */
-    var playlistInfo = "Playlist: Demo (3 bài mẫu) — chưa thấy radio.m3u cùng thư mục";
+       (41 kênh, giữ tên + thứ tự gốc). Không có file thì playlist
+       trống, vẫn vẽ được. */
+    var playlistInfo = "Playlist: (trống) — chưa thấy radio.m3u cùng thư mục";
     try {
       var rr = await fetch("radio.m3u");
       if (rr.ok) {
@@ -402,7 +425,7 @@ async function bootSkin(file, name) {
           + Object.keys(pst.groups).map(function (k) { return k + " " + pst.groups[k]; }).join(", ")
           + ") · tổng thời gian " + Math.floor(pst.total / 60) + ":" + String(pst.total % 60).padStart(2, "0");
       }
-    } catch (e) { /* giữ playlist Demo */ }
+    } catch (e) { /* giữ playlist trống */ }
     /* Đợt E — khôi phục state phát đã lưu (volume/EQ/repeat/shuffle/
        mục đang chọn). Không tự phát lại. */
     try {
