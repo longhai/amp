@@ -1,8 +1,11 @@
-# Amp v9 — Winamp Modern (đợt G: shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt + zoom 1x/fit + màn hình chỉ hiện skin)
+# Amp v9 — Winamp Modern (đợt H: sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11)
 
-Bản phát hành duy nhất: **version 9.3** (đợt G bump từ 9.2: shade mode,
-sửa lằn đen menubar, tab ngăn kéo ẩn khi đóng, ngăn kéo trượt, bỏ nút
-zoom 2x/3x, màn hình chỉ hiện giao diện skin). Viết lại từ đầu theo đặc
+Bản phát hành duy nhất: **version 9.4** (đợt H bump từ 9.3: sửa hình học
+cửa sổ chính theo Winamp thật — main y=35 (không phải 17), cửa sổ đóng
+164 / mở 280; display liền mạch (tile crop đúng); chữ tab căn giữa;
+ngăn kéo render nguyên tử (không ẩn cửa sổ chính lúc mở lần đầu);
+nút Repeat không bị che (ẩn lớp openclosehider); đáy ngăn kéo tối đều
+(stacking context); nút ngăn kéo sát mép; tab ẩn lúc bắt đầu đóng). Viết lại từ đầu theo đặc
 tả skin-sim, không copy code v7.4/v8. Phát tiếng thật: nhạc + radio/TV,
 tiếng video đi qua chuỗi EQ/AudioContext như nhạc; EQ tắt = bypass
 tuyệt đối.
@@ -11,10 +14,10 @@ tuyệt đối.
 
 | File | Version | Nội dung |
 |---|---|---|
-| `index.html` | 9.3 (`window.AMP_VERSION`) | Vỏ trang + toolbar + kiểm version + self-check lúc chạy |
-| `skin-loader.js` | LOADER_VERSION 9.3 | Mở `.wal`/`.zip`, đọc XML, gom model (bitmap/font/màu/groupdef/layout), suy `embeddedAvs`, `drawerRestY`, `snapadjustbottom` |
-| `renderer.js` | RENDERER_VERSION 9.3 | Vẽ cửa sổ chính + shade + ngăn kéo + playlist + AVS/Video (nhúng + cửa sổ rời), EQ/Options/Color Themes, playlist `.m3u` |
-| `audio.js` | AUDIO_VERSION 9.3 | Phát tiếng thật: native trước, HLS sau 6s/lỗi; chuỗi EQ (preamp + 10 biquad + master + analyser); MediaElementSource mỗi thẻ 1 lần |
+| `index.html` | 9.4 (`window.AMP_VERSION`) | Vỏ trang + toolbar + kiểm version + self-check lúc chạy |
+| `skin-loader.js` | LOADER_VERSION 9.4 | Mở `.wal`/`.zip`, đọc XML, gom model (bitmap/font/màu/groupdef/layout), suy `embeddedAvs`, `drawerRestY`, `snapadjustbottom` |
+| `renderer.js` | RENDERER_VERSION 9.4 | Vẽ cửa sổ chính + shade + ngăn kéo + playlist + AVS/Video (nhúng + cửa sổ rời), EQ/Options/Color Themes, playlist `.m3u` |
+| `audio.js` | AUDIO_VERSION 9.4 | Phát tiếng thật: native trước, HLS sau 6s/lỗi; chuỗi EQ (preamp + 10 biquad + master + analyser); MediaElementSource mỗi thẻ 1 lần |
 | `winampmodern566.wal` | — | Skin Winamp Modern 566 (mặc định, tự nạp lúc mở trang) |
 | `base-2.91.wsz` | — | Skin Classic mẫu (không có vùng AVS nhúng → chỉ dùng cửa sổ Video/Hiệu ứng rời) |
 | `radio.m3u` | — | Playlist mặc định: 41 kênh radio/TV + 3 bài Demo (giữ tên + thứ tự gốc) |
@@ -127,9 +130,9 @@ kéo trượt qua nút skin, Video qua menu View, menu ⋯, zoom, force-dark).
   skin không có ở shade).
 - **Version/check chống mix giữ nguyên cơ chế, nhưng im lặng khi đúng:**
   không còn dòng version thường trực trên màn hình — version chỉ ghi
-  vào console (`[Amp] Amp v9 · loader v9.3 · audio v9.3 · renderer v9.3
+  vào console (`[Amp] Amp v9 · loader v9.4 · audio v9.4 · renderer v9.4
   · model fromCache: false · skin: …`) và tiêu đề tab trình duyệt
-  ("Amp v9.3 — Winamp Modern"). Chỉ khi lệch version mới hiện **banner
+  ("Amp v9.4 — Winamp Modern"). Chỉ khi lệch version mới hiện **banner
   đỏ** `#status` ("BẢN MIX — version lệch, dừng lại: …") và dừng boot.
   Banner lỗi `#status` và banner self-check `#drawer-check` đều ẩn mặc
   định, chỉ hiện khi có lỗi.
@@ -151,21 +154,21 @@ trực. Kiểm bằng 1 trong 2 cách:
 
 - **Console trình duyệt** (F12 → Console): dòng
   ```
-  [Amp] Amp v9 · loader v9.3 · audio v9.3 · renderer v9.3 · model fromCache: false · skin: Winamp Modern
+  [Amp] Amp v9 · loader v9.4 · audio v9.4 · renderer v9.4 · model fromCache: false · skin: Winamp Modern
   ```
-- **Tiêu đề tab trình duyệt:** "Amp v9.3 — Winamp Modern".
+- **Tiêu đề tab trình duyệt:** "Amp v9.4 — Winamp Modern".
 
-- Cả 3 số phải là **9.3** và `fromCache: false`. Lệch 1 số → trang DỪNG và
+- Cả 3 số phải là **9.4** và `fromCache: false`. Lệch 1 số → trang DỪNG và
   hiện **banner đỏ** ("BẢN MIX — version lệch, dừng lại: …") ngay dưới
   cửa sổ skin (không vẽ giao diện sai trong im lặng). Chụp màn hình
   banner này (hoặc dòng console) là biết đang chạy bản nào.
-- Nguồn sự thật duy nhất: `window.AMP_VERSION = "9.3"` đặt trong
+- Nguồn sự thật duy nhất: `window.AMP_VERSION = "9.4"` đặt trong
   `index.html` trước 3 thẻ script. Mỗi file JS tự đối chiếu với manifest
   lúc nạp (`MANIFEST_MISMATCH`); file cũ trên host/cache tự tố mình dù
   trang đã mới. `skin-loader.js` kiểm `EXPECTED_LOADER_VERSION` ngay khi
   nạp, trước mọi đọc cache.
 - Khóa cache model (định nghĩa sẵn trong `skinCacheKey`, để dùng khi nào
-  thêm cache): `tên.wal|loader9.3|render9.3` — chứa cả version loader VÀ
+  thêm cache): `tên.wal|loader9.4|render9.4` — chứa cả version loader VÀ
   version code vẽ. **v9 chưa cache model vào IndexedDB** (mỗi lần nạp đều
   đọc mới từ file `.wal`) nên không có rủi ro model cũ.
 
@@ -173,11 +176,13 @@ trực. Kiểm bằng 1 trong 2 cách:
 
 Sau mỗi lần vẽ/mở/khi phát/dừng, trang tự kiểm và hiện cảnh báo đỏ nếu sai:
 
-- **Ngăn kéo:** đỉnh ngăn kéo chìm đúng 13px dưới đáy main
-  (`restY + drawerInnerY(true) === mainH − 13`); tab nằm trong 4px cuối
-  ngăn kéo; 0 phần tử `.fill` trong panel EQ.
+- **Ngăn kéo:** đỉnh ngăn kéo mở = đỉnh main + snap (116), đóng = đỉnh
+  main (`restY + drawerInnerY === mainTop` khi đóng, `mainTop + snap`
+  khi mở); tab nằm trong 4px cuối ngăn kéo; 0 phần tử `.fill` trong
+  panel EQ; ngăn kéo có `isolation: isolate` (shadow đè đều đáy).
 - **AVS/Video:** vùng nhúng 354×116 tại (0,35), `video.group` 346×69 tại
-  (4,56), main lùi 116 (17+116=133); cửa sổ rời 354×200.
+  (4,56), main lùi 116 (35+116=151); cửa sổ rời 354×200; lớp
+  `openclosehider` không vẽ (để nút videoavs ▼/▲ hiện).
 - **Tiếng:** EQ bật + đang phát + graph đã dựng mà thẻ đang phát chưa có
   MediaElementSource → báo "tiếng đang bypass, không qua EQ".
   (Bảo đảm "mỗi thẻ 1 lần" nằm ở `ensureSource` trong `audio.js`: cờ +
@@ -186,10 +191,12 @@ Sau mỗi lần vẽ/mở/khi phát/dừng, trang tự kiểm và hiện cảnh 
 ## Cách test nhanh trên điện thoại (theo thứ tự ưu tiên)
 
 1. **Version:** mở trang, màn hình chỉ thấy skin (không tiêu đề/nút/
-   chữ hướng dẫn); kiểm console phải là `loader v9.3 · audio v9.3 ·
-   renderer v9.3 · model fromCache: false`; không có banner đỏ.
-2. **Cửa sổ chính:** 354×143, đồng hồ 0:02, chữ chạy tên bài, nút/thanh
-   trượt đúng vị trí như Winamp gốc. **Menubar phải SÁNG chữ ĐEN**
+   chữ hướng dẫn); kiểm console phải là `loader v9.4 · audio v9.4 ·
+   renderer v9.4 · model fromCache: false`; không có banner đỏ.
+2. **Cửa sổ chính:** 354×164 (đóng) / 280 (mở ngăn kéo), main y=35,
+   display (5,38) 305×67 liền mạch không lằn đen, đồng hồ 0:02, chữ chạy
+   tên bài, nút/thanh trượt đúng vị trí như Winamp gốc (khung display
+   đáy y=101, rãnh seek y=114, nút prev y=141 — đo từ Winamp thật). **Menubar phải SÁNG chữ ĐEN**
    (đã sửa force-dark — nếu điện thoại bật dark mode mà menubar vẫn tối
    thì báo lại, kèm ảnh).
 3. **Shade:** bấm nút thu gọn góc trên phải cửa sổ chính → chỉ còn thanh

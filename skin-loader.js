@@ -2,9 +2,10 @@
    Amp v9 — skin-loader.js (VIẾT MỚI TỪ ĐẦU, đợt A)
    Loader skin Winamp Modern (.wal/.zip) theo SPEC-skin-sim §1.
    Không copy code v7.4/v8; chỉ giữ các công thức đã chứng minh đúng
-   (V8-BUGS.md):
-     - contentH = layoutH - frameOffsetY (frame titlebar 18px). Nếu không
-       trừ, nội dung main lệch xuống 18px, cửa sổ chính cao 161 thay vì 143.
+   (V8-BUGS.md) — NGOẠI TRỪ contentH (xem ghi chú ở frameOffsetFor):
+   công thức cũ contentH = layoutH - frameOffsetY SAI (đo lại 3/11/2026
+   từ Winamp thật: display/seek/playbuttons đều thấp hơn Amp đúng 18px;
+   main phải ở y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
      - snapadjustbottom + drawerRestY ghi vào model layout.
    Version: LOADER_VERSION = "9.2". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
@@ -18,10 +19,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "9.3";
-  var EXPECTED_LOADER_VERSION = "9.3";
+  var LOADER_VERSION = "9.4";
+  var EXPECTED_LOADER_VERSION = "9.4";
   /* ĐỢT F — version manifest duy nhất: index.html đặt window.AMP_VERSION
-     = "9.3" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
+     = "9.4" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
      manifest có mà khác version của file thì MANIFEST_MISMATCH = true để
      trang báo "bản mix" thay vì vẽ sai trong im lặng (bài học v7.4/v8).
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -327,9 +328,19 @@
       return "";
     }
     /* frameOffsetY: chiều cao titlebar của frame (18px với skin Modern).
-       Nội dung frame nằm dưới titlebar nên chiều cao hiệu dụng của layout là
-       contentH = layoutH - frameOffsetY. Dùng 18 khi layout chứa phần tử
-       frame XUI (MainFrame/NoStatus/TitleBar), không thì 0. */
+       frameOffsetY CHỈ là độ lùi vị trí (nội dung bắt đầu ở y=18, dưới
+       titlebar), KHÔNG phải chiều cao bị trừ khỏi nội dung:
+       contentH = layoutH (đầy đủ). Công thức cũ contentH = layoutH - 18
+       SAI — đo từ Winamp thật (GIF + WACUP PNG, 3/11/2026): main phải ở
+       y=35 (display đáy 101, seek 114, nút prev 141 — đều thấp hơn Amp
+       đúng 18px). Nhóm content (player.content.group) không có thuộc tính
+       h nên cao bằng frame (280); nhóm dummy (relath=1, h=0) cao 280, và
+       main/ngăn kéo neo đáy y=-263 relaty=1 mới rơi đúng y=17 trong
+       content (17+18=35 trong layout). Trừ 18 làm dummy cao 262, main
+       lệch lên y=17, display đè lên menubar 15px, nút Repeat bị cụm video
+       che, nút ngăn kéo lệch khỏi lỗ trong main.png/main2.png.
+       Dùng 18 khi layout chứa phần tử frame XUI
+       (MainFrame/NoStatus/TitleBar), không thì 0. */
     function frameOffsetFor(layEl) {
       var all = layEl.getElementsByTagName("*");
       for (var i = 0; i < all.length; i++) {
@@ -358,9 +369,10 @@
             w: LW, h: LH,
             snapadjustbottom: intAttr(llist[l], "snapadjustbottom", 0),
             frameOffsetY: foY,
-            /* CÔNG THỨC ĐÚNG (V8-BUGS Lỗi 1): contentH = layoutH - frameOffsetY.
-               Không trừ thì main lệch xuống 18px, cao 161 thay vì 143. */
-            contentH: LH - foY,
+            /* contentH = layoutH (đầy đủ — xem ghi chú frameOffsetFor):
+               nhóm content không có h nên cao bằng frame; 18px chỉ lùi
+               vị trí top, không trừ chiều cao. */
+            contentH: LH,
             drawerRestY: 0 /* điền ở dưới, từ instance ngăn kéo trong model */
           };
           if (!layouts[lid]) layouts[lid] = layouts[key];
@@ -369,9 +381,11 @@
     }
     /* drawerRestY: vị trí nghỉ của ngăn kéo trong hệ layout.
        Instance <group id="player.normal.drawer" y="-263" relaty="1"> nằm
-       trong player.content.dummy.group (nội dung frame, cao contentH):
-       restY = contentH + y = 262 - 263 = 17 (tuyệt đối trong layout, vì
-       nội dung frame bắt đầu ở y = frameOffsetY = 18; -1 + 18 = 17). */
+       trong player.content.dummy.group (nội dung frame, cao contentH=280):
+       restY = contentH + y = 280 - 263 = 17 trong hệ content; cộng
+       frameOffsetY (18) ra hệ layout: 17 + 18 = 35. Ngăn kéo nghỉ ở y=35,
+       cùng đỉnh với main (cũng neo -263), đáy 164 = chiều cao cửa sổ đóng
+       (container default_h=164) — khớp Winamp thật. */
     var drawerInfo = null;
     (function computeDrawer() {
       var gids = Object.keys(groupdefs);
@@ -381,7 +395,7 @@
           if (lowerTag(kids[j]) !== "group") continue;
           if (kids[j].getAttribute("id") !== "player.normal.drawer") continue;
           var mainLay = layouts["main|normal"] || layouts["normal"];
-          var cH = mainLay ? mainLay.contentH : 262;
+          var cH = mainLay ? mainLay.contentH : 280;
           var y = intAttr(kids[j], "y", 0);
           var relat = kids[j].getAttribute("relaty");
           var restY = relat === "1" ? cH + y : y;
@@ -567,7 +581,7 @@
       if (!gd) return null;
       var mainLay = layouts["main|normal"] || layouts["normal"];
       var layW = mainLay ? mainLay.w : 354;
-      var contentH = mainLay ? mainLay.contentH : 262;
+      var contentH = mainLay ? mainLay.contentH : 280;
       var frameOff = mainLay ? mainLay.frameOffsetY : 18;
       var inst = null;
       var gids = Object.keys(groupdefs);

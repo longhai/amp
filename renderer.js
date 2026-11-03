@@ -1,11 +1,11 @@
 /* =====================================================================
    Amp v9 — renderer.js (VIẾT MỚI TỪ ĐẦU, đợt A; đợt B thêm ngăn kéo)
    Renderer cửa sổ chính theo SPEC-skin-sim §3. Không copy code v7.4/v8;
-   chỉ giữ các công thức đã chứng minh đúng (V8-BUGS.md):
-     - contentH = layoutH - frameOffsetY (loader lo, renderer dùng contentH
-       khi vẽ nội dung frame).
-     - drawerInnerY = mainH + slot - full - restY, slot(mở)=snap,
-       slot(đóng)=max(8, round(full*0.1)); đỉnh ngăn kéo chìm 13px.
+   chỉ giữ các công thức đã chứng minh đúng (V8-BUGS.md) — NGOẠI TRỪ
+   contentH và drawerInnerY (sửa đợt 9.4, xem ghi chú ở hai hàm đó):
+   đo lại từ Winamp thật 3/11/2026 (GIF + WACUP PNG) cho thấy main phải
+   ở y=35 (đáy 161), cửa sổ đóng cao 164, mở cao 280 — công thức cũ
+   (contentH = layoutH - 18, dải ngăn kéo 13px) lệch đúng 18px.
      - panel EQ (17,15), tabs (24,108) — lấy từ model, không hardcode.
    QUY TẮC BẤT BIẾN: slider EQ KHÔNG BAO GIỜ có fill. Không có khối tạo
    fillEl, không có màu fill xanh — grep toàn dự án phải ra 0.
@@ -44,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.3";
-  var EXPECTED_RENDERER_VERSION = "9.3";
+  var RENDERER_VERSION = "9.4";
+  var EXPECTED_RENDERER_VERSION = "9.4";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.3" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.4" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -65,16 +65,21 @@
   var VIDEO_SHIFT = 116;        /* video/AVS mở: main lùi 116px */
   /* Vị trí tuyệt đối đã khóa từ .wal thật (VERIFIED-NUMBERS.md §2) —
      renderer KHÔNG hardcode các số này, chúng đều tính ra từ XML lúc chạy
-     (main y=17 + offset nhóm + offset phần tử); ghi lại đây để đợt sau
-     khỏi nhầm khi đọc SPEC §4.2:
-     - main y=17 (đáy 143); menubar y=18 (cao 17); display GỐC NHÓM y=20
-       (17+3), nhưng SPEC ghi "display y=36" là ĐỈNH CHỮ TIMER (20+16).
-     - ticker (Songticker) y=63 (17+3+43) — SPEC ghi 60 là cộng thiếu y=3
-       của nhóm display. Renderer lấy từ XML nên đã đúng 63.
-     - seek y=92 (17+75); playbuttons y=110 (17+93).
+     (main y=35 + offset nhóm + offset phần tử); ghi lại đây để đợt sau
+     khỏi nhầm khi đọc SPEC §4.2. Đo lại từ Winamp thật (GIF + WACUP PNG,
+     3/11/2026): main y=35 (đáy 161); menubar y=18 (cao 17); display GỐC
+     NHÓM y=38 (35+3), khung display 38–105 (nền xanh thấy 43–100);
+     đỉnh chữ TIMER ở display y=16 → layout y=54 (số 36 trong SPEC cũ
+     là main 17 + 3 + 16, đã sai 18px theo main cũ, đừng dùng). Cụ thể,
+     theo main y=35:
+     - ticker (Songticker) y=81 (35+3+43) — SPEC ghi 60 là cộng thiếu y=3
+       của nhóm display VÀ main cũ sai 18px. Renderer lấy từ XML nên đúng.
+     - seek y=110 (35+75); playbuttons y=128 (35+93).
      - volume: SPEC ghi "y=117" là ĐỈNH NỀN volume (layer player.volume.bg
-       y=100 trong main); SLIDER Volume thật ở y=127 (17+110), fill
-       volumebar ở y=132 (17+115). Đừng dùng 117 làm vị trí slider. */
+       y=100 trong main); SLIDER Volume thật ở y=145 (35+110), fill
+       volumebar ở y=150 (35+115). Đừng dùng 117 làm vị trí slider.
+     - ngăn kéo nghỉ y=35 (đáy 164 = cửa sổ đóng); mở y=151 (đáy 280);
+       nút mở ngăn kéo y=153 (35+118) lộ qua lỗ trong main.png/main2.png. */
   var TRIM_CUT_BELOW = 0.8;     /* maxB < LH*0.8 thì cắt */
   var TRIM_IGNORE_ABOVE = 1.5;  /* bỏ qua đáy > LH*1.5 */
   var VOLUMEBAR_MAXW = 86, VOLUMEBAR_SHADE_MAXW = 56;
@@ -278,21 +283,53 @@
       matrix: sr + " 0 0 0 0  0 " + sg + " 0 0 0  0 0 " + sb + " 0 0  0 0 0 1 0" };
   }
 
-  /* ---------- toán ngăn kéo (giữ công thức v8 đã đo đúng) ---------- */
+  /* ---------- toán ngăn kéo ---------- */
   function drawerSnap(layout, fullH) {
     if (layout && typeof layout.snapadjustbottom === "number" && layout.snapadjustbottom > 0) return layout.snapadjustbottom;
     return fullH || 129;
   }
-  function drawerInnerY(open, mainH, snap, full, restY) {
-    var slot = open ? snap : Math.max(8, Math.round(full * 0.1));
-    return mainH + slot - full - restY;
+  /* Vị trí ngăn kéo theo đáy main (mainH) và chiều cao main (mainHeight,
+     đọc từ div main lúc chạy — groupdef player.main h=126 với skin 566):
+     - Đóng: đỉnh ngăn kéo = đỉnh main (ngăn kéo và main cùng neo nghỉ
+       y=-263 relaty=1 nên cùng đỉnh restY; ngăn kéo chỉ thò
+       (full - mainHeight) px dưới đáy main — 3px với skin 566; nút mở lộ
+       qua lỗ trong suốt trong main.png/main2.png, khớp Winamp thật).
+       innerY = mainH - mainHeight - restY (= 0 khi video đóng).
+     - Mở: trượt đúng snapadjustbottom từ vị trí nghỉ:
+       innerY = mainH - mainHeight - restY + snap (đỉnh mở = restY+snap,
+       đáy mở = restY+snap+full = chiều cao layout khi video đóng).
+     Công thức cũ (slot mở=snap, đóng=full*0.1≈13) đặt ngăn kéo theo đáy
+     main trừ full, cho dải lộ 13px dưới main và chìm 13px khi mở — SAI:
+     đo Winamp thật (GIF + WACUP PNG): cửa sổ đóng cao 164, mở cao 280
+     (= layout h); dải lộ 3px, chìm 10px (= mainHeight - snap).
+     mainHeight thiếu (gọi cũ) thì dùng full để khỏi NaN — các điểm gọi
+     trong renderer đều truyền đủ. */
+  function drawerInnerY(open, mainH, snap, full, restY, mainHeight) {
+    var mh = (typeof mainHeight === "number" && mainHeight > 0) ? mainHeight : full;
+    var base = mainH - mh - restY;
+    return open ? base + snap : base;
   }
-  /* Self-check hình học (V8-BUGS checklist): đỉnh ngăn kéo phải chìm đúng
-     full-snap (13px với skin 566) dưới đáy main khi mở. */
+  /* Self-check hình học: đỉnh ngăn kéo khi đóng phải bằng đỉnh main
+     (mainH - mainHeight), khi mở phải bằng đỉnh main + snap. */
   function drawerSelfCheck(p) {
     var errs = [];
-    if (p.restY + p.innerYOpen !== p.mainH - (p.full - p.snap)) {
-      errs.push("dinh ngan keo khong chim dung " + (p.full - p.snap) + "px: restY(" + p.restY + ")+innerY(" + p.innerYOpen + ")=" + (p.restY + p.innerYOpen) + " != mainH(" + p.mainH + ")-" + (p.full - p.snap));
+    var mainTop = p.mainH - (p.mainHeight || 0);
+    /* innerY (thuc te, do tu DOM): dinh ngan keo phai o 1 trong 2 vi tri
+       hop le — dong (= dinh main) hoac mo (= dinh main + snap). Dung cho
+       runDrawerSelfCheck, vi trang thai mo/dong trong DOM khong nhat
+       thiet dong bo voi drawerState.open (renderLayout goi truc tiep
+       voi opts.drawerOpen khong cap nhat drawerState). */
+    if (p.innerY !== undefined) {
+      var actualTop = p.restY + p.innerY;
+      if (actualTop !== mainTop && actualTop !== mainTop + p.snap) {
+        errs.push("dinh ngan keo khong o vi tri dong (" + mainTop + ") cung khong o vi tri mo (" + (mainTop + p.snap) + "): dang o " + actualTop + " (restY " + p.restY + " + innerY " + p.innerY + ")");
+      }
+    }
+    if (p.innerYOpen !== undefined && p.restY + p.innerYOpen !== mainTop + p.snap) {
+      errs.push("dinh ngan keo mo khong bang dinh main + snap: restY(" + p.restY + ")+innerY(" + p.innerYOpen + ")=" + (p.restY + p.innerYOpen) + " != mainH(" + p.mainH + ")-mainHeight(" + (p.mainHeight || 0) + ")+snap(" + p.snap + ")=" + (mainTop + p.snap));
+    }
+    if (p.innerYClosed !== undefined && p.restY + p.innerYClosed !== mainTop) {
+      errs.push("dinh ngan keo dong khong bang dinh main: restY(" + p.restY + ")+innerYClosed(" + p.innerYClosed + ")=" + (p.restY + p.innerYClosed) + " != mainTop(" + mainTop + ")");
     }
     if (p.tabsBottom !== null && p.full - p.tabsBottom > 4) {
       errs.push("tab khong nam trong 4px cuoi ngan keo: day tab " + p.tabsBottom + " / cao ngan keo " + p.full);
@@ -458,6 +495,20 @@
       var tops2 = lastDrawerTops();
       var targetDy = (tops2.closed !== null && tops2.open !== null) ? (tops2.closed - tops2.open) : -103;
       if (targetDy >= 0) targetDy = -103;
+      /* Lỗi 2 (9.4): ẩn các tab ([data-tab]) NGAY khi bắt đầu đóng, trước
+         khi trượt. Không thì dải tab (nền sáng + chữ EQUALIZER / OPTIONS /
+         COLOR THEMES ở đáy ngăn kéo) trượt lên qua mép cửa sổ chính trong
+         250ms và hiện thành lằn ngang thoáng qua — vì ngăn kéo vẽ ĐÈ lên
+         cửa sổ chính (không bị cửa sổ chính che như Winamp thật, nơi ngăn
+         kéo trượt chìm xuống sau cửa sổ chính). Re-render sau khi đóng vẽ
+         lại ngăn kéo không có tab (v9.3), nên việc ẩn ở đây chỉ tạm thời
+         trong lúc trượt; mở lại giữa chừng thì re-render vẽ lại tab.
+         XML không quy định hành vi lúc trượt — đã chọn ẩn tab lúc đóng
+         để mép cửa sổ chính sạch trong suốt quá trình trượt. */
+      try {
+        var tabElsClose = els.d.querySelectorAll("[data-tab]");
+        for (var tci = 0; tci < tabElsClose.length; tci++) tabElsClose[tci].style.display = "none";
+      } catch (e) { /* bỏ qua */ }
       setDrawerTransform(els.d, targetDy, true);
       setDrawerTransform(els.sh, targetDy, true);
       drawerAnimTimer = setTimeout(function () {
@@ -1415,8 +1466,9 @@
         drawerDiv = T.querySelector('[data-gid="player.normal.drawer"]');
       } catch (e) { /* jsdom cu: bo qua */ }
       if (!drawerDiv) return ["khong thay ngan keo trong DOM (chua mo ngan keo?)"];
-      var mainH = mainDiv ? (mainDiv._absY || 0) + (parseInt(mainDiv.style.height || "0", 10) || 0) : 143;
       var restY = (RES.drawer && RES.drawer.restY) || 17;
+      var mainHeight = mainDiv ? (parseInt(mainDiv.style.height || "0", 10) || 0) : 0;
+      var mainH = mainDiv ? (mainDiv._absY || 0) + mainHeight : (restY + mainHeight);
       var full = parseInt(drawerDiv.style.height || "0", 10) || ((RES.drawer && RES.drawer.fullH) || 129);
       var snap = (RES.layouts && RES.layouts["main|normal"] && RES.layouts["main|normal"].snapadjustbottom) || full;
       var innerY = (drawerDiv._absY || 0) - restY;
@@ -1430,9 +1482,10 @@
       } catch (e) { tabsBottom = null; }
       var fillCount = 0;
       try { fillCount = T.querySelectorAll(".fill").length; } catch (e) { fillCount = 0; }
-      var errs = drawerSelfCheck({ restY: restY, innerYOpen: innerY, mainH: mainH, full: full, snap: snap, tabsBottom: tabsBottom, fillCount: fillCount });
-      if (drawerState.open && Math.abs((drawerDiv._absY || 0) - (restY + drawerInnerY(true, mainH, snap, full, restY))) > 0.5) {
-        errs.push("ngan keo dang mo nhung dinh o " + drawerDiv._absY + ", dung ra " + (restY + drawerInnerY(true, mainH, snap, full, restY)));
+      var scParams = { restY: restY, mainH: mainH, mainHeight: mainHeight, full: full, snap: snap, tabsBottom: tabsBottom, fillCount: fillCount, innerY: innerY };
+      var errs = drawerSelfCheck(scParams);
+      if (drawerState.open && Math.abs((drawerDiv._absY || 0) - (restY + drawerInnerY(true, mainH, snap, full, restY, mainHeight))) > 0.5) {
+        errs.push("ngan keo dang mo nhung dinh o " + drawerDiv._absY + ", dung ra " + (restY + drawerInnerY(true, mainH, snap, full, restY, mainHeight)));
       }
       return errs;
     }
@@ -1545,6 +1598,35 @@
       });
     }
 
+    /* Tile đúng: cắt riêng vùng crop thành ảnh tile (cache dataURL) rồi
+       lặp lại — thay vì dùng cả ảnh nguồn làm nền repeat (khi phần tử hẹp
+       hơn ảnh nguồn thì repeat không lặp mà hiện một lát cắt liên tục, lôi
+       cả dải trong suốt ngăn cách các crop trong ảnh nguồn vào → lằn đen).
+       Lỗi 1 (display 2 lằn đen): display.png có dải trong suốt dọc tại
+       x=142-144 và x=219-223; lát cắt x=60-245 hiện chúng lên. Crop lấy từ
+       model (info.crop) nên đúng với mọi skin, không hardcode số 566.
+       Trả null khi không cắt được (jsdom/không canvas) → gọi dùng cách cũ. */
+    var tileCache = new Map();
+    async function tileURL(bitmapId, info, url) {
+      if (tileCache.has(bitmapId)) return tileCache.get(bitmapId);
+      var out = null;
+      try {
+        if (info && info.crop && typeof document !== "undefined" && typeof Image !== "undefined") {
+          var im = await loadImage(url);
+          var c = document.createElement("canvas");
+          var cx = null;
+          try { cx = c.getContext("2d"); } catch (e) { cx = null; }
+          if (cx && im.naturalWidth && im.naturalHeight) {
+            c.width = info.crop.w; c.height = info.crop.h;
+            cx.drawImage(im, info.crop.x, info.crop.y, info.crop.w, info.crop.h, 0, 0, info.crop.w, info.crop.h);
+            out = c.toDataURL("image/png");
+          }
+        }
+      } catch (e) { out = null; }
+      tileCache.set(bitmapId, out);
+      return out;
+    }
+
     /* Vẽ 1 sprite: crop/tile/alpha theo SPEC §3.4. */
     async function spriteDiv(bitmapId, elW, elH, o) {
       o = o || {};
@@ -1564,9 +1646,17 @@
         var src = await RES.imgSize(info.file);
         var sw = src ? src.w : info.w, sh = src ? src.h : info.h;
         if (o.tile) {
-          div.style.backgroundSize = sw + "px " + sh + "px";
-          div.style.backgroundPosition = (-info.crop.x) + "px " + (-info.crop.y) + "px";
-          div.style.backgroundRepeat = "repeat";
+          var turl = await tileURL(bitmapId, info, url);
+          if (turl) {
+            div.style.backgroundImage = 'url("' + turl + '")';
+            div.style.backgroundSize = info.crop.w + "px " + info.crop.h + "px";
+            div.style.backgroundPosition = "0 0";
+            div.style.backgroundRepeat = "repeat";
+          } else {
+            div.style.backgroundSize = sw + "px " + sh + "px";
+            div.style.backgroundPosition = (-info.crop.x) + "px " + (-info.crop.y) + "px";
+            div.style.backgroundRepeat = "repeat";
+          }
         } else {
           var sx = w / info.crop.w, sy = h / info.crop.h;
           div.style.backgroundSize = Math.round(sw * sx) + "px " + Math.round(sh * sy) + "px";
@@ -1689,6 +1779,12 @@
       if (align === "center" && boxW && totalW < boxW) holder.style.marginLeft = Math.floor((boxW - totalW) / 2) + "px";
       if (align === "right" && boxW && totalW < boxW) holder.style.marginLeft = Math.floor(boxW - totalW) + "px";
       if (valign !== "top" && boxH && boxH > font.charheight) {
+        /* Lỗi 4 (chữ tab lòi lên trên): holder là <span> inline nên
+           margin-top bị trình duyệt bỏ qua, chữ dính lên đầu hộp.
+           Đặt inline-block để margin căn giữa có tác dụng. Chỉ ảnh
+           hưởng các text cần căn giữa (boxH > charheight); timer BIGNUM
+           boxH=20=charheight nên không đổi. */
+        holder.style.display = "inline-block";
         holder.style.marginTop = Math.round((boxH - font.charheight) / 2) + "px";
       }
       div.appendChild(holder);
@@ -1961,6 +2057,15 @@
       div.style.width = gw + "px"; div.style.height = gh + "px";
       setAbs(div, parentEl, x, y);
       div.dataset.gid = gid;
+      /* Lỗi 8 (9.4): ngăn kéo phải là stacking context riêng (isolation)
+         để z-index:2 của config.tabs không thoát ra ngoài ngăn kéo và
+         đè lên shadow. Shadow (player.normal.drawer.shadow) là anh em
+         SAU của ngăn kéo trong dummy group, nên theo thứ tự vẽ nó phải
+         đè lên TOÀN BỘ ngăn kéo — kể cả 13px dưới của tab — như Winamp
+         thật (dải tối đều ở đáy ngăn kéo). Không có isolation, tab z:2
+         thoát ra ngoài, dải đáy loang sáng/tối không đều. Tab vẫn giữ
+         z:2 để đè nền panel ColorThemes BÊN TRONG ngăn kéo (D10). */
+      if (gid === "player.normal.drawer") div.style.isolation = "isolate";
       div.style.pointerEvents = "none";
       parentEl.appendChild(div);
       /* Menu ngang: mỗi mục rộng bằng ảnh layer rộng nhất trong groupdef con. */
@@ -2134,14 +2239,23 @@
         var content = el.getAttribute("content");
         var frameCtx = { overrides: ctx.overrides, hiddenIds: ctx.frameHidden || new Set(), drawerTab: ctx.drawerTab, titleText: ctx.titleText, frameHidden: ctx.frameHidden, windowKind: ctx.windowKind };
         if (content && RES.groupdefs[content]) {
-          /* Nội dung frame nằm dưới titlebar 18px: vẽ trước, frame đè sau. */
+          /* Nội dung frame nằm dưới titlebar 18px: vẽ trước, frame đè sau.
+             Chiều cao nội dung lấy theo groupSize của nhóm content (nhóm
+             không có h thì bằng chiều cao frame) — KHÔNG trừ 18: 18px chỉ
+             là độ lùi vị trí (top), không phải chiều cao bị mất. Trừ 18
+             làm dummy group cao 262 thay vì 280, main/ngăn kéo (neo đáy
+             y=-263 relaty=1) lệch lên 18px so với Winamp thật (đo 3/11/2026:
+             display đáy 101, seek 114, nút prev 141 — đều thấp hơn Amp
+             đúng 18px; main phải ở y=35, display 38, seek 110). */
+          var cgs = groupSize(content, w || parentW, h || parentH);
+          var cW = cgs[0], cH = cgs[1];
           var cdiv = document.createElement("div");
           cdiv.style.position = "absolute"; cdiv.style.left = "0px"; cdiv.style.top = FRAME_OFFSET_Y + "px";
-          cdiv.style.width = (w || parentW) + "px"; cdiv.style.height = Math.max(0, (h || parentH) - FRAME_OFFSET_Y) + "px";
+          cdiv.style.width = cW + "px"; cdiv.style.height = Math.max(0, cH) + "px";
           setAbs(cdiv, div, 0, FRAME_OFFSET_Y);
           cdiv.style.pointerEvents = "none";
           div.appendChild(cdiv);
-          await renderChildren(RES.groupdefs[content], cdiv, w || parentW, Math.max(0, (h || parentH) - FRAME_OFFSET_Y), ctx, depth + 1);
+          await renderChildren(RES.groupdefs[content], cdiv, cW, Math.max(0, cH), ctx, depth + 1);
         }
         await renderChildren(RES.groupdefs[xui], div, w || parentW, h || parentH, frameCtx, depth + 1);
         return;
@@ -2151,6 +2265,19 @@
         var lw = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : null;
         var lh = el.getAttribute("h") !== null ? relSize(el, "h", parentH) : null;
         if (!image) return;
+        /* Lỗi 7 (9.4): lớp openclosehider (viên thuốc xám đục 40x17) vẽ
+           SAU nút videoavs.open/close trong dummy group nên đè lên nút
+           (cùng vị trí, nút ở (-37,19), hider ở (-44,16)). Trong Winamp
+           thật, lớp này do MAKI videoavs.maki ẩn/hiện theo trạng thái
+           (Amp không chạy MAKI nên XML không cho biết khi nào hiện —
+           XML cũng không có visible trên lớp này). Ảnh gốc WACUP cho thấy
+           nút ▼ hiện rõ khi AVS đóng → hider phải ẩn khi đóng; khi AVS
+           mở, nút ▲ phải hiện để đóng được → hider cũng phải ẩn khi mở.
+           Vì vậy ẩn hider trong cả 2 trạng thái để nút videoavs luôn bấm
+           được. Đây là lựa chọn do XML không quy định (MAKI điều khiển);
+           nếu MAKI gốc hiện hider trong trạng thái nào đó (vd video tách
+           rời), Amp chưa tái hiện được — cần đọc videoavs.maki để biết. */
+        if (id === "openclosehider") return;
         var spr = await spriteDiv(image, lw, lh, { tile: el.getAttribute("tile") === "1", opacity: alphaOf(el) });
         if (!spr) return;
         spr.style.left = x + "px"; spr.style.top = y + "px";
@@ -3313,7 +3440,28 @@
       var T = stage || lastStage;
       if (!T) throw new Error("renderLayout: chưa có stage");
       if (!RES) throw new Error("Chưa nạp skin nào.");
+      /* Lỗi 6 — render nguyên tử: vẽ vào div tách rời (build) rồi hoán đổi
+         vào stage thật khi xong, để stage thật không bao giờ hiện trạng
+         thái trung gian (trống / ngăn kéo ở sai vị trí) trong lúc vẽ lại
+         bất đồng bộ. Trước đây T.innerHTML="" xóa cửa sổ chính ngay, rồi
+         ngăn kéo hiện ở đầu stage (nền + nút trượt đè lên chỗ đồng hồ)
+         cho tới khi vẽ xong — trên điện thoại chậm lần mở đầu mất ~1s.
+         Không tái hiện trên desktop (200-300ms, quá nhanh để thấy).
+         swapIn chuyển con của build sang live (giữ nguyên element nên
+         registry timer/ticker/slider vẫn đúng); kích thước copy theo. */
+      var live = T;
+      var build = document.createElement("div");
+      build.style.position = "absolute"; build.style.left = "0px"; build.style.top = "0px";
+      build._absX = (T._absX || 0); build._absY = (T._absY || 0);
+      T = build;
       lastStage = T;
+      function swapIn() {
+        live.innerHTML = "";
+        live.style.width = build.style.width;
+        live.style.height = build.style.height;
+        while (build.firstChild) live.appendChild(build.firstChild);
+        lastStage = live;
+      }
       visCanvases = []; statusEls = []; tickerEls = []; timerEls = [];
       progressEls = []; volumebarEls = []; infoEls = []; sliderRecords = [];
       cfgGroups = {}; cfDisplayEls = []; vidInfoEls = [];
@@ -3325,8 +3473,11 @@
            được từ model; stage chỉ chứa cửa sổ rời (nếu đang mở). */
         if (RES.kind === "classic" && container === "main") {
           lastLayout = null; lastTitle = titleText || "";
-          return await renderClassicStage(T);
+          var ch = await renderClassicStage(T);
+          swapIn();
+          return ch;
         }
+        lastStage = live;
         throw new Error("Không tìm được layout '" + layoutId + "' của '" + container + "'.");
       }
       var layEl = lay.el;
@@ -3375,14 +3526,16 @@
         }
       }
       await renderChildren(kids, T, LW, LH, ctx, 0);
-      /* Ngăn kéo + video (đợt B):
+      /* Ngăn kéo + video (đợt B, sửa 9.4):
          - MỞ MỘT BƯỚC: đặt thẳng top cuối = restY + drawerInnerY(open)
            (không rAF hai bước như v8 — kiểu đó kẹt ở vị trí đóng khi frame
-           rAF không chạy, xem V8-BUGS Lỗi 2). Đóng = vị trí nghỉ, chỉ lộ
-           13px + nút mở dưới đáy main. Vị trí đặt thẳng trong lúc vẽ nên
+           rAF không chạy, xem V8-BUGS Lỗi 2). Đóng = vị trí nghỉ (đỉnh
+           ngăn kéo = đỉnh main, chỉ thò 3px dưới đáy main; nút mở lộ qua
+           lỗ trong main.png/main2.png). Vị trí đặt thẳng trong lúc vẽ nên
            không có trạng thái trung gian để kẹt.
          - Video mở + ngăn kéo cùng lúc: main lùi 116 trước, rồi tính
-           drawerInnerY theo mainH mới (259) — vẫn chìm đúng 13px.
+           drawerInnerY theo mainH mới (277) — ngăn kéo lùi theo main,
+           vẫn chìm 10px (= mainHeight - snap) dưới đáy main.
          - D9: lớp vỏ phải drawer.main.right crop x=50 w=90 nhưng ảnh chỉ
            rộng 70px — spriteDiv chỉ vẽ 20px thật, phần còn lại trong suốt;
            hộp div 90px không vẽ rác nên giữ nguyên, không kẹp/cắt thêm.
@@ -3404,12 +3557,14 @@
         if (d) {
           var dTop = d._absY || 0;
           var mainB = (mainDiv._absY || 0) + (parseInt(mainDiv.style.height || "0", 10) || 0);
+          var mainHeight = parseInt(mainDiv.style.height || "0", 10) || 0;
           var dH = parseInt(d.style.height || "0", 10) || 0;
           var snap = lay.snapadjustbottom || dH;
           var restY = (RES.drawer && RES.drawer.restY) || lay.drawerRestY || 17;
-          /* mainB == mainH (đáy main tính từ đỉnh stage 0): 143 khi đóng
-             video, 259 khi mở video — dùng luôn làm mainH cho drawerInnerY. */
-          var innerY = drawerInnerY(!!drawerOpenOpt, mainB, snap, dH, restY);
+          /* mainB == mainH (đáy main tính từ đỉnh stage 0): 161 khi đóng
+             video, 277 khi mở video — dùng luôn làm mainH cho drawerInnerY
+             (cùng mainHeight = chiều cao main, 126 với skin 566). */
+          var innerY = drawerInnerY(!!drawerOpenOpt, mainB, snap, dH, restY, mainHeight);
           var dy = (restY + innerY) - dTop;
           d.style.top = (parseInt(d.style.top || "0", 10) + dy) + "px";
           shiftSubtree(d, dy);
@@ -3422,8 +3577,8 @@
           /* Đợt G — ghi lại top đóng/mở để tính độ dời animation, và áp
              transform ban đầu của lần trượt mở (pendingDrawerStartDy):
              render đặt thẳng top cuối, transform chỉ làm mượt đường đi. */
-          lastDrawerTopCache.open = restY + drawerInnerY(true, mainB, snap, dH, restY);
-          lastDrawerTopCache.closed = restY + drawerInnerY(false, mainB, snap, dH, restY);
+          lastDrawerTopCache.open = restY + drawerInnerY(true, mainB, snap, dH, restY, mainHeight);
+          lastDrawerTopCache.closed = restY + drawerInnerY(false, mainB, snap, dH, restY, mainHeight);
           if (pendingDrawerStartDy !== null) {
             var pds = pendingDrawerStartDy;
             pendingDrawerStartDy = null;
@@ -3460,6 +3615,7 @@
          defs + filter trên sprite mất theo; Default thì gỡ hết filter). */
       if (opts.applyTheme !== false) applyColorTheme(T);
       if (avsState.open) startAvsAnim(); else stopAvsAnim();
+      swapIn();
       return totalH;
     }
 
@@ -3473,11 +3629,28 @@
       opts = opts || {};
       var T = stage || lastStage;
       if (!T) throw new Error("renderStacked: chưa có stage");
+      /* Lỗi 6 — render nguyên tử như renderLayout: vẽ vào div tách rời
+         rồi hoán đổi vào stage thật khi xong (xem ghi chú ở renderLayout). */
+      var live = T;
+      var build = document.createElement("div");
+      build.style.position = "absolute"; build.style.left = "0px"; build.style.top = "0px";
+      build._absX = (T._absX || 0); build._absY = (T._absY || 0);
+      T = build;
+      lastStage = T;
+      function swapIn() {
+        live.innerHTML = "";
+        live.style.width = build.style.width;
+        live.style.height = build.style.height;
+        while (build.firstChild) live.appendChild(build.firstChild);
+        lastStage = live;
+      }
       /* Skin Classic không có playlist để xếp: chỉ vẽ cửa sổ rời. */
       if (RES.kind === "classic") {
         T.innerHTML = "";
         T._absX = 0; T._absY = 0;
-        return await renderClassicStage(T);
+        var ch2 = await renderClassicStage(T);
+        swapIn();
+        return ch2;
       }
       T.innerHTML = "";
       T.style.width = "436px";
@@ -3527,6 +3700,7 @@
       lastStage = T;
       drawVisStatic();
       applyColorTheme(T);
+      swapIn();
       return totalH;
     }
 
