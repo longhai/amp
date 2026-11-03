@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.4 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.5 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -63,7 +63,8 @@
   #status{display:none;margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:16px;text-align:left;line-height:1.5;}
   #status.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
   /* Nút menu tối thiểu (⋯) ở góc dưới-phải: điểm chạm duy nhất ngoài
-     skin — nạp skin .wal/.wsz/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
+     skin — nạp skin .wal/.wsz/.zip, thêm nhạc local, đổi zoom 1x/fit,
+     cài đặt Video/Vis (v10.5). Nhỏ,
      mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
   #btn-menu{position:fixed;right:10px;bottom:10px;z-index:50;width:36px;height:36px;
     border-radius:50%;background:rgba(236,233,216,.92);color:#000;border:1px solid #ACA899;
@@ -118,7 +119,7 @@
 <div id="stage-wrap"><div class="stage" id="stage"></div></div>
 <div id="status"></div>
 <button id="btn-reopen" hidden>Mở lại Amp</button>
-<button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
+<button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom, video/hiệu ứng" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
   <button data-act="skin">Nạp skin .wal/.wsz/.zip…</button>
   <button data-act="localfile">Thêm 1 bài nhạc…</button>
@@ -127,6 +128,21 @@
   <button data-act="zoomfit">Zoom: Vừa màn hình</button>
   <button data-act="xfade">Crossfade: 2s</button>
   <button data-act="milkdrop">Milkdrop: Tắt</button>
+  <!-- v10.5 — cài đặt Video/Vis CHUYỂN TỪ menu của 2 nút VID_Misc/
+       Vis_Menu sang đây (Hải 04/11: 2 nút đó chỉ mở video/hiệu ứng,
+       cài đặt đã có trong nút ⋯ này rồi): đủ các mục của videoMenuItems
+       + visMenuItems trừ Milkdrop (đã có ở trên), gộp trùng (Toàn màn
+       hình, Tách rời/Gắn lại, Đóng chỉ 1 mục chung cho cả 2 chế độ). -->
+  <button data-act="vid-aspect">Giữ tỉ lệ khung hình</button>
+  <button data-act="vid-1x">Cỡ thường (1x)</button>
+  <button data-act="vid-2x">Cỡ gấp đôi (2x)</button>
+  <button data-act="vid-fs">Toàn màn hình</button>
+  <button data-act="vid-max">Phóng to cửa sổ</button>
+  <button data-act="vid-detach">Tách rời (Detach)</button>
+  <button data-act="vid-close">Đóng Video/Hiệu ứng</button>
+  <button data-act="vis-prev">Màu hiệu ứng trước</button>
+  <button data-act="vis-next">Màu hiệu ứng sau</button>
+  <button data-act="vis-random">Màu hiệu ứng ngẫu nhiên</button>
   <button data-act="maki">Xem script MAKI…</button>
 </div>
 <!-- bảng xem
@@ -140,7 +156,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.4" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.5" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -149,24 +165,24 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.4";
+window.AMP_VERSION = "10.5";
 </script>
-<script src="classic.js?v=10.4"></script>
-<script src="skin-loader.js?v=10.4"></script>
-<script src="audio.js?v=10.4"></script>
-<script src="eqf.js?v=10.4"></script>
+<script src="classic.js?v=10.5"></script>
+<script src="skin-loader.js?v=10.5"></script>
+<script src="audio.js?v=10.5"></script>
+<script src="eqf.js?v=10.5"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn KHÔNG có
      thẻ <script src> ở đây: loader nạp ĐỘNG từ CDN jsDelivr khi bật
      Milkdrop lần đầu (lazy) — xem 3 link ở ĐẦU milkdrop.js
      (BUTTERCHURN_CDN / PRESETS_CDN / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.4"></script>
-<script src="metadata.js?v=10.4"></script>
-<script src="maki.js?v=10.4"></script>
-<script src="renderer.js?v=10.4"></script>
+<script src="milkdrop.js?v=10.5"></script>
+<script src="metadata.js?v=10.5"></script>
+<script src="maki.js?v=10.5"></script>
+<script src="renderer.js?v=10.5"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.4" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.5" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -178,7 +194,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.4";
+var VERSION = "10.5";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
@@ -214,7 +230,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.4 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.5 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -224,7 +240,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.4 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.5 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -343,6 +359,23 @@ function markMenuChecks() {
   if (xf) { xf.textContent = "Crossfade: " + xfadeLabel(crossfadeMs); xf.classList.toggle("on", crossfadeMs > 0); }
   var md = menuPop.querySelector('[data-act="milkdrop"]');
   if (md) { md.textContent = "Milkdrop: " + (milkdropOn ? "Bật" : "Tắt"); md.classList.toggle("on", milkdropOn); }
+  /* v10.5 — nhãn động cho các mục Video/Vis đã chuyển sang menu ⋯:
+     ✓ theo trạng thái AVS hiện tại (đọc từ renderer.getAvsState);
+     chưa nạp skin thì giữ nhãn mặc định trong HTML. */
+  if (renderer && renderer.getAvsState) {
+    var avs = null;
+    try { avs = renderer.getAvsState(); } catch (e) { avs = null; }
+    if (avs) {
+      var va = menuPop.querySelector('[data-act="vid-aspect"]');
+      if (va) { va.textContent = (avs.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình"; va.classList.toggle("on", !!avs.keepAspect); }
+      var vm = menuPop.querySelector('[data-act="vid-max"]');
+      if (vm) { vm.textContent = avs.videoMaximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ"; }
+      var vd = menuPop.querySelector('[data-act="vid-detach"]');
+      if (vd) { vd.textContent = avs.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)"; }
+      var vr = menuPop.querySelector('[data-act="vis-random"]');
+      if (vr) { vr.textContent = (avs.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên"; vr.classList.toggle("on", !!avs.visRandom); }
+    }
+  }
 }
 function cycleCrossfade() {
   var steps = [0, 1000, 2000, 4000];
@@ -360,6 +393,11 @@ function ensureMilkdropCtl() {
     document: document, window: window,
     getAudioContext: function () { try { var g = audioEngine ? audioEngine._graph() : null; return g ? g.ctx : null; } catch (e) { return null; } },
     getAnalyser: function () { try { var g = audioEngine ? audioEngine._graph() : null; return g ? g.analyser : null; } catch (e) { return null; } },
+    /* v10.5 — co tin hieu THAT khong (EQ bat + co source + dang phat):
+       audio.js getState().analyserSignal; khong co thi milkdrop.js noi
+       analyser MAU (Webamp khong giai quyet duoc dai khong CORS — xem
+       milkdrop.js). */
+    hasRealSignal: function () { try { var s = audioEngine && audioEngine.getState ? audioEngine.getState() : null; return !!(s && s.analyserSignal); } catch (e) { return false; } },
     onStatus: function (msg) { if (window.console && console.info) console.info("[Amp] " + msg); }
   });
   return milkdropCtl;
@@ -376,6 +414,15 @@ function syncMilkdrop() {
     var eng = null;
     try { eng = audioEngine && audioEngine.getState ? audioEngine.getState() : null; } catch (e) { eng = null; }
     if (eng) milkdropCtl.setPlaying(!!eng.playing);
+    /* v10.5 — gan lai canvas neu hop AVS da doi (resetAvsMedia tao hop
+       moi khi EQ tat ma the cu da co source — canvas cu bi bo roi theo
+       hop cu thi ve vao cho khong ai thay): attachTo lanh (cung hop thi
+       khong doi gi). Chung 1 hop avsMedia cho ca Modern/AVS lan
+       Classic/cua so Video roi. */
+    try {
+      var wrapNow = renderer.getAvsMedia ? renderer.getAvsMedia().wrap : null;
+      if (wrapNow && milkdropCtl.attachTo) milkdropCtl.attachTo(wrapNow);
+    } catch (e) { /* bỏ qua */ }
     /* v10.4 — CHO GAY MILKDROP DEN (anh dien thoai that 22:05: Milkdrop
        BAT ✓ + nhac phat + EQ bat ma vung AVS den thui, khong bao loi):
        renderer (applyMilkdropVisibility) HIEN canvas Milkdrop khi AVS
@@ -399,23 +446,48 @@ function syncMilkdrop() {
     milkdropCtl.setVisible(mdShown);
     milkdropCtl.syncSizeFromWrap();
     var er = milkdropCtl.ensureReady();
-    /* v10.4 — loi Milkdrop ton tai (CDN/WebGL/preset/canvas) phai HIEN
-       banner do chu khong chi ghi console (xem reportMilkdropError). */
+    /* v10.5 — chi bao loi SAU KHI ensureReady xong (promise): bao ngay
+       lap tuc o day se bao loi CU trong khi ensureReady sap xoa no
+       (vd vua mo AVS / vua bam Play). Khong co promise thi bao ngay. */
     if (er && er.then) er.then(function () { reportMilkdropError(); });
-    reportMilkdropError();
+    else reportMilkdropError();
   } catch (e) { /* bỏ qua */ }
 }
-/* v10.4 — bao loi Milkdrop ton tai len banner do #status (moi loi chi
-   bao 1 lan; het loi thi reset de loi sau bao lai duoc). */
+/* v10.5 — bao loi Milkdrop len banner do + TAT banner khi da khoi
+   (truoc day banner dinh vinh vien: applyPreset xoa state.error nhung
+   khong co gi an #status) + KHONG bao khi Milkdrop dang an (video dang
+   hien hinh / AVS dong): luc do loi Milkdrop khong lien quan gi toi
+   nhung gi nguoi dung thay — anh 03:23: video DNRT chay co hinh ma
+   banner van noi "chua co AudioContext". Chi an banner khi no dang
+   hien dung loi Milkdrop vua roi (khong dong loi khac cua trang). Bo
+   tien to "milkdrop:" trung lap de khoi "Milkdrop: milkdrop: ...". */
 function reportMilkdropError() {
   if (!milkdropCtl || !milkdropOn) return;
   try {
     var ms = milkdropCtl.getState ? milkdropCtl.getState() : null;
     if (!ms) return;
-    if (!ms.error) { milkdropLastErrorShown = ""; return; }
+    var shownNow = null;
+    try {
+      var gmd = renderer && renderer.getMilkdropState ? renderer.getMilkdropState() : null;
+      if (gmd) shownNow = !!gmd.shown;
+    } catch (e) { shownNow = null; }
+    var shownText = function (err) { return "Milkdrop: " + String(err || "").replace(/^milkdrop:\s*/i, "") + "."; };
+    var hideShownBanner = function () {
+      if (milkdropLastErrorShown && statusEl.textContent === shownText(milkdropLastErrorShown)) {
+        statusEl.textContent = "";
+        statusEl.classList.remove("show");
+      }
+      milkdropLastErrorShown = "";
+    };
+    if (!ms.error) { hideShownBanner(); return; }
+    /* Milkdrop dang an (video co hinh / AVS dong) thi loi khong hien
+       len banner — giu nguyen state.error de luc hien lai thi
+       ensureReady danh gia lai; reset lastShown de luc do bao lai
+       duoc neu loi van con. */
+    if (shownNow === false) { hideShownBanner(); return; }
     if (ms.error === milkdropLastErrorShown) return;
     milkdropLastErrorShown = ms.error;
-    setStatus("Milkdrop: " + ms.error + ".", true);
+    setStatus(shownText(ms.error), true);
   } catch (e) { /* bỏ qua */ }
 }
 async function toggleMilkdrop() {
@@ -441,14 +513,25 @@ async function toggleMilkdrop() {
        khi đó Milkdrop vẫn BẬT để ensureReady() tự tạo nốt khi phát nhạc,
        nhưng phải báo RÕ ra banner đỏ chứ không để AVS đen im lặng. */
     if (mdState && !mdState.visualizerReady && mdState.error) {
-      milkdropLastErrorShown = mdState.error;
-      setStatus("Milkdrop: " + mdState.error + ".", true);
+      /* v10.5 — canvas 0×0 trong khi AVS dang dong KHONG phai loi de bao
+         do: chi la "cho mo AVS" (ensureReady se tao not khi mo); bao do
+         luc nay lam nguoi dung tuong hong (anh 03:15: AVS chua mo,
+         00:00, banner do vo duyen). Cac loi that (CDN/WebGL/ctx) thi
+         bao nhu cu. Bo tien to "milkdrop:" trung lap. */
+      var avsOpenNow = false;
+      try { var avsSt = renderer ? renderer.getAvsState() : null; avsOpenNow = !!(avsSt && avsSt.open); } catch (e) { avsOpenNow = false; }
+      if (mdState.error.indexOf("co 0") < 0 || avsOpenNow) {
+        milkdropLastErrorShown = mdState.error;
+        setStatus("Milkdrop: " + String(mdState.error).replace(/^milkdrop:\s*/i, "") + ".", true);
+      } else if (window.console && console.info) {
+        console.info("[Amp] Milkdrop: " + mdState.error + " (AVS dang dong — se tao lai khi mo AVS)");
+      }
     }
   } catch (e) {
     milkdropOn = false;
     try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e2) { /* bỏ qua */ }
     if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
-    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vùng AVS để đen (v10.4).", true);
+    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vùng AVS để đen.", true);
     markMenuChecks();
     return false;
   }
@@ -703,6 +786,11 @@ async function bootSkin(file, name) {
          milkdropOn để đánh ✓). */
       onMilkdropToggle: function () { toggleMilkdrop(); },
       isMilkdropOn: function () { return milkdropOn; },
+      /* v10.5 — canvas Milkdrop an/hien giua chung (video xuat hien /
+         bien mat) thi dong bo lai ngay (Webamp: loop chay theo
+         shouldAnimate): renderer goi khi applyMilkdropVisibility doi
+         trang thai hien. */
+      onMilkdropShownChange: function (shown) { syncMilkdrop(); },
       /* About: tên/phiên bản/tác giả của skin đang nạp
          (SKIN do loader trả về; đổi skin thì bootSkin tạo renderer mới
          với SKIN mới). */
@@ -755,7 +843,7 @@ async function bootSkin(file, name) {
         onEnded: function () { renderer.onAudioEnded(); },
         onError: function (info) { renderer.onAudioError(info); },
         onEqFallback: function (info) { renderer.onAudioEqFallback(info); }, /* bật EQ gặp đài không CORS: engine tự về native, báo rõ */
-        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } },
+        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } syncMilkdrop(); /* v10.5 — doi phat/dung la 1 lan doi trang thai (Webamp: loop chay theo playing): dong bo lai hien/loi/nguon tin hieu that-mau ngay, khong doi lan render sau */ },
         onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
       });
       renderer.setAudioEngine(audioEngine);
@@ -882,8 +970,9 @@ async function bootSkin(file, name) {
 }
 /* menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
    Chứa những thứ skin không làm được: nạp skin .wal/.wsz/.zip (chọn file),
-   thêm nhạc local, đổi zoom 1x/fit. Mọi chức năng khác (ngăn kéo,
-   playlist, Video/Vis) dùng qua chính skin: nút trong skin + menu View
+   thêm nhạc local, đổi zoom 1x/fit + (v10.5) cài đặt Video/Vis chuyển từ
+   menu của 2 nút VID_Misc/Vis_Menu sang đây. Mọi chức năng khác (ngăn kéo,
+   playlist, mở Video/Vis) dùng qua chính skin: nút trong skin + menu View
    (File/Play/Options/View/Help) — xem viewMenuItems trong renderer.js.
    Kéo-thả file .wal/.wsz/.zip vào trang vẫn giữ (không cần chữ hướng dẫn). */
 function wireMenu() {
@@ -928,6 +1017,27 @@ function wireMenu() {
     else if (act === "xfade") { cycleCrossfade(); }
     else if (act === "milkdrop") { toggleMilkdrop(); }
     else if (act === "maki") { openMakiPanel(); }
+    /* v10.5 — cài đặt Video/Vis trong menu ⋯ (chuyển từ menu của 2 nút
+       VID_Misc/Vis_Menu; cùng đường hàm renderer như menu cũ nên hành vi
+       y hệt, chỉ khác chỗ bấm). Chưa nạp skin thì báo rõ như localfile. */
+    else if (act === "vid-aspect" || act === "vid-1x" || act === "vid-2x" || act === "vid-fs" || act === "vid-max" || act === "vid-detach" || act === "vid-close" || act === "vis-prev" || act === "vis-next" || act === "vis-random") {
+      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
+      var avsSt = renderer.getAvsState ? renderer.getAvsState() : null;
+      if (act === "vid-aspect") { renderer.setKeepAspect(!(avsSt && avsSt.keepAspect)); }
+      else if (act === "vid-1x") { renderer.setVideoScale(1); }
+      else if (act === "vid-2x") { renderer.setVideoScale(2); }
+      else if (act === "vid-fs") { renderer.requestVideoFullscreen(); }
+      else if (act === "vid-max") { renderer.setVideoMaximized(!(avsSt && avsSt.videoMaximized)); }
+      else if (act === "vid-detach") {
+        if (avsSt && avsSt.detached) { renderer.reattachAvs(); }
+        else { if (!avsSt || !avsSt.open) renderer.openAvs(avsSt ? avsSt.mode : "video"); renderer.detachAvs(); }
+      }
+      else if (act === "vid-close") { renderer.closeAvs(); }
+      else if (act === "vis-prev") { renderer.cycleVisVariant(-1); }
+      else if (act === "vis-next") { renderer.cycleVisVariant(1); }
+      else if (act === "vis-random") { renderer.setVisRandom(!(avsSt && avsSt.visRandom)); }
+      markMenuChecks(); /* cập nhật nhãn ✓/Phóng to/Tách rời ngay */
+    }
     closeMenu();
   });
   /* đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.

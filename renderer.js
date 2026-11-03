@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.4";
-  var EXPECTED_RENDERER_VERSION = "10.4";
+  var RENDERER_VERSION = "10.5";
+  var EXPECTED_RENDERER_VERSION = "10.5";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -198,12 +198,22 @@
     return t.replace(/đ/g, "d").replace(/Đ/g, "D");
   }
   /* ---------- .m3u (đợt C, thuần — dùng được cả trong test) ----------
-     parseM3U(text, baseUrl) -> [{name, url, len|null, group, kind}]:
+     parseM3U(text, baseUrl) -> [{name, url, len|null, group, kind, channels}]:
      - Dòng #EXTINF:<giây>,<tên>: tên = sau dấu phẩy ĐẦU TIÊN; link = dòng
        sau (không #). group-title="..." nếu có trong đầu #EXTINF.
      - len: giây khi > 0; -1/không có -> null (kênh trực tiếp, kind "radio").
        KHÔNG bịa thời lượng cho radio.
-     - Link tương đối -> tuyệt đối theo URL gốc (baseUrl). */
+     - Link tương đối -> tuyệt đối theo URL gốc (baseUrl).
+     - v10.5 (theo Webamp): MỌI mục .m3u đều có channels: 2 — y hệt
+       Webamp fork (parseM3U luôn gắn metaData cho track, loadMediaFile
+       thấy metaData thì SET_MEDIA_TAGS với numberOfChannels: 2 "lie"
+       cứng). Đài/bài trong .m3u là URL, không probe được số kênh thật
+       bằng music-metadata (fetchFromUrl/parseWebStream không đọc được
+       playlist HLS .m3u8), nên Webamp mặc định stereo cho cả danh sách
+       và KHÔNG BAO GIỜ sửa lại bằng đo tín hiệu — Đà Nẵng hiện STEREO
+       ổn định chính nhờ vậy. Mục local (File/blob) KHÔNG qua đây:
+       probeFile đọc tag thật rồi applyMetadataToItem ghi đè channels
+       (1 = mono thật). */
   function resolveM3UUrl(url, baseUrl) {
     url = String(url || "").trim();
     if (!url) return "";
@@ -241,11 +251,11 @@
       if (line.charAt(0) === "#") continue; /* #EXTM3U, #PLAYLIST...: bỏ qua */
       var url = resolveM3UUrl(line, baseUrl);
       if (pending) {
-        items.push({ name: pending.name || url, url: url, len: pending.dur > 0 ? pending.dur : null, group: pending.group, kind: pending.dur > 0 ? "track" : "radio" });
+        items.push({ name: pending.name || url, url: url, len: pending.dur > 0 ? pending.dur : null, group: pending.group, kind: pending.dur > 0 ? "track" : "radio", channels: 2 });
         pending = null;
       } else {
         /* Dòng link không có #EXTINF trước nó: lấy tên từ chính URL. */
-        items.push({ name: url, url: url, len: null, group: "", kind: "radio" });
+        items.push({ name: url, url: url, len: null, group: "", kind: "radio", channels: 2 });
       }
     }
     return items;
@@ -388,6 +398,7 @@
     var isShadeMode = opts.isShadeMode || null; /* Đợt D: nút shade (shadeeq/shadect) cần biết đang ở shade để về normal trước khi mở ngăn kéo */
     var onMilkdropToggle = opts.onMilkdropToggle || null; /* v10.4: menu Vis/Video → bật/tắt Milkdrop (index.html toggleMilkdrop — cùng đường với menu ⋯) */
     var isMilkdropOn = opts.isMilkdropOn || null; /* v10.4: tick ✓ mục Milkdrop trong menu Vis/Video */
+    var onMilkdropShownChange = opts.onMilkdropShownChange || null; /* v10.5: canvas Milkdrop đổi hiện/ẩn giữa chừng (video xuất hiện/biến mất) → index.html syncMilkdrop() để đồng bộ lại loop + banner ngay, không đợi lần render sau */
     var skinInfo = opts.skinInfo || null; /* Đợt D: bảng About — tên/tác giả/version skin (index.html đưa SKIN từ loader) */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
@@ -791,6 +802,42 @@
     }
     function getDrawerState() { return drawerState; }
 
+    /* v10.5 — CHẠM XUYÊN NGĂN KÉO (người dùng báo 03/11 03:40 trên điện
+       thoại thật: ngăn kéo EQ đang ẩn dưới cửa sổ chính mà vuốt trên mặt
+       cửa sổ chính lại chỉnh EQ bên dưới):
+       NGUYÊN NHÂN GỐC: khi đóng, đỉnh ngăn kéo = đỉnh cửa sổ chính
+       (drawerInnerY đóng = vị trí nghỉ) nên 11 thanh trượt EQ + Balance
+       + các nút EQ nằm gọn TRONG vùng mặt cửa sổ chính (vd slider eq5 ở
+       x≈223–236, y≈51–131 trong khi main 35–161); mà mặt cửa sổ chính
+       LÀ LỖ chạm: mọi div group đều inline pointer-events:none (dòng
+       ~4136), ảnh .spr / chữ .txt / ticker / vis đều pointer-events:none
+       theo CSS index.html, chỉ .btn là auto — nên chạm trên mặt main
+       (chỗ không có nút) rơi xuyên xuống slider EQ (inline
+       pointer-events:auto, dòng ~5140) đang nằm dưới, rồi listener
+       touchmove/mousemove ở cấp document kéo EQ theo. Ngăn kéo đóng
+       nhưng KHÔNG hề bị tắt chạm hay ẩn khỏi hit-test.
+       SỬA: setDrawerInteractive(d, enabled) — tắt/bật chạm của MỌI
+       control trong ngăn kéo theo trạng thái mở/đóng (gọi ở
+       renderLayoutInner sau khi đặt vị trí ngăn kéo + ở
+       toggleDrawerAnimated lúc bắt đầu trượt đóng / trượt mở xong).
+       Ngoại lệ duy nhất khi đóng: nút drawer.button.open (lộ qua lỗ
+       trong main.png + dải nghỉ 3px dưới đáy main) vẫn phải bấm được.
+       Đặt pointer-events:none trên chính từng control (không đặt trên
+       div ngăn kéo): pointer-events:none của tổ tiên KHÔNG chặn được
+       con đã tự đặt auto — đó đúng là lỗ hổng cũ. */
+    var DRAWER_HIT_SELECTOR = "[data-slider], .btn, [data-tab], [data-options-bucket], [data-bucket-entry], [data-options-target], [data-colorthemes-list], [data-preset-idx]";
+    function setDrawerInteractive(d, enabled) {
+      if (!d) return;
+      var els = null;
+      try { els = d.querySelectorAll(DRAWER_HIT_SELECTOR); } catch (e) { els = null; }
+      if (!els) return;
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (!enabled && el.dataset && el.dataset.buttonId === "drawer.button.open") continue;
+        el.style.pointerEvents = enabled ? "auto" : "none";
+      }
+    }
+
     /* ---------- trượt ngăn kéo đợt G (CSS transition trên transform) ----------
        Mở trượt xuống, đóng trượt lên, ~250ms. NGUYÊN TẮC AN TOÀN (rút từ
        lỗi kẹt rAF hai bước của v8): vị trí CUỐI luôn do renderLayout đặt
@@ -895,6 +942,9 @@
           return new Promise(function (resolve) { setTimeout(function () { resolve(myToken === drawerAnimToken); }, DRAWER_ANIM_MS + 120); });
         }
         clearDrawerTransform(els.d); clearDrawerTransform(els.sh);
+        /* v10.5 — đồng bộ lại chạm ngăn kéo theo trạng thái (phòng
+           trường hợp transform dở dang làm lệch). */
+        setDrawerInteractive(els.d, drawerState.open);
         return Promise.resolve(true);
       }
       if (open) {
@@ -925,6 +975,10 @@
             if (myToken !== drawerAnimToken) return;
             var e3 = drawerAnimEls();
             clearDrawerTransform(e3.d); clearDrawerTransform(e3.sh);
+            /* v10.5 — trượt mở xong mới bật chạm: lúc render mở, ngăn
+               kéo vẫn chìm sau cửa sổ chính nên renderLayoutInner đã
+               giữ tắt (openingAnim); tới đây ngăn kéo đã lộ hẳn. */
+            setDrawerInteractive(e3.d, true);
             drawerAnimTimer = 0;
           }, DRAWER_ANIM_MS + 80);
         };
@@ -952,6 +1006,11 @@
         var tabElsClose = els.d.querySelectorAll("[data-tab]");
         for (var tci = 0; tci < tabElsClose.length; tci++) tabElsClose[tci].style.display = "none";
       } catch (e) { /* bỏ qua */ }
+      /* v10.5 — chạm xuyên ngăn kéo: tắt chạm mọi control trong ngăn kéo
+         NGAY khi bắt đầu trượt đóng (như đã ẩn tab ở trên) — trong 250ms
+         trượt lên, slider EQ vẫn còn nằm dưới mặt cửa sổ chính; re-render
+         sau khi đóng xong tắt lại lần nữa qua renderLayoutInner. */
+      setDrawerInteractive(els.d, false);
       setDrawerTransform(els.d, targetDy, true);
       setDrawerTransform(els.sh, targetDy, true);
       /* Đợt 9.5 (lỗi 6): thu chiều cao stage/wrap về giá trị đóng NGAY lúc
@@ -1276,6 +1335,14 @@
       drawVisStatic();
       persistAvs();
       return avsState.visVariant;
+    }
+    /* v10.5 — bật/tắt "Màu hiệu ứng ngẫu nhiên" (trước đây chỉ menu Vis
+       gán thẳng avsState.visRandom; nay menu ⋯ cũng cần nên tách thành
+       hàm + export, để 2 menu cùng 1 đường). */
+    function setVisRandom(on) {
+      avsState.visRandom = !!on;
+      persistAvs();
+      return avsState.visRandom;
     }
     /* Đợt 4 (03/11) — KIỂU VIS (khác "variant" đổi màu ở trên):
        Webamp có 3 kiểu vis xoay bằng cách bấm vào vis: BAR (cột spectrum)
@@ -1850,16 +1917,15 @@
        - Đổi ảnh bằng cách thay hậu tố sau dấu "." cuối của baseImage (lấy từ
          XML, không gán cứng); bitmap không có trong model (skin khác thiếu
          trạng thái) thì giữ nguyên, không ném lỗi.
-       - "none" khi dừng (đúng mặc định XML). Khi phát: dùng số kênh đo được
-         (audioEngine.getMeasuredChannels) nếu có; chưa đo được thì hiện
-         "stereo" TẠM — xem ghi chú trong updateChannelsIndicator (lệch khỏi
-         suy đoán gốc, ghi rõ). */
+       - "none" khi dừng (đúng mặc định XML). Khi phát: dùng số kênh của
+         MỤC ĐANG PHÁT (itemChannels — numberOfChannels/channels); chưa
+         biết thì hiện "stereo" TẠM — xem updateChannelsIndicator. */
     async function setChannelsState(state) {
       /* Đợt v10.2 (18:30) — KHÔNG bao giờ hiện "none" (trống) khi đang
          phát: "none" chỉ đúng khi dừng. Trước đây chỉ báo có thể về trống
-         giữa chừng (render lại / đo kênh trả null) trong khi tiếng vẫn hát
-         — người dùng tưởng mất cả stereo lẫn mono. Đang phát mà chưa đo
-         được thì giữ "stereo" tạm theo quy ước v9.7. */
+         giữa chừng (render lại / chưa biết số kênh) trong khi tiếng vẫn hát
+         — người dùng tưởng mất cả stereo lẫn mono. Đang phát mà chưa biết
+         số kênh thì giữ "stereo" tạm theo quy ước v9.7. */
       if (state === "none" && demo.playing) state = "stereo";
       /* Snapshot record NGAY ĐẦU: hàm bất đồng bộ, render lại giữa chừng
          (renderLayout reset channelsRec) thì record cũ mất — dùng record
@@ -1899,47 +1965,37 @@
     }
     function updateChannelsIndicator() {
       if (!demo.playing) { setChannelsState("none"); refreshClassicMain(); return; }
-      /* v10.4 — UU TIEN SO KENH CUA NGUON (nhu Webamp: numberOfChannels):
-         file local co tag channels (metadata.js probe -> item.channels)
-         thi 1 kenh = mono, >=2 kenh = stereo, khoi can do tin hieu.
-         Stream/radio khong co metadata kenh thi roi xuong do tin hieu
-         L/R (audio.js — nhieu cua so + do lai, khong chot vinh vien).
-         Chuan kiem cuoi (22:23, sua lai): Da Nang = stereo that (2 kenh,
-         ffprobe) phai hien STEREO ON DINH. VOV1 KHONG phai chuan mono —
-         anh doi chung 22:23: VOV1 hien STEREO o ca 2 ben (co the HE-AAC
-         v2 parametric stereo: header ghi 1 kenh nhung giai ma ra stereo)
-         nen hien stereo cho VOV1 la DUNG. */
+      /* v10.5 — THEO WEBAMP, KHONG DO TIN HIEU (xem applyWebampChannels):
+         Webamp fork KHONG co ChannelSplitter/analyser do kenh — chi bao
+         chi doc track.channels (selectors.ts getChannels -> MonoStereo
+         hien stereo khi channels === 2, mono khi === 1). So kenh nay
+         den tu metadata cua track: file local = numberOfChannels that
+         tu music-metadata (probeFile -> item.channels); muc .m3u / URL
+         = 2 mac dinh (Webamp "lie" cung trong loadMediaFile khi track
+         co metaData — parseM3U cua fork luon gan metaData). Vi vay chi
+         bao la thuoc tinh cua DINH DANG LUONG, khong phu thuoc noi dung
+         dang phat: dai stereo dang phat doan giong noi o giua (L≈R) van
+         hien STEREO — dung nhu Webamp, dung nhu ffprobe.
+         - 1 kenh = mono (file local mono that, tag 1 kenh).
+         - >= 2 kenh = stereo. - Chua biet (vd file local blob: chua
+         probe xong) = "stereo" TAM theo quy uoc v9.7, KHONG BAO GIO
+         hien mono khi chua biet so kenh; probe ve sau thi
+         applyMetadataToItem goi lai ham nay de doi ve mono that neu co.
+         - Doi bai/doi dai: so kenh doc tu MUC MOI nen khong giu mono
+         cua dai truoc; re-render (renderLayoutInner) goi lai ham nay
+         nen trang thai dung giu qua mo/dong PL/ML/ngan keo.
+         Chuan kiem: Da Nang = STEREO on dinh; VOV1 = STEREO (HE-AAC v2
+         parametric stereo — giai ma ra stereo; ca 2 ben deu hien vay). */
       var cur = playlistState.items[playlistState.current];
-      var known = cur ? (cur.numberOfChannels != null ? cur.numberOfChannels : cur.channels) : null;
-      known = (known != null && isFinite(Number(known))) ? Number(known) : null;
+      var known = itemChannels(cur);
       if (known === 1) { setChannelsState("mono"); refreshClassicMain(); return; }
       if (known >= 2) { setChannelsState("stereo"); refreshClassicMain(); return; }
-      var m = null;
-      try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
-      if (m) { setChannelsState(m); refreshClassicMain(); return; }
-      /* Chưa đo được: hiện "stereo" tạm rồi đo thật để sửa lại. Lý do (ghi rõ,
-         lệch khỏi suy đoán gốc "không mặc định stereo nếu chưa đo"): trình duyệt
-         KHÔNG cho đọc số kênh của thẻ đang phát khi chưa có MediaElementSource
-         — đã thử nghiệm thật trên Chrome headless 3/11: MediaElementSource.
-         channelCount luôn = 2 (thuộc tính của node, mode "max", không phản ánh
-         file — file mono 1 kênh cũng đọc 2); captureStream().getAudioTracks()
-         .getSettings()/getCapabilities() đều không có channelCount. Tạo source
-         cho thẻ đang phát chỉ để đo thì câm tiếng với đài không CORS (bài học
-         đợt E), nên không làm. Nhạc/radio gần như luôn stereo nên "stereo" tạm
-         đúng ~99%; đo thật (ChannelSplitter, xem audio.js) sẽ sửa thành "mono"
-         nếu L/R giống hệt nhau. Dừng phát → "none" (đúng mặc định XML). */
+      /* Chưa biết số kênh: hiện "stereo" tạm (quy ước v9.7 — nhạc/radio
+         gần như luôn stereo; Webamp cũng hiện stereo cho mọi kênh .m3u
+         vì mặc định 2). Không đo tín hiệu để sửa lại nữa: đo L/R không
+         phân biệt được "stereo đang phát đoạn gần mono" với "mono thật"
+         — đó chính là lỗi MONO sai ở v10.4 (ảnh thật 04/11 03:11). */
       setChannelsState("stereo");
-      try {
-        if (audioEngine && audioEngine.measureChannels) {
-          audioEngine.measureChannels(function (state) {
-            /* Đợt v10.2 (18:30) — đo trả null (EQ off / không có source)
-               thì KHẲNG ĐỊNH LẠI "stereo" tạm thay vì không làm gì: trước
-               đây null là bỏ qua, nên nếu chỉ báo bị xóa bởi một lần
-               vẽ lại chen giữa thì không có gì khôi phục lại. */
-            if (demo.playing) setChannelsState(state || "stereo");
-          });
-        }
-      } catch (e) { /* bỏ qua */ }
       refreshClassicMain(); /* Đợt v10.1: Classic — mono/stereo */
     }
     /* Nút Shuffle/Repeat trên skin (cfgattrib "{GUID};Shuffle" /
@@ -2191,7 +2247,7 @@
       if (changed) { scheduleListRefresh(); /* v10.3: gom ve lai list (xem tren) */ updateInfoEls(); }
       /* Đợt 6: tag về muộn (probe async sau khi đã phát) mà là bài đang
          phát thì màn hình khóa đổi theo tên/nghệ sĩ thật. */
-      if (changed && playlistState.items[playlistState.current] === item) updateMediaSession();
+      if (changed && playlistState.items[playlistState.current] === item) { updateMediaSession(); updateChannelsIndicator(); /* v10.5: probe ve muon moi biet so kenh that (vd file mono 1 kenh) — doi chi bao ngay, nhu Webamp SET_MEDIA_TAGS -> MonoStereo ve lai */ }
       return changed;
     }
     function probeLocalMetadata(item, file, probeOpts) {
@@ -2484,12 +2540,35 @@
         groups: playlistGroups()
       };
     }
+    /* v10.5 — SO KENH THEO WEBAMP (khong do tin hieu):
+       - itemChannels(item): so kenh da biet cua muc (numberOfChannels
+         uu tien, roi channels — nhu updateChannelsIndicator v10.4),
+         null neu chua biet. Dung chung cho chi bao Modern + Classic.
+       - applyWebampChannels(item): muc URL (http/https) chua biet so
+         kenh thi gan channels = 2 — y het Webamp fork (loadMediaFile
+         thay metaData thi SET_MEDIA_TAGS numberOfChannels: 2; muc .m3u
+         da co channels: 2 tu parseM3U). File local (blob:/File) KHONG
+         gan o day — probeFile doc tag that roi ghi de (1 = mono that).
+         Goi o moi duong nap muc (setPlaylistData/setPlaylistItems/
+         addPlaylistItem(s)) de doi bai/doi dai khong giu so kenh cua
+         muc truoc. */
+    function itemChannels(item) {
+      if (!item) return null;
+      var n = (item.numberOfChannels != null) ? item.numberOfChannels : item.channels;
+      n = (n != null && isFinite(Number(n))) ? Number(n) : null;
+      return n;
+    }
+    function applyWebampChannels(item) {
+      if (!item || itemChannels(item) != null) return item;
+      if (/^https?:\/\//i.test(String(item.url || ""))) item.channels = 2;
+      return item;
+    }
     /* Nạp nguồn .m3u làm dữ liệu chính: chỉ kênh radio (giữ tên +
        thứ tự gốc). Đợt 9.5: không còn nối bài Demo vào cuối. Trả về
        tổng số mục. */
     function setPlaylistData(m3uText, baseUrl, sourceName) {
       var radio = parseM3U(m3uText, baseUrl);
-      for (var i = 0; i < radio.length; i++) if (!radio[i].group) radio[i].group = "Radio";
+      for (var i = 0; i < radio.length; i++) { if (!radio[i].group) radio[i].group = "Radio"; applyWebampChannels(radio[i]); }
       var items = radio;
       playlistState.items = items;
       playlistState.original = items.slice();
@@ -2507,6 +2586,7 @@
     }
     function setPlaylistItems(items, sourceName) {
       playlistState.items = items.slice();
+      for (var ai = 0; ai < playlistState.items.length; ai++) applyWebampChannels(playlistState.items[ai]);
       playlistState.original = items.slice();
       playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
@@ -2602,6 +2682,7 @@
       return true;
     }
     function addPlaylistItem(item) {
+      applyWebampChannels(item);
       playlistState.items.push(item);
       updateInfoEls();
       requestRerender();
@@ -2617,7 +2698,7 @@
        duration/metadata — len=null hiện "Trực tiếp" ngay). */
     function addPlaylistItems(items) {
       if (!items || !items.length) return 0;
-      for (var i = 0; i < items.length; i++) playlistState.items.push(items[i]);
+      for (var i = 0; i < items.length; i++) { applyWebampChannels(items[i]); playlistState.items.push(items[i]); }
       updateInfoEls();
       requestRerender();
       return items.length;
@@ -3465,21 +3546,16 @@
       else { if (avsState.detached) reattachAvs(); }
     }
     /* Đợt B (9.9) — nút Video/Vis trên cửa sổ chính làm gì, theo tùy chọn
-       visbutton (optionsgroup.visbutton): "Open Context Menu" -> mở menu
-       Video/Vis; "Open Configuration" -> mở ngăn kéo ở tab Options/trang
-       visbutton; không chọn gì -> mở/đóng vùng AVS như trước (mặc định). */
+       visbutton (optionsgroup.visbutton): "Open Configuration" -> mở ngăn
+       kéo ở tab Options/trang visbutton; còn lại -> mở vùng AVS.
+       v10.5: nhánh "Open Context Menu" (mở menu Video/Vis) ĐÃ BỎ theo
+       yêu cầu Hải 04/11 (nút Video chỉ mở video) — visButtonAction vẫn
+       trả "menu" khi tùy chọn đó bật, nhưng videoavs.open không mở menu
+       nữa mà mở video như mặc định; hàm visContextMenuItems() đã gỡ. */
     function visButtonAction() {
       if (cfgSuffixOn("Open Context Menu", false)) return "menu";
       if (cfgSuffixOn("Open Configuration", false)) return "config";
       return "toggle";
-    }
-    function visContextMenuItems() {
-      return [
-        { label: "Video", action: function () { openAvs("video"); } },
-        { label: "Hiệu ứng (Vis)", action: function () { openAvs("vis"); } },
-        { label: "Tách rời", action: function () { if (!avsState.open) openAvs(avsState.mode); detachAvs(); } },
-        { label: "Đóng", action: function () { closeAvs(); } }
-      ];
     }
     var lastStage = null, lastLayout = null, lastTitle = "";
 
@@ -5223,6 +5299,14 @@
           return ((cx - rect.left) / sc - tw / 2) / Math.max(1, w - tw);
         };
         var onDown = function (e) {
+          /* v10.5 — chạm xuyên ngăn kéo: slider trong ngăn kéo ĐÓNG đã
+             bị tắt pointer-events nên chạm mới không tới được đây qua
+             hit-test; nhưng lần kéo đang dở (bắt đầu lúc mở, đóng giữa
+             chừng — listener mousemove/touchmove ở cấp document) vẫn
+             chạy tiếp nếu không chặn. Cờ tắt chạm trên chính div này là
+             nguồn đúng duy nhất (kể cả 250ms đang trượt đóng). Slider
+             ngoài ngăn kéo (volume/seek) luôn auto nên không ảnh hưởng. */
+          if (div.style.pointerEvents === "none") return;
           var f = fracFromEvent(e);
           if (f === null) return;
           rec.dragging = true;
@@ -5231,6 +5315,7 @@
         };
         var onMove = function (e) {
           if (!rec.dragging) return;
+          if (div.style.pointerEvents === "none") { rec.dragging = false; return; }
           var f = fracFromEvent(e);
           if (f === null) return;
           rec.setFrac(f);
@@ -5440,8 +5525,13 @@
            videoavs.open/close mở/đóng vùng AVS.
            VID_TV (nút TV — trong skin 566 nút này BỊ COMMENT trong XML nên
            không vẽ ra; nối sẵn cho skin nào có nút): bật/tắt cửa sổ Video.
-           VID_Misc/Vis_Menu: mở menu Video/Vis thật (giữ tỉ lệ, 1x/2x,
-           fullscreen, phóng to, tách rời, đóng).
+           VID_Misc/Vis_Menu (v10.5 — Hải 04/11: nút Video góc phải CHỈ
+           mở video, cài đặt đã có trong menu ⋯ nên không mở menu nữa):
+           VID_Misc chỉ mở video (đang mở rồi thì ở yên), Vis_Menu chỉ
+           mở hiệu ứng; các cài đặt cũ của 2 menu này (giữ tỉ lệ, 1x/2x,
+           fullscreen, phóng to, tách rời, đóng, màu hiệu ứng, Milkdrop)
+           đã chuyển sang menu ⋯ (index.html). videoMenuItems/
+           visMenuItems vẫn giữ làm API (không nút nào gọi nữa).
            VID_MAX/Restore: phóng to/khôi phục cửa sổ Video/Vis rời. */
         if (action === "VID_TV") { toggleVideoWindow(); return; }
         if (action === "VID_1X") { setVideoScale(1); return; }
@@ -5449,8 +5539,8 @@
         if (action === "VID_FS" || action === "VIS_FS") { requestVideoFullscreen(); return; }
         if (action === "VIS_PREV") { cycleVisVariant(-1); return; }
         if (action === "VIS_NEXT") { cycleVisVariant(1); return; }
-        if (action === "VID_MISC") { showPlaylistMenu(div, videoMenuItems()); return; }
-        if (action === "VIS_MENU") { showPlaylistMenu(div, visMenuItems()); return; }
+        if (action === "VID_MISC") { openAvs("video"); return; }
+        if (action === "VIS_MENU") { openAvs("vis"); return; }
         if (id === "button.vid.max") { setVideoMaximized(true); return; }
         if (id === "button.vid.restore") { setVideoMaximized(false); return; }
         if (id === "button.vid.detach" || id === "button.vis.detach") { detachAvs(); return; }
@@ -5458,11 +5548,16 @@
         if (id === "button.vid.switchto" || id === "button.vis.switchto") { toggleAvsMode(); return; }
         if (id === "videoavs.open") {
           /* Đợt B (9.9) — nút Video/Vis theo tùy chọn visbutton
-             (optionsgroup.visbutton): "Open Context Menu" -> mở menu
-             Video/Vis; "Open Configuration" -> mở ngăn kéo ở tab Options,
-             trang visbutton; không chọn gì -> mở/đóng vùng AVS như trước. */
+             (optionsgroup.visbutton): "Open Configuration" -> mở ngăn kéo
+             ở tab Options, trang visbutton; còn lại -> mở vùng AVS.
+             v10.5 — Hải 04/11: nút Video CHỈ mở video nên NHÁNH MENU ĐÃ
+             BỎ ("Open Context Menu" trước đây mở menu Video/Vis/Hiệu
+             ứng/Tách rời/Đóng — nay cũng chỉ mở video như mặc định;
+             các cài đặt đó đã có trong menu ⋯). Tùy chọn "Open Context
+             Menu" trong ngăn kéo Options vì vậy tạm không còn tác dụng
+             (ghi rõ ở README đợt v10.5 — chưa ẩn radio khỏi ngăn kéo vì
+             ngăn kéo dựng từ XML). */
           var vb = visButtonAction();
-          if (vb === "menu") { showPlaylistMenu(div, visContextMenuItems()); return; }
           if (vb === "config") {
             drawerState.optionsPage = "optionsgroup.visbutton";
             drawerTab = "options";
@@ -5863,7 +5958,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.4 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.5 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -6020,7 +6115,11 @@
     /* ---------- đợt D (9.9): menu Video / Vis (VID_Misc / Vis_Menu) ----------
        Winamp thật mở menu Options của cửa sổ Video/Vis. Mục nào làm được
        thì nối thật; mục Winamp có mà Amp chưa làm (vd "Video Capture…")
-       thì KHÔNG đưa vào — không đưa mục giả. */
+       thì KHÔNG đưa vào — không đưa mục giả.
+       v10.5 (Hải 04/11): 2 nút VID_Misc/Vis_Menu KHÔNG mở 2 menu này nữa
+       (chỉ mở video/hiệu ứng); các mục đã chuyển sang menu ⋯ (index.html)
+       nên 2 hàm dưới chỉ còn là API (export, test dùng để đối chiếu đủ
+       mục) — không nút nào gọi nữa. */
     /* v10.4 — mục Milkdrop dùng chung cho menu Vis + Video: chỉ đưa vào
        khi index.html nối callback (không đưa mục giả); nhãn có trạng thái
        Bật/Tắt + ✓ khi bật, như mục "Milkdrop" trong menu ⋯. Người dùng
@@ -6053,7 +6152,7 @@
       var items = [
         { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
         { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
-        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { avsState.visRandom = !avsState.visRandom; persistAvs(); } },
+        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } },
         { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
         { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs("vis"); detachAvs(); } } },
         { label: "Đóng Hiệu ứng", action: function () { closeAvs(); } }
@@ -6299,8 +6398,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.4 — Winamp Modern",
-        "Phiên bản Amp: 10.4 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.5 — Winamp Modern",
+        "Phiên bản Amp: 10.5 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -6658,6 +6757,16 @@
          choke để đồng bộ vòng vis: đang phát thì vòng chạy (vis cửa sổ
          chính theo nhạc), dừng thì vòng dừng (vis về khung cuối). */
       syncAvsAnim();
+      /* v10.5 (bo hieu ung mac dinh khi khong co nhac): cung la diem
+         choke de danh gia lai hien/an cua canvas Milkdrop NGAY khi
+         phat/dung/tam dung (xem applyMilkdropVisibility) — khong doi
+         lan render sau. Quan trong khi bat Milkdrop luc DUNG roi moi
+         bam Play: luc bat thi shown=false (chua phat); neu khong danh
+         gia lai o day thi shown mai false, index.html syncMilkdrop
+         doc shown cu -> setVisible(false) -> loop khong bao gio chay.
+         Chi khi shown doi thi callback onMilkdropShownChange moi chay
+         nen goi o day re (khong render lai). */
+      applyMilkdropVisibility();
       refreshClassicMain(); /* Đợt v10.1: Classic — đèn play/pause, đồng hồ, chữ chạy, mono/stereo */
     }
     function updateProgress() {
@@ -7003,14 +7112,15 @@
              cot CHI thuoc display cua so chinh (76x16 px) — Amp cu ve
              spectrum vao AVS la SAI VI TRI (mau trang thi dung theo XML
              566 vi ColorBand1..16 deu trang). Nay:
-             - Milkdrop BAT: canvas Milkdrop de len, khoi ve gi vao canvas
-               spectrum (continue) — drawAvsVis GIU LAI de doi chieu, khong
-               con goi tu day.
-             - Milkdrop TAT: to den canvas (#000, trung nen wrap) — vung
-               AVS den/trong, khong cot nao. Spectrum + song OSC chi con
-               o display cua so chinh (nhanh ben duoi) va day playlist
-               khi main dong. */
-          if (milkdropActive) {
+             - Milkdrop BAT + DANG PHAT: canvas Milkdrop de len, khoi ve
+               gi vao canvas spectrum (continue) — drawAvsVis GIU LAI de
+               doi chieu, khong con goi tu day.
+             - Milkdrop TAT, hoac DANG DUNG/TAM DUNG/CHUA PHAT (v10.5,
+               bo hieu ung mac dinh khi khong co nhac): to den canvas
+               (#000, trung nen wrap) — vung AVS den/trong, khong cot
+               nao. Spectrum + song OSC chi con o display cua so chinh
+               (nhanh ben duoi) va day playlist khi main dong. */
+          if (milkdropActive && demo.playing) {
             lastAvsFrame = { mode: "milkdrop", maxBin: maxBin, heights: [], peaks: [], visType: visTypeAvs };
             continue;
           }
@@ -7478,8 +7588,15 @@
       /* v10.3: Milkdrop hien khi bat + co canvas + AVS mo + KHONG co video
          that dang hien (ke ca che do video: kenh audio chua tung co hinh
          thi video an nen Milkdrop duoc hien, nhu Winamp/Webamp; kenh co
-         hinh that thi video giu man hinh). */
-      var showMd = !!(milkdropActive && milkdropCanvas && avsState.open && !avsVideoActuallyShowing());
+         hinh that thi video giu man hinh).
+         v10.5 (bo hieu ung mac dinh khi khong co nhac): them DIEU KIEN
+         DANG PHAT — dung/tam dung/chua phat thi canvas an (khung cuoi
+         dong bang neu de hien), vung AVS ve den/trong, ten kenh hien
+         tren nen den. demo.playing do engine bao qua onAudioPlayingChange;
+         doi phat/dung thi updateStatusEls goi lai ham nay ngay nen khong
+         doi lan render sau. milkdrop.js cung chan o applyCanvasDisplay. */
+      var showMd = !!(milkdropActive && milkdropCanvas && avsState.open && demo.playing && !avsVideoActuallyShowing());
+      var prevShown = milkdropShown;
       milkdropShown = showMd; /* v10.4: index.html syncMilkdrop chay vong render theo co nay (xem getMilkdropState) */
       try {
         if (milkdropCanvas) milkdropCanvas.style.display = showMd ? "" : "none";
@@ -7488,6 +7605,14 @@
         if (avsMedia) avsMedia.canvas.style.display = "none"; /* v10.3: canvas spectrum AVS luon an (chi Milkdrop / video / den) */
         syncAvsName();
       } catch (e) { /* bỏ qua */ }
+      /* v10.5 — hien/an doi giua chung (video xuat hien/bien mat khi
+         dang phat) thi bao trang de dong bo lai loop + banner ngay
+         (index.html syncMilkdrop): khong doi lan render sau — anh
+         03:23: video DNRT chay co hinh ma banner loi cu van dinh vi
+         khong ai danh gia lai. */
+      if (showMd !== prevShown && onMilkdropShownChange) {
+        try { onMilkdropShownChange(showMd); } catch (e) { /* bỏ qua */ }
+      }
       return showMd;
     }
     function setMilkdropCanvas(canvas) {
@@ -7903,6 +8028,26 @@
       if (sz) track.style.backgroundSize = sz.w + "px " + sz.h + "px";
       track.style.backgroundRepeat = "no-repeat";
       track.style.imageRendering = "pixelated";
+      /* v10.5 — rãnh phải cắt đúng sprite nền trong sheet (fork
+         getSpriteUrisFromImg cắt sprite theo rect x/y/w/h của bảng
+         sprite, vd MAIN_BALANCE_BACKGROUND x=9 nên rãnh balance là cột
+         9..47 của BALANCE.BMP, KHÔNG phải 0..38). Trước đây track luôn
+         lấy từ (0,0) nên 9 cột đệm bên trái lọt vào: skin Webamp Classic
+         hiện khối xanh (đệm cyan (0,198,255)) ở đầu rãnh balance, rãnh
+         lệch trái 9px + cụt 9px bên phải (ảnh thật 04/11 03:15 dừng +
+         03:23 đang phát Đà Nẵng 00:09 — khối xanh y hệt cả 2 trạng
+         thái). Volume/position có sprite (0,0) nên không đổi. Seek shade
+         cũng sai vùng: sprite nền ở (0,36) mà track lấy (0,0) (nút
+         option/minimize). backgroundSprite lấy từ cfg (nơi tạo slider);
+         trackOffset chỉ cộng thêm bước frame theo y (công thức fork). */
+      var trackBgX = 0, trackBgY = 0;
+      if (cfg.backgroundSprite) {
+        var libBg = classicLib();
+        if (libBg) {
+          var bgRect = libBg.spriteRect(sheet, cfg.backgroundSprite);
+          if (bgRect) { trackBgX = bgRect.x || 0; trackBgY = bgRect.y || 0; }
+        }
+      }
       setAbs(track, div, 0, 0);
       div.appendChild(track);
       var thumbName0 = (typeof cfg.thumbSprite === "function") ? cfg.thumbSprite(cfg.frac0 || 0) : cfg.thumbSprite;
@@ -7915,6 +8060,7 @@
       var rec = {
         div: div, track: track, thumb: thumb, w: geo.w, h: geo.h,
         tw: cfg.thumbW, th: cfg.thumbH, action: cfg.action, frac: cfg.frac0 || 0,
+        trackBgX: trackBgX, trackBgY: trackBgY, /* v10.5: gốc sprite nền (để test/debug) */
         sliderId: cfg.id, /* v10.3: applyEqPreset tìm slider EQ qua rec.sliderId — phải là id dải ("preamp","eq1",...) */
         dragging: false, cfg: cfg
       };
@@ -7936,7 +8082,7 @@
         }
         var off = cfg.trackOffset ? cfg.trackOffset(rec.frac) : 0;
         if (cfg.trackPosition) track.style.backgroundPosition = cfg.trackPosition(rec.frac);
-        else track.style.backgroundPosition = "0px " + (-off) + "px";
+        else track.style.backgroundPosition = (-trackBgX) + "px " + (-(trackBgY + off)) + "px"; /* v10.5: gốc sprite nền, không phải (0,0) */
         if (thumb && typeof cfg.thumbSprite === "function") {
           classicSetSprite(thumb, sheet, cfg.thumbSprite(rec.frac));
         }
@@ -8088,9 +8234,10 @@
         }
       }
       if (rec.monoDiv && rec.stereoDiv) {
-        var m = null;
-        try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
-        var ch = (!demo.playing) ? "none" : (m === "mono" ? "mono" : "stereo");
+        /* v10.5 — nhu chi bao Modern: doc so kenh cua MUC DANG PHAT
+           (itemChannels), khong do tin hieu (Webamp: MonoStereo chi doc
+           track.channels). Chua biet -> stereo (tam), dung -> none. */
+        var ch = (!demo.playing) ? "none" : (itemChannels(playlistState.items[playlistState.current]) === 1 ? "mono" : "stereo");
         classicSetSprite(rec.monoDiv, "MONOSTER", ch === "mono" ? "MAIN_MONO_SELECTED" : "MAIN_MONO");
         classicSetSprite(rec.stereoDiv, "MONOSTER", ch === "stereo" ? "MAIN_STEREO_SELECTED" : "MAIN_STEREO");
       }
@@ -8385,11 +8532,12 @@
           id: "volume", action: "VOLUME", title: "Thanh âm lượng",
           thumbSprite: "MAIN_VOLUME_THUMB", thumbActiveSprite: "MAIN_VOLUME_THUMB_SELECTED",
           thumbW: G.volume.thumbW, thumbH: G.volume.thumbH, thumbY: G.volume.thumbY,
+          backgroundSprite: "MAIN_VOLUME_BACKGROUND", /* v10.5: rãnh cắt từ sprite nền (x=0) */
           frac0: demo.volume,
           /* v10.3 — fork: input volume rộng 65px (kém nền 68px 3px) nên
              thumb chỉ trượt 65-14 = 51px, khớp nền fill tới 65px. */
           travelW: 51,
-          trackOffset: function () { return lib.volumeTrackOffset(demo.volume); },
+          trackOffset: function (frac) { return lib.volumeTrackOffset(frac); }, /* v10.5: dùng frac vừa kéo, không đọc demo.volume (place() chạy TRƯỚC onSet nên đọc state cũ thì rãnh chậm 1 nhịp) */
           onSet: function (frac) {
             demo.volume = frac; updateVolumebar();
             applyEngineVolume();
@@ -8401,8 +8549,9 @@
           id: "balance", action: "PAN", title: "Cân bằng trái/phải",
           thumbSprite: "MAIN_BALANCE_THUMB", thumbActiveSprite: "MAIN_BALANCE_THUMB_ACTIVE",
           thumbW: G.balance.thumbW, thumbH: G.balance.thumbH, thumbY: G.balance.thumbY,
+          backgroundSprite: "MAIN_BALANCE_BACKGROUND", /* v10.5: rãnh cắt từ x=9 (không lấy 9 cột đệm) */
           frac0: drawerState.balance,
-          trackOffset: function () { return lib.balanceTrackOffset(drawerState.balance); },
+          trackOffset: function (frac) { return lib.balanceTrackOffset(frac); }, /* v10.5: dùng frac vừa kéo (như volume — đọc drawerState.balance ở đây thì rãnh chậm 1 nhịp vì place() chạy trước onSet/applyBalance) */
           onSet: function (frac) { applyBalance(frac); }
         });
       /* EQ / PL. */
@@ -8426,6 +8575,7 @@
           id: "position", action: "SEEK", title: "Thanh tua",
           thumbSprite: "MAIN_POSITION_SLIDER_THUMB", thumbActiveSprite: "MAIN_POSITION_SLIDER_THUMB_SELECTED",
           thumbW: G.position.thumbW, thumbH: G.position.thumbH, thumbY: 0,
+          backgroundSprite: "MAIN_POSITION_SLIDER_BACKGROUND", /* v10.5: rãnh cắt từ sprite nền (x=0) */
           frac0: demo.seekFrac, trackOffset: null,
           onSet: function (frac, silent, r) {
             if (silent) return;
@@ -8598,6 +8748,7 @@
             return "MAIN_SHADE_POSITION_THUMB";
           },
           thumbW: 3, thumbH: 7, thumbY: 0,
+          backgroundSprite: "MAIN_SHADE_POSITION_BACKGROUND", /* v10.5: rãnh shade cắt từ (0,36), không lấy (0,0) */
           frac0: demo.seekFrac, trackOffset: null,
           onSet: function (frac, silent, r) {
             if (silent) return;
@@ -8674,7 +8825,16 @@
        Trạng thái mở do renderer giữ (classicEqOpen/classicEqShade/
        classicPlShade); nút EQ trên cửa sổ chính + mục "Ngăn kéo" trong
        menu (qua toggleDrawer ở index.html) đều mở cửa sổ EQ Classic
-       khi đang dùng skin Classic, không mở ngăn kéo Modern. */
+       khi đang dùng skin Classic, không mở ngăn kéo Modern.
+       v10.5 (ảnh 03:23): sửa 3 lỗi vẽ playlist — (1) fill top + tile
+       trái/phải lát bằng tileSprite (nhiều div cắt đúng sprite) thay
+       cho repeat-x/repeat-y trên cả sheet (lôi góc phải vào 2 lần,
+       trông như 2 bộ nút); (2) góc phải dùng đúng tên sprite
+       PLAYLIST_TOP_RIGHT_CORNER_SELECTED (trước đây sai tên nên mất
+       nền); (3) giờ chạy dời sang (132,88) — trong bottom-right như
+       fork, không đè nút ADD/REM/SEL nữa. Ticker Classic sửa ở
+       classic.js charSprite (deburr + lowercase như Character.tsx
+       của fork): "Da Nang" không còn thành "A ANG". */
     var CLASSIC_PL_W = 275, CLASSIC_PL_H = 116;
     var CLASSIC_EQ_W = 275, CLASSIC_EQ_H = 116;
     var classicEqOpen = false, classicEqShade = false, classicPlShade = false;
@@ -8771,21 +8931,47 @@
       /* --- top bar 20px: góc trái + 2 dải tile + title 100px + góc phải
          (fork: spacer chỉ khi rộng chẵn; 275 lẻ nên không có spacer). --- */
       var fillW = Math.floor((W - 25 - 100 - 25) / 2); /* 62 */
-      function topPart(name, x, w, rep) {
+      function topPart(name, x, w) {
         var d = classicSpriteDiv("PLEDIT", name);
         if (!d) return null;
         d.style.left = x + "px"; d.style.top = "0px";
         d.style.width = w + "px";
-        if (rep) d.style.backgroundRepeat = "repeat-x";
         setAbs(d, win, x, 0);
         win.appendChild(d);
         return d;
       }
-      topPart("PLAYLIST_TOP_LEFT_SELECTED", 0, 25, false);
-      topPart("PLAYLIST_TOP_TILE_SELECTED", 25, fillW, true);
-      topPart("PLAYLIST_TITLE_BAR_SELECTED", 25 + fillW, 100, false);
-      topPart("PLAYLIST_TOP_TILE_SELECTED", 25 + fillW + 100, W - 25 - fillW - 100 - 25, true);
-      topPart("PLAYLIST_TOP_RIGHT_SELECTED", W - 25, 25, false);
+      /* v10.5 — lát tile ĐÚNG: mỗi ô là 1 div cắt đúng sprite tile
+         (không repeat-x/repeat-y trên cả sheet). Trước đây fill dùng
+         backgroundRepeat trên ảnh sheet nguyên (280×186) nên 1 ô 62px
+         hiện cả TOP_TILE (127..152) + TOP_RIGHT_CORNER (153..178) +
+         12px nền vis — góc phải (2 icon nhỏ như nút thu/đóng) lọt vào
+         2 lần, trông như title bar có 2 bộ nút thừa (ảnh 03:23).
+         Fork không mắc vì mỗi sprite là 1 ảnh cắt riêng, repeat chỉ
+         lặp đúng tile. Ô cuối cắt ngắn theo phần còn lại của vùng. */
+      function tileSprite(name, x, y, w, h) {
+        var lib0 = classicLib();
+        var rect = lib0 ? lib0.spriteRect("PLEDIT", name) : null;
+        if (!rect) return;
+        for (var ty = y; ty < y + h; ty += rect.height) {
+          for (var tx = x; tx < x + w; tx += rect.width) {
+            var d = classicSpriteDiv("PLEDIT", name);
+            if (!d) return;
+            d.style.left = tx + "px"; d.style.top = ty + "px";
+            d.style.width = Math.min(rect.width, x + w - tx) + "px";
+            d.style.height = Math.min(rect.height, y + h - ty) + "px";
+            setAbs(d, win, tx, ty);
+            win.appendChild(d);
+          }
+        }
+      }
+      topPart("PLAYLIST_TOP_LEFT_SELECTED", 0, 25);
+      tileSprite("PLAYLIST_TOP_TILE_SELECTED", 25, 0, fillW, 20);
+      topPart("PLAYLIST_TITLE_BAR_SELECTED", 25 + fillW, 100);
+      tileSprite("PLAYLIST_TOP_TILE_SELECTED", 25 + fillW + 100, 0, W - 25 - fillW - 100 - 25, 20);
+      /* v10.5 — tên sprite đúng: trước đây "PLAYLIST_TOP_RIGHT_SELECTED"
+         không có trong bảng (spriteRect -> null) nên góc phải 25px
+         không có nền, 2 nút shade/close nổi trên nền đen. */
+      topPart("PLAYLIST_TOP_RIGHT_CORNER_SELECTED", W - 25, 25);
       var titleZone = document.createElement("div");
       titleZone.dataset.classicTitle = "1";
       titleZone.style.position = "absolute";
@@ -8802,11 +8988,12 @@
         id: "playlist-close", sprite: "PLAYLIST_CLOSE_SELECTED",
         title: "Đóng playlist", onClick: function () { classicTogglePlaylist(); }
       });
-      /* --- giữa (y=20, cao 58): tile trái/phải + danh sách --- */
-      var lt = classicSpriteDiv("PLEDIT", "PLAYLIST_LEFT_TILE");
-      if (lt) { lt.style.left = "0px"; lt.style.top = "20px"; lt.style.height = "58px"; lt.style.backgroundRepeat = "repeat-y"; setAbs(lt, win, 0, 20); win.appendChild(lt); }
-      var rt = classicSpriteDiv("PLEDIT", "PLAYLIST_RIGHT_TILE");
-      if (rt) { rt.style.left = "255px"; rt.style.top = "20px"; rt.style.height = "58px"; rt.style.backgroundRepeat = "repeat-y"; setAbs(rt, win, 255, 20); win.appendChild(rt); }
+      /* --- giữa (y=20, cao 58): tile trái/phải + danh sách ---
+         v10.5: lát tile bằng tileSprite (như fill trên) — trước đây
+         repeat-y trên cả sheet nên nửa dưới mỗi tile lôi theo mẩu
+         góc đáy (PLAYLIST_BOTTOM_LEFT_CORNER) vào mép danh sách. */
+      tileSprite("PLAYLIST_LEFT_TILE", 0, 20, 12, 58);
+      tileSprite("PLAYLIST_RIGHT_TILE", 255, 20, 20, 58);
       var list = document.createElement("div");
       list.className = "pl-list";
       list.dataset.classicPlList = "1";
@@ -8829,8 +9016,14 @@
       var timeDiv = document.createElement("div");
       timeDiv.dataset.classicPlTime = "1";
       timeDiv.style.position = "absolute";
-      timeDiv.style.left = "7px"; timeDiv.style.top = "88px";
-      timeDiv.style.width = "110px"; timeDiv.style.height = "10px";
+      /* v10.5 — giờ chạy ở đáy-PHẢI, không phải đáy-trái: fork đặt
+         .playlist-running-time-display (top:10, left:7) BÊN TRONG
+         .playlist-bottom-right (x=125..275) -> cửa sổ (132,88), trên
+         nền hộp vis đen. Trước đây đặt (7,88) nên chữ "0:00" + dải 18
+         ô nền font đè lên nút ADD/REM/SEL (ảnh 03:23: chữ nhòe, nút
+         bị cắt). Giữ đệm 18 ký tự như fork (rightPad 18). */
+      timeDiv.style.left = "132px"; timeDiv.style.top = "88px";
+      timeDiv.style.width = "90px"; timeDiv.style.height = "10px";
       timeDiv.style.overflow = "hidden";
       setAbs(timeDiv, win, 7, 88);
       win.appendChild(timeDiv);
@@ -9403,6 +9596,7 @@
              render đặt thẳng top cuối, transform chỉ làm mượt đường đi. */
           lastDrawerTopCache.open = restY + drawerInnerY(true, mainB, snap, dH, restY, mainHeight);
           lastDrawerTopCache.closed = restY + drawerInnerY(false, mainB, snap, dH, restY, mainHeight);
+          var openingAnim = false;
           if (pendingDrawerStartDy !== null) {
             var pds = pendingDrawerStartDy;
             pendingDrawerStartDy = null;
@@ -9412,8 +9606,15 @@
             if (pds.token === drawerAnimToken) {
               setDrawerTransform(d, pds.dy, false);
               setDrawerTransform(sh, pds.dy, false);
+              openingAnim = true;
             }
           }
+          /* v10.5 — chạm xuyên ngăn kéo: đóng thì tắt chạm mọi control
+             trong ngăn kéo (chỉ chừa nút mở); mở thì bật lại. Đang trượt
+             MỞ (pendingDrawerStartDy vừa áp) thì giữ tắt cho tới khi
+             trượt xong (toggleDrawerAnimated bật lại ở finish) — lúc đó
+             ngăn kéo vẫn còn chìm sau cửa sổ chính. */
+          setDrawerInteractive(d, !!drawerOpenOpt && !openingAnim);
           shift = dH || 129;
         }
       } else if (videoShifted) {
@@ -9794,6 +9995,7 @@
       openDrawerTab: openDrawerTab,
       setBeatVisOn: setBeatVisOn, getBeatVisState: getBeatVisState, getBeatFrame: getBeatFrame,
       setBalance: setBalance, getPanState: getPanState,
+      setVisRandom: setVisRandom, /* v10.5: menu ⋯ "Màu hiệu ứng ngẫu nhiên" */
       setVideoInfo: setVideoInfo, cycleVisVariant: cycleVisVariant,
       cycleVisType: cycleVisType, setVisType: setVisType, getVisTypes: getVisTypes, VIS_TYPES: VIS_TYPES, /* Đợt 4: kiểu vis bar/osc/none */
       setAvsAnalyser: setAvsAnalyser, getAvsAnalyser: getAvsAnalyser,

@@ -19,6 +19,17 @@
    - Graph (AudioContext + preamp + 10 biquad + master + analyser) tạo
      khi người dùng bấm phát lần đầu; analyser đăng ký với renderer ngay
      (setAvsAnalyser) để vis đọc 0 (đứng yên) khi chưa có tín hiệu.
+   V10.5 — NGOẠI LỆ: graph (AudioContext + analyser) nay TẠO SẴN lúc
+   tạo engine (cuối createAudioEngine), theo đúng Webamp (Media
+   constructor tạo ngay `new AudioContext()` + analyser, không đợi lần
+   phát đầu). Lý do: Milkdrop cần ctx ngay lúc BẬT (trước khi phát) để
+   tạo visualizer + preset; graph lazy làm mọi lần bật-trước-phát đều
+   rơi vào lỗi "chưa có AudioContext" rồi kẹt banner đó cả khi nhạc đã
+   phát. ctx tạo trước gesture sẽ ở trạng thái "suspended" tới khi
+   người dùng chạm/bấm phát (playItem/resume + wireResumeHandlers
+   resume như cũ) — Webamp làm y vậy. MediaElementSource vẫn tạo MUỘN
+   như cũ (chỉ khi EQ bật + nạp thành công với CORS) để đài không CORS
+   không bị câm; chỉ ctx/analyser là tạo sẵn.
    - MediaElementSource tạo MUỘN (lazy), MỖI THẺ 1 LẦN DUY NHẤT, chỉ khi
      EQ đang BẬT và media đã nạp THÀNH CÔNG với crossOrigin="anonymous"
      (tức server có CORS). Trước lúc đó media phát NATIVE (tiếng trực tiếp
@@ -71,8 +82,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.4";
-  var EXPECTED_AUDIO_VERSION = "10.4";
+  var AUDIO_VERSION = "10.5";
+  var EXPECTED_AUDIO_VERSION = "10.5";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -161,35 +172,15 @@
        đổi được gì — cùng giới hạn như vis. Không có createStereoPanner
        thì panner = null, setPan chỉ lưu giá trị, không ném lỗi. */
     var panner = null, panValue = 0.5;
-    /* Đo kênh thật (stereo/mono) khi có source: ChannelSplitter(2) tách
-       L/R từ source + 2 analyser nhỏ đo biên độ từng kênh. Chỉ đo được
-       khi MediaElementSource đã tồn tại (EQ bật + đài có CORS); không có
-       source thì không đo được. */
-    var chSplitter = null, chAnL = null, chAnR = null, chProbeFor = null;
-    var measuredChannels = null, measuredForEl = null;
-    /* v10.4 — DO KENH NHIEU CUA SO (sua loi chot "mono" vinh vien sau
-       1 cua so 500ms): dai stereo that van co doan noi dung gan mono
-       (giong noi o giua, quang cao mono) lam 1 cua so doc L≈R -> ban cu
-       chot "mono" ca buoi. Chuan kiem ffprobe: VOV1 = mono that (1 kenh),
-       Da Nang / VOV3 / Dong Thap / Nghe An = stereo that (2 kenh) — ca
-       2 truong hop deu phai dung. Quy tac moi:
-       - Cua so nao lech L/R ro -> "stereo" NGAY (1 cua so la du).
-       - "mono" chi ket luan sau MEASURE_MONO_WINDOWS cua so LIEN TIEP
-         deu mono (~1,5s), va chi la TAM: hen do lai sau 5s, cua so sau
-         lech thi lat ve "stereo" (bao lai qua cb da luu).
-       - Cua so im lang thi khong dem, thu lai (toi da 6 cua so). */
-    var MEASURE_MONO_WINDOWS = 3;
-    var MEASURE_REVERIFY_MS = 5000;
-    var MEASURE_MAX_QUIET_WINDOWS = 6;
-    var measureTimer = null, measureMonoWindows = 0, measureCb = null, measureGen = 0;
-    function clearMeasureTimer() {
-      if (measureTimer) { try { clearTimeout(measureTimer); } catch (e) { /* bỏ qua */ } measureTimer = null; }
-    }
-    function resetMeasuredChannels() {
-      measuredChannels = null; measuredForEl = null;
-      measureMonoWindows = 0; measureCb = null; measureGen++;
-      clearMeasureTimer();
-    }
+    /* v10.5 — BO DO KENH BANG TIN HIEU (xem ghi chu o routeSource):
+       cach Webamp (fork): KHONG do L/R bang ChannelSplitter — so kenh
+       la thuoc tinh cua TRACK (track.channels = numberOfChannels tu
+       metadata), chi bao chi doc thuoc tinh do. Do tin hieu khong phan
+       biet duoc "dai stereo dang phat doan noi dung gan mono (giong noi
+       o giua)" voi "dai mono that", nen Da Nang stereo that van bi chot
+       MONO (anh that 04/11 03:11). Tu v10.5, engine khong do kenh nua;
+       so kenh do renderer giu tren item (xem renderer.js
+       updateChannelsIndicator + applyWebampChannels). */
     /* --- media --- */
     var audioEl = null, audioSrc = null, audioSrcEl = null;
     /* CROSSFADE (engine 2 thẻ): thẻ audio thứ hai để bài mới phát chồng
@@ -400,137 +391,7 @@
     function routeSource(src) {
       if (!src || !ctx) return;
       try { src.disconnect(); } catch (e) { /* chưa nối gì */ }
-      /* disconnect() cắt CẢ đường tới splitter đo kênh → nối lại sau. */
-      chProbeFor = null;
       try { src.connect(eqOn ? preamp : ctx.destination); } catch (e) { /* stub */ }
-      hookChannelProbe(src);
-    }
-    /* Móc source vào splitter đo kênh (lười tạo, dùng chung 1 bộ cho cả
-       2 source; đổi source thì ngắt source cũ khỏi splitter). Stub jsdom
-       (không có createChannelSplitter) thì im lặng bỏ qua. */
-    function hookChannelProbe(src) {
-      if (!ctx || !src || chProbeFor === src) return;
-      try {
-        if (!chSplitter) {
-          chSplitter = ctx.createChannelSplitter(2);
-          chAnL = ctx.createAnalyser(); chAnR = ctx.createAnalyser();
-          chAnL.fftSize = 256; chAnR.fftSize = 256;
-        }
-        if (chProbeFor && chProbeFor !== src) { try { chProbeFor.disconnect(chSplitter); } catch (e) { /* bỏ qua */ } }
-        src.connect(chSplitter);
-        try { chSplitter.connect(chAnL, 0); } catch (e) { /* bỏ qua */ }
-        try { chSplitter.connect(chAnR, 1); } catch (e) { /* bỏ qua */ }
-        chProbeFor = src;
-      } catch (e) { chProbeFor = null; }
-    }
-    /* Đo kênh thật của thẻ đang phát: mỗi CỬA SỔ lấy mẫu L/R 5 lần trong
-       ~500ms, theo dõi mức từng kênh (maxL/maxR) và chênh lệch L-R (maxDiff).
-       - Cả 2 kênh im (mức < 8) -> null (không kết luận), giữ "stereo" tạm.
-       - Chỉ 1 kênh có tín hiệu (kênh kia im) -> "mono" (file mono qua
-         splitter: kênh thừa im lặng, không phải L==R).
-       - Cả 2 kênh có tín hiệu và khác nhau (diff > 8) -> "stereo".
-       - Cả 2 kênh có tín hiệu và giống hệt (diff ~ 0) -> "mono" (dual mono /
-         file mono đã upmix L==R ở source).
-       v10.4 (xem ghi chú ở MEASURE_MONO_WINDOWS): "stereo" ket luan ngay
-       o cua so dau tien lech; "mono" can 3 cua so lien tiep deu mono roi
-       van do lai sau 5s — 1 cua so L≈R KHONG duoc chot "mono" vinh vien
-       cho dai 2 kenh. Không có source sau 2s chờ (EQ tắt / không CORS)
-       thì trả null. cb(state) với state ∈ {"stereo","mono",null}; khi
-       do lai lat ket luan mono -> stereo thi goi lai cb da luu. */
-    function getMeasuredChannels() {
-      if (!currentEl || measuredForEl !== currentEl) return null;
-      return measuredChannels;
-    }
-    function measureChannels(cb) {
-      var el0 = currentEl;
-      if (!el0 || !playing) { if (cb) cb(null); return; }
-      clearMeasureTimer();
-      measureMonoWindows = 0;
-      measureCb = (typeof cb === "function") ? cb : null;
-      var gen = ++measureGen;
-      var quietWindows = 0; /* so cua so im lang lien tiep (khong dem vao mono) */
-      var alive = function () { return gen === measureGen && playing && currentEl === el0; };
-      var waited = 0;
-      var tick = function () {
-        if (!alive()) { if (gen === measureGen && cb) cb(null); return; }
-        if (chProbeFor && chAnL && chAnR) { runWindow(onWindow); return; }
-        waited += 100;
-        if (waited >= 2000) { if (cb) cb(null); return; }
-        setTimeout(tick, 100);
-      };
-      /* 1 cua so: 5 mau cach nhau 100ms (~500ms). Xong goi done(res)
-         voi res ∈ {"stereo","mono",null}. */
-      var runWindow = function (done) {
-        var n = 0, maxL = 0, maxR = 0, maxDiff = 0;
-        var bufL = new Uint8Array(256), bufR = new Uint8Array(256);
-        var step = function () {
-          if (!alive()) { done(null); return; }
-          try { chAnL.getByteTimeDomainData(bufL); chAnR.getByteTimeDomainData(bufR); }
-          catch (e) { done(null); return; }
-          for (var i = 0; i < 256; i++) {
-            var l = Math.abs(bufL[i] - 128), r = Math.abs(bufR[i] - 128);
-            if (l > maxL) maxL = l;
-            if (r > maxR) maxR = r;
-            var d = Math.abs(bufL[i] - bufR[i]);
-            if (d > maxDiff) maxDiff = d;
-          }
-          n++;
-          if (n < 5) { setTimeout(step, 100); return; }
-          var res = null;
-          if (Math.max(maxL, maxR) >= 8) {
-            if (Math.min(maxL, maxR) < 8) res = "mono";
-            else res = (maxDiff > 8) ? "stereo" : "mono";
-          }
-          done(res);
-        };
-        step();
-      };
-      /* Xu ly ket qua 1 cua so trong dot do chinh. */
-      var onWindow = function (res) {
-        if (!alive()) return;
-        if (res === "stereo") {
-          measureMonoWindows = 0; quietWindows = 0;
-          if (currentEl === el0) { measuredChannels = "stereo"; measuredForEl = el0; }
-          if (cb) cb("stereo");
-          return;
-        }
-        if (res === "mono") {
-          quietWindows = 0;
-          measureMonoWindows++;
-          if (measureMonoWindows < MEASURE_MONO_WINDOWS) { runWindow(onWindow); return; }
-          if (currentEl === el0) { measuredChannels = "mono"; measuredForEl = el0; }
-          if (cb) cb("mono");
-          scheduleReverify();
-          return;
-        }
-        /* Im lang: khong dem vao mono, thu lai cua so khac (toi da
-           MEASURE_MAX_QUIET_WINDOWS cua so roi tra null). */
-        quietWindows++;
-        if (quietWindows >= MEASURE_MAX_QUIET_WINDOWS) { if (cb) cb(null); return; }
-        runWindow(onWindow);
-      };
-      /* Do lai ket luan mono tam sau 5s: cua so kiem lech thi lat ve
-         stereo (bao lai qua cb da luu); mono/im thi giu mono, hen tiep. */
-      var scheduleReverify = function () {
-        clearMeasureTimer();
-        measureTimer = setTimeout(function () {
-          measureTimer = null;
-          if (!alive()) return;
-          if (!chProbeFor || !chAnL || !chAnR) return;
-          if (measuredChannels !== "mono" || measuredForEl !== el0) return;
-          runWindow(function (res) {
-            if (!alive()) return;
-            if (res === "stereo") {
-              measuredChannels = "stereo"; measuredForEl = el0;
-              measureMonoWindows = 0;
-              if (measureCb) measureCb("stereo");
-              return;
-            }
-            scheduleReverify();
-          });
-        }, MEASURE_REVERIFY_MS);
-      };
-      tick();
     }
     /* Nối/ngắt toàn bộ source theo EQ hiện tại (chuyển on/off không nạp lại). */
     function applyRouting() {
@@ -942,9 +803,9 @@
            loadeddata/videoWidth > 0 (lưới an toàn renderer.setVideoInfo). */
       if (prevEl && prevEl !== el && prevEl === lastVideoEl) clearSrc(prevEl);
       if (el === lastVideoEl) clearSrc(el);
-      /* Bài/kênh mới -> kết quả đo kênh cũ hết hiệu lực (thẻ audio dùng
-         lại cho bài mới nên không thể dựa vào measuredForEl). */
-      resetMeasuredChannels(); /* v10.4: kem huy hen do lai + tang gen de cua so cu dung lai */
+      /* Bài/kênh mới -> số kênh là thuộc tính của MỤC MỚI (item.channels,
+         renderer giữ), không phải của thẻ audio dùng lại — engine không
+         giữ kết quả đo kênh nào nữa (v10.5, theo Webamp). */
       /* Thử lại (sau lỗi 3s) phải GIỮ retryCount để lỗi sau 2 lần thử
          lại là lỗi cuối (không thử lại vô hạn). Chỉ lần nạp do người
          dùng bấm mới reset retryCount. */
@@ -1338,7 +1199,6 @@
           cancelXfade(true);
           retryCount = 0; hlsTried = false; loadState = "loading";
           pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
-          resetMeasuredChannels(); /* v10.4: doi bai thi huy hen do lai cu */
           currentEl = freshElement(currentKind, currentEl);
           if (!currentEl) { handleLoadFailure("no-element"); return { changed: true, reloaded: true }; }
           setCrossOrigin(currentEl, false); /* thẻ mới native: không crossOrigin */
@@ -1415,7 +1275,6 @@
         hlsActive: !!hls, hlsTried: hlsTried, retried: retryCount > 0, retryCount: retryCount, maxLoadRetries: MAX_LOAD_RETRIES,
         analyserConnected: !!analyser, analyserSignal: analyserHasSignal(),
         sampleRate: ctx ? ctx.sampleRate : null, /* KHZ đo thật */
-        measuredChannels: getMeasuredChannels(),
         pan: panValue, panSupported: !!panner, panApplied: !!(panner && eqOn), /* PAN */
         eqValues: { preamp: eqValues.preamp, bands: eqValues.bands.slice() },
         crossfadeMs: crossfadeMs, crossfading: crossfadeActive || !!pendingXfade, /* crossfade */
@@ -1426,6 +1285,16 @@
        thẻ đang phát, không phải lúc nào cũng thẻ A. */
     function getAudioEl() { return (currentEl && currentKind === "audio") ? currentEl : getAudio(); }
     function getVideoElement() { return getVideo(); }
+
+    /* v10.5 — GRAPH TẠO SẴN LÚC KHỞI TẠO (theo Webamp: Media
+       constructor tạo ngay AudioContext + analyser, không đợi lần phát
+       đầu — xem ghi chú đầu file). Milkdrop lấy ctx/analyser được ngay
+       cả trước khi phát nhạc; "chưa có AudioContext" không còn xảy ra
+       sau khi engine tạo xong. Tạo thất bại (trình duyệt không có
+       AudioContext) thì giữ đường lazy cũ: playItem/setEqOn gọi lại
+       ensureGraph. */
+    try { ensureGraph(); } catch (e) { /* giữ lazy fallback */ }
+    wireResumeHandlers();
 
     return {
       AUDIO_VERSION: AUDIO_VERSION,
@@ -1438,10 +1307,9 @@
       setCrossfade: setCrossfade, getCrossfade: getCrossfade, /* crossfade trộn bài */
       getAudioEl: getAudioEl, getVideoElement: getVideoElement,
       ensureGraph: ensureGraph,
-      measureChannels: measureChannels, getMeasuredChannels: getMeasuredChannels,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, limiter: limiter, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, limiter: limiter, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB };
       },
       /* test/debug: trạng thái crossfade */
       _crossfade: function () {

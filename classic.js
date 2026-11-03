@@ -37,8 +37,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var CLASSIC_VERSION = "10.4";
-  var EXPECTED_CLASSIC_VERSION = "10.4";
+  var CLASSIC_VERSION = "10.5";
+  var EXPECTED_CLASSIC_VERSION = "10.5";
   /* Manifest duy nhất window.AMP_VERSION (đặt ở index.html TRƯỚC khi nạp
      file này) — lệch thì MANIFEST_MISMATCH = true để trang báo "bản mix".
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -345,10 +345,29 @@
     }
     return null;
   }
+  /* Chuẩn hoá 1 ký tự về khoá tra FONT_LOOKUP, y hệt Character.tsx của
+     fork (lodash deburr + toLowerCase): bỏ dấu Latin (Đ->D, À->A, Ẵ->A)
+     rồi hạ về chữ thường, vì bảng chỉ có khoá thường a-z (glyph trong
+     TEXT.bmp là hình HOA — 'd' tra ra glyph D). Không chuẩn hoá thì chữ
+     HOA ASCII rơi về trắng: "Da Nang" -> " A  ANG" (lỗi ticker v10.5:
+     D và N hoa thành trắng). deburr ra 2 ký tự (vd 'ß'->'ss') thì lấy
+     ký tự đầu như charCodeAt(0) của fork; không có thì về trắng. */
+  function charKey(ch) {
+    var c = String(ch == null ? "" : ch);
+    try { c = c.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch (e) { /* không có normalize */ }
+    c = c.replace(/đ/g, "d").replace(/Đ/g, "D");
+    /* Các chữ Latin không tách được bằng NFD (lodash deburr xử lý):
+       ß->ss, Æ->Ae, Ø->O, Ð->D, Þ->Th, Ł->L, Œ->Oe... */
+    c = c.replace(/[ßÆæØøÐðÞþŁłŒœĲĳŊŋ]/g, function (m) {
+      return { "ß": "ss", "Æ": "Ae", "æ": "ae", "Ø": "O", "ø": "o", "Ð": "D", "ð": "d", "Þ": "Th", "þ": "th", "Ł": "L", "ł": "l", "Œ": "Oe", "œ": "oe", "Ĳ": "IJ", "ĳ": "ij", "Ŋ": "N", "ŋ": "n" }[m] || m;
+    });
+    c = c.toLowerCase();
+    return c.charAt(0) || " ";
+  }
   /* Sprite của 1 ký tự trong TEXT.bmp (font 5×6): ký tự không có trong
-     bảng (vd dấu tiếng Việt còn sót) thì về ký tự trắng. */
+     bảng thì về ký tự trắng. */
   function charSprite(ch) {
-    var pos = FONT_LOOKUP[ch];
+    var pos = FONT_LOOKUP[charKey(ch)];
     if (!pos) pos = FONT_LOOKUP[" "];
     return { x: pos[1] * CHAR_X, y: pos[0] * CHAR_Y, width: CHAR_X, height: CHAR_Y };
   }
@@ -783,6 +802,7 @@
     CLASSIC_MAIN: CLASSIC_MAIN,
     CLASSIC_SHADE: CLASSIC_SHADE,
     spriteRect: spriteRect,
+    charKey: charKey,
     charSprite: charSprite,
     parseIni: parseIni,
     parseViscolors: parseViscolors,
