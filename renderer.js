@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.0";
-  var EXPECTED_RENDERER_VERSION = "10.0";
+  var RENDERER_VERSION = "10.1";
+  var EXPECTED_RENDERER_VERSION = "10.1";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -357,7 +357,8 @@
     opts = opts || {};
     var demo = {
       playing: false, track: 0, t: 0, volume: 1,
-      seekFrac: 0, shuffle: false, repeat: 0, eq: true, dur: undefined
+      seekFrac: 0, shuffle: false, repeat: 0, eq: true, dur: undefined,
+      muted: false /* Đợt 6 (03/11): tắt tiếng bằng phím M — giữ demo.volume + volumebar, engine về 0 (như mute shade) */
     };
     /* Đợt A (9.9, việc 4) — chế độ đồng hồ chính: "elapsed" = đếm lên
        từ 0:00 (mặc định, như Winamp lúc mở), "remaining" = đếm ngược
@@ -379,6 +380,7 @@
     var onMinimize = opts.onMinimize || null; /* Đợt D (9.9): nút MINIMIZE (chính + shade) — web không có cửa sổ hệ thống/taskbar nên index.html ẩn giao diện + hiện nút mở lại, giữ nguyên tiếng đang phát (chung đường với onPlayerClose) */
     var onOpenSkinPicker = opts.onOpenSkinPicker || null; /* Đợt D: menu File → "Nạp skin .wal/.zip…" / Preferences — mở hộp chọn file của trang */
     var onZoom = opts.onZoom || null; /* Đợt D: Preferences → Zoom 1x / Vừa màn hình */
+    var isZoomFit = opts.isZoomFit || null; /* Đợt v10.1: nút D clutter Classic cần biết zoom hiện tại */
     var isShadeMode = opts.isShadeMode || null; /* Đợt D: nút shade (shadeeq/shadect) cần biết đang ở shade để về normal trước khi mở ngăn kéo */
     var skinInfo = opts.skinInfo || null; /* Đợt D: bảng About — tên/tác giả/version skin (index.html đưa SKIN từ loader) */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
@@ -965,7 +967,10 @@
     function isShadeMuted() { return cfgState.get("SHADE_MUTE") === "on"; }
     function applyEngineVolume() {
       if (!audioEngine) return;
-      try { audioEngine.setVolume(isShadeMuted() ? 0 : demo.volume); } catch (e) { /* bỏ qua */ }
+      /* Đợt 6: M (demo.muted) cũng tắt tiếng ở engine như mute shade —
+         2 công tắc độc lập, bật cái nào thì engine cũng 0, tắt cả 2 mới
+         nghe lại (kéo slider volume lúc đang mute chỉ đổi demo.volume). */
+      try { audioEngine.setVolume((isShadeMuted() || demo.muted) ? 0 : demo.volume); } catch (e) { /* bỏ qua */ }
     }
     function toggleShadeMute() {
       var on = !isShadeMuted();
@@ -1027,7 +1032,8 @@
         videoScale: avsState.videoScale, visVariant: avsState.visVariant,
         visRandom: avsState.visRandom, videoInfo: avsState.videoInfo,
         videoMaximized: avsState.videoMaximized, keepAspect: avsState.keepAspect,
-        hasEmbedded: !!RES.embeddedAvs, fullscreenAttempted: avsFullscreenAttempted
+        hasEmbedded: !!RES.embeddedAvs, fullscreenAttempted: avsFullscreenAttempted,
+        visTypeDisplay: visTypeDisplay, visTypeAvs: visTypeAvs /* Đợt 4: kiểu vis (bar/osc/none) */
       };
     }
     /* Kênh nào là video (đường (a) loadChannel autoplay, theo heuristic
@@ -1248,6 +1254,32 @@
       persistAvs();
       return avsState.visVariant;
     }
+    /* Đợt 4 (03/11) — KIỂU VIS (khác "variant" đổi màu ở trên):
+       Webamp có 3 kiểu vis xoay bằng cách bấm vào vis: BAR (cột spectrum)
+       → OSCILLOSCOPE (sóng) → NONE (tắt) → BAR… Amp v10.0 mới chỉ vẽ cột
+       nên thiếu sóng. Mỗi vùng bấm đổi kiểu RIÊNG như Webamp: vis trong
+       display (16 cột) dùng visTypeDisplay, vis trong vùng AVS (75 cột)
+       dùng visTypeAvs. Vạch vis giống Webamp giữ nguyên; chỉ thêm sóng +
+       đổi kiểu. Lưu cùng state AVS (localStorage "amp9-avs-v9") để lần
+       nạp trang sau giữ kiểu đã chọn. */
+    var VIS_TYPES = ["bar", "osc", "none"];
+    var visTypeDisplay = "bar", visTypeAvs = "bar";
+    function validVisType(t) { return VIS_TYPES.indexOf(t) >= 0 ? t : "bar"; }
+    function cycleVisType(which) {
+      if (which === "avs") visTypeAvs = VIS_TYPES[(VIS_TYPES.indexOf(visTypeAvs) + 1) % VIS_TYPES.length];
+      else visTypeDisplay = VIS_TYPES[(VIS_TYPES.indexOf(visTypeDisplay) + 1) % VIS_TYPES.length];
+      drawVisStatic();
+      persistAvs();
+      return getVisTypes();
+    }
+    function setVisType(which, type) {
+      type = validVisType(type);
+      if (which === "avs") visTypeAvs = type; else visTypeDisplay = type;
+      drawVisStatic();
+      persistAvs();
+      return getVisTypes();
+    }
+    function getVisTypes() { return { display: visTypeDisplay, avs: visTypeAvs }; }
     function setAvsAnalyser(node) { avsAnalyser = node || null; resetAvsVisState(); return !!avsAnalyser; } /* Đợt v10.0 (việc AVS-vis): đổi analyser thì reset state falloff/peak AVS */
     function getAvsAnalyser() { return avsAnalyser; }
     /* Khôi phục trạng thái đã lưu (đường (d) — index.html lưu qua
@@ -1265,6 +1297,9 @@
       }
       avsState.visRandom = !!saved.visRandom;
       if (saved.videoInfo) avsState.videoInfo = String(saved.videoInfo);
+      /* Đợt 4: khôi phục kiểu vis (bar/osc/none) từng vùng. */
+      if (typeof saved.visTypeDisplay === "string") visTypeDisplay = validVisType(saved.visTypeDisplay);
+      if (typeof saved.visTypeAvs === "string") visTypeAvs = validVisType(saved.visTypeAvs);
       /* Đợt D (9.9): khôi phục phóng to + giữ tỉ lệ. Phóng to chỉ có nghĩa
          khi cửa sổ đang mở và tách rời (nhúng trong main không phóng được
          — xem setVideoMaximized). */
@@ -1326,6 +1361,7 @@
       return {
         playing: playlistState.playing, currentIndex: playlistState.current,
         repeat: demo.repeat, shuffle: demo.shuffle, volume: demo.volume,
+        muted: !!demo.muted, /* Đợt 6: M — khôi phục trạng thái tắt tiếng */
         eqOn: drawerState.eqOn, eqBands: Object.assign({}, drawerState.eqBands),
         balance: drawerState.balance /* Đợt D (9.9): PAN — khôi phục vị trí Balance */
       };
@@ -1340,6 +1376,11 @@
         demo.volume = Math.max(0, Math.min(1, saved.volume));
         updateVolumebar();
         /* Đợt G — đang mute shade thì engine vẫn 0, không đẩy volume vào. */
+        applyEngineVolume();
+      }
+      /* Đợt 6: khôi phục trạng thái tắt tiếng (M) đã lưu. */
+      if (typeof saved.muted === "boolean") {
+        demo.muted = saved.muted;
         applyEngineVolume();
       }
       if (saved.repeat === 0 || saved.repeat === 1 || saved.repeat === -1) demo.repeat = saved.repeat;
@@ -1466,8 +1507,208 @@
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; /* Đợt A (9.9, việc 4): dừng thì quên thời lượng bài cũ */
       updateStatusEls(); updateTimerEls(); updateProgress(); refreshPlaylistRows();
       persistPlayback();
+      updateMediaSession(); /* Đợt 6: dừng thì màn hình khóa về "paused", giữ metadata bài */
       return true;
     }
+
+    /* ================= ĐỢT 6 (03/11) — Media Session API + hotkeys =========
+       Lấy từ Webamp fork (packages/webamp/js/mediaSession.ts + hotkeys.ts),
+       GỠ KHỎI Redux middleware của fork rồi nối vào renderer Amp (không bê
+       nguyên middleware): fork dispatch action qua Redux, Amp gọi thẳng
+       togglePlay/nextTrack/prevTrack/seekBy đã có. Không có build step,
+       chỉ dùng API chuẩn trình duyệt (navigator.mediaSession).
+       - Media Session: metadata bài đang phát (nối metadata đợt 5 khi có
+         tag, không có thì tên file/nhóm như cũ) + handlers play/pause/
+         previoustrack/nexttrack/seekbackward/seekforward. Trên điện thoại:
+         nút tai nghe + màn hình khóa/thanh thông báo điều khiển được —
+         jsdom KHÔNG đo được phần này, chờ test máy thật.
+       - Hotkeys: mở rộng ngoài Space (xem HOTKEYS dưới). Bỏ qua khi focus
+         trong ô nhập (INPUT/TEXTAREA/SELECT/contentEditable) và khi bấm
+         kèm Ctrl/Alt/Meta (không đụng phím tắt trình duyệt).
+       - Không có navigator.mediaSession (jsdom/trình duyệt cũ) thì mọi
+         hàm media session trả false, không ném lỗi, không ảnh hưởng phát.
+       - Amp KHÔNG có ảnh bìa (metadata.js không đọc picture — xem ghi chú
+         metadata.js:187) nên artwork luôn [] như fork khi không có
+         albumArtUrl; không bịa URL bìa. */
+    var mediaSessionBound = false; /* đã đăng ký action handlers 1 lần chưa */
+    var lastMediaMeta = null; /* {title, artist, album} đã đẩy lên mediaSession gần nhất (test/debug) */
+    function getMediaSession() {
+      /* Test tiêm qua opts.mediaSession (kể cả null = ép "không hỗ trợ");
+         chạy thật đọc navigator.mediaSession của trình duyệt. */
+      if (opts.mediaSession !== undefined) return opts.mediaSession;
+      try {
+        var nav = null;
+        if (typeof window !== "undefined" && window.navigator) nav = window.navigator;
+        else if (typeof navigator !== "undefined") nav = navigator;
+        else if (typeof globalThis !== "undefined" && globalThis.navigator) nav = globalThis.navigator;
+        if (nav && nav.mediaSession) return nav.mediaSession;
+      } catch (e) { /* bỏ qua */ }
+      return null;
+    }
+    function getMediaMetadataCtor() {
+      if (opts.MediaMetadata) return opts.MediaMetadata;
+      try { if (typeof MediaMetadata !== "undefined" && MediaMetadata) return MediaMetadata; } catch (e) { /* bỏ qua */ }
+      try { if (typeof window !== "undefined" && window.MediaMetadata) return window.MediaMetadata; } catch (e) { /* bỏ qua */ }
+      try { if (typeof globalThis !== "undefined" && globalThis.MediaMetadata) return globalThis.MediaMetadata; } catch (e) { /* bỏ qua */ }
+      return null;
+    }
+    /* Metadata bài đang phát cho màn hình khóa: title = tag title (đợt 5)
+       else tên file; track: artist/album từ tag (trống thì "" — KHÔNG gửi
+       "Không rõ" lên màn hình khóa); đài: artist = tên nhóm (vd "Radio"),
+       album = "". Không có mục nào thì null. */
+    function currentMediaMeta() {
+      var it = playlistState.items[playlistState.current];
+      if (!it) return null;
+      var title = metadataDisplayName(it) || it.name || "";
+      var artist = "", album = "";
+      if (it.kind === "track") {
+        artist = (it.artist || "").replace(/^\s+|\s+$/g, "");
+        album = (it.album || "").replace(/^\s+|\s+$/g, "");
+      } else {
+        artist = (it.group || "").replace(/^\s+|\s+$/g, "");
+      }
+      return { title: title, artist: artist, album: album };
+    }
+    function updateMediaSession() {
+      var ms = getMediaSession();
+      if (!ms) return false;
+      var meta = currentMediaMeta();
+      try {
+        if (meta) {
+          var Ctor = getMediaMetadataCtor();
+          var data = {
+            title: meta.title || undefined,
+            artist: meta.artist || undefined,
+            album: meta.album || undefined,
+            artwork: [] /* Amp chưa có ảnh bìa — xem ghi chú đầu mục */
+          };
+          ms.metadata = Ctor ? new Ctor(data) : data;
+          lastMediaMeta = { title: meta.title, artist: meta.artist, album: meta.album };
+        }
+        /* playbackState: trình duyệt dùng để vẽ nút play/pause trên màn
+           hình khóa/thanh thông báo. */
+        try { ms.playbackState = demo.playing ? "playing" : "paused"; } catch (e) { /* trình duyệt cũ */ }
+      } catch (e) { return false; }
+      if (!mediaSessionBound) {
+        mediaSessionBound = true;
+        /* Tua Media Session ±10s như fork (seekBackward/seekForward 10);
+           phím mũi tên trong Amp là ±5s (xem handleHotkey). */
+        var handlers = {
+          play: function () { if (!demo.playing) togglePlay(); },
+          pause: function () { if (demo.playing) togglePlay(); },
+          previoustrack: function () { prevTrack(); },
+          nexttrack: function () { nextTrack(demo.repeat === 1 || demo.shuffle); },
+          seekbackward: function () { seekBy(-10); },
+          seekforward: function () { seekBy(10); }
+        };
+        var actions = ["play", "pause", "previoustrack", "nexttrack", "seekbackward", "seekforward"];
+        for (var i = 0; i < actions.length; i++) {
+          (function (action) {
+            try { ms.setActionHandler(action, handlers[action]); } catch (e) { /* trình duyệt không hỗ trợ action này */ }
+          })(actions[i]);
+        }
+      }
+      return true;
+    }
+    function getMediaSessionState() {
+      var ms = getMediaSession();
+      return {
+        supported: !!ms, bound: mediaSessionBound,
+        metadata: lastMediaMeta ? { title: lastMediaMeta.title, artist: lastMediaMeta.artist, album: lastMediaMeta.album } : null,
+        playbackState: (ms && ms.playbackState) || null
+      };
+    }
+    /* Tua ±giây (hotkeys ±5, Media Session ±10): đài live không tua được
+       (engine.seekTo kiểm seekable, trả false) thì im lặng, không báo lỗi. */
+    function seekBy(sec) {
+      if (!audioEngine) return false;
+      var t = 0;
+      try { t = audioEngine.getCurrentTime ? audioEngine.getCurrentTime() : 0; } catch (e) { return false; }
+      t = t + sec;
+      if (t < 0) t = 0;
+      try { return !!audioEngine.seekTo(t); } catch (e) { return false; }
+    }
+    /* Âm lượng ±bước (phím ↑/↓, bước 0.05 như fork adjustVolume(1/-1)
+       trên thang 0..1): đổi demo.volume + volumebar + slider VOLUME đang
+       hiển thị; đang mute (M hoặc shade) thì engine vẫn 0 như kéo slider
+       lúc mute (xem applyEngineVolume). Trả volume mới. */
+    function adjustVolume(delta) {
+      /* Làm tròn 2 chữ số: 0.95-0.05 ra 0.8999999999999999 nếu không làm tròn. */
+      demo.volume = Math.round(Math.max(0, Math.min(1, demo.volume + delta)) * 100) / 100;
+      updateVolumebar();
+      for (var i = 0; i < sliderRecords.length; i++) {
+        var rec = sliderRecords[i];
+        if (rec && rec.action === "VOLUME" && typeof rec.setFrac === "function") {
+          try { rec.setFrac(demo.volume, true); } catch (e) { /* bỏ qua */ }
+        }
+      }
+      applyEngineVolume();
+      persistPlayback();
+      return demo.volume;
+    }
+    function setMuted(on) {
+      demo.muted = !!on;
+      applyEngineVolume();
+      persistPlayback();
+      return demo.muted;
+    }
+    function isMuted() { return !!demo.muted; }
+    function toggleMute() { return setMuted(!demo.muted); }
+    /* Đợt 6: tách từ code inline trong playMenuItems (đợt D) để phím S
+       dùng chung — đảo shuffle + đồng bộ LED ";Shuffle" trong skin + lưu. */
+    function toggleShuffle() {
+      demo.shuffle = !demo.shuffle;
+      var keys = Object.keys(cfgGroups);
+      for (var i = 0; i < keys.length; i++) {
+        if (/;Shuffle$/.test(keys[i])) { cfgState.set(keys[i], demo.shuffle ? "on" : "off"); refreshCfgGroup(keys[i]); }
+      }
+      persistPlayback();
+      return demo.shuffle;
+    }
+    /* Bảng phím tắt đợt 6 (đối chiếu hotkeys.ts của fork, chỉ lấy phím hợp
+       Amp — xem README đợt 6):
+       Space phát/tạm dừng (giữ từ đợt E) · ←/→ tua ±5s · ↑/↓ âm lượng
+       · N / ] bài sau · P / [ bài trước · M tắt tiếng · L lặp lại
+       · S ngẫu nhiên · X phát · C tạm dừng · V dừng.
+       Fork còn có: B bài sau / Z bài trước (giữ tương thích), Ctrl+D
+       double-size / Ctrl+R đảo playlist / Alt+W/E/G đổi cửa sổ — KHÔNG
+       lấy (Ctrl/Alt là phím tắt trình duyệt, Amp không có double-size).
+       Trả true = đã xử lý (index.html không cần preventDefault thêm —
+       hàm tự gọi khi có), false = không phải phím Amp (để trình duyệt xử lý). */
+    var HOTKEY_KEYCODES = { 32: " ", 37: "ArrowLeft", 38: "ArrowUp", 39: "ArrowRight", 40: "ArrowDown", 78: "n", 80: "p", 77: "m", 76: "l", 83: "s", 88: "x", 67: "c", 86: "v", 66: "b", 90: "z", 219: "[", 221: "]" };
+    function handleHotkey(e) {
+      if (!e) return false;
+      if (e.ctrlKey || e.metaKey || e.altKey) return false; /* không đụng phím tắt trình duyệt */
+      var t = e.target;
+      var tag = (t && t.tagName) ? String(t.tagName).toUpperCase() : "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false; /* không chặn gõ chữ */
+      if (t && t.isContentEditable) return false;
+      var key = (typeof e.key === "string" && e.key) ? e.key : null;
+      if (!key && typeof e.code === "string" && e.code) key = e.code;
+      if (!key && typeof e.keyCode === "number") key = HOTKEY_KEYCODES[e.keyCode] || null;
+      if (!key) return false;
+      var wrapNext = (demo.repeat === 1 || demo.shuffle);
+      var handled = true;
+      if (key === " " || key === "Space" || key === "Spacebar") togglePlay();
+      else if (key === "ArrowLeft") seekBy(-5);
+      else if (key === "ArrowRight") seekBy(5);
+      else if (key === "ArrowUp") adjustVolume(0.05);
+      else if (key === "ArrowDown") adjustVolume(-0.05);
+      else if (key === "n" || key === "N" || key === "]" || key === "b" || key === "B") nextTrack(wrapNext);
+      else if (key === "p" || key === "P" || key === "[" || key === "z" || key === "Z") prevTrack();
+      else if (key === "m" || key === "M") toggleMute();
+      else if (key === "l" || key === "L") cycleRepeat();
+      else if (key === "s" || key === "S") toggleShuffle();
+      else if (key === "x" || key === "X") { if (!demo.playing) togglePlay(); }
+      else if (key === "c" || key === "C") { if (demo.playing) togglePlay(); }
+      else if (key === "v" || key === "V") stopPlayback();
+      else handled = false;
+      if (handled && e.preventDefault) {
+        try { e.preventDefault(); } catch (err) { /* bỏ qua */ }
+      }
+      return handled;
+    }
+
     /* --- callback từ engine (audio.js) --- */
     function onAudioTimeUpdate(t, dur, seekable) {
       demo.t = t || 0;
@@ -1533,6 +1774,7 @@
     function onAudioPlayingChange(playing) {
       demo.playing = !!playing;
       playlistState.playing = !!playing;
+      updateMediaSession(); /* Đợt 6: phát/dừng thì màn hình khóa đổi nút play/pause */
       /* Đang phát thật thì lỗi cũ (nếu có) không còn đúng nữa. */
       if (playing) clearTickerError();
       /* Đợt A (9.9, việc 4): vừa bắt đầu phát thì đồng bộ đồng hồ với
@@ -1603,10 +1845,10 @@
       return true;
     }
     function updateChannelsIndicator() {
-      if (!demo.playing) { setChannelsState("none"); return; }
+      if (!demo.playing) { setChannelsState("none"); refreshClassicMain(); return; }
       var m = null;
       try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
-      if (m) { setChannelsState(m); return; }
+      if (m) { setChannelsState(m); refreshClassicMain(); return; }
       /* Chưa đo được: hiện "stereo" tạm rồi đo thật để sửa lại. Lý do (ghi rõ,
          lệch khỏi suy đoán gốc "không mặc định stereo nếu chưa đo"): trình duyệt
          KHÔNG cho đọc số kênh của thẻ đang phát khi chưa có MediaElementSource
@@ -1626,6 +1868,7 @@
           });
         }
       } catch (e) { /* bỏ qua */ }
+      refreshClassicMain(); /* Đợt v10.1: Classic — mono/stereo */
     }
     /* Nút Shuffle/Repeat trên skin (cfgattrib "{GUID};Shuffle" /
        "{GUID};Repeat"): Shuffle đảo on/off; Repeat xoay 0 -> 1 -> -1 -> 0
@@ -1683,6 +1926,70 @@
         tmp.src = item.url;
       } catch (e) { finish(); }
     }
+    /* Đợt 5 (03/11: metadata nhạc) — đọc tag file local lúc nạp, đúng
+       thứ tự của fork (fileUtils.ts genMediaTags + actionCreators/
+       files.ts fetchMediaTags): lib music-metadata qua CDN trước
+       (metadata.js probeFile), parser ID3/FLAC nội bộ lấp chỗ lib
+       thiếu hoặc khi CDN chết; file không tag thì KHÔNG đổi gì —
+       giữ tên file + thời lượng đã probe bằng thẻ audio tạm ở trên,
+       nghệ sĩ/album giữ suy từ thư mục (localPathParts). Trả Promise
+       (resolve null khi không có module/không có tag/không đọc được
+       file) — không bao giờ throw, không chặn addLocalFiles. */
+    function applyMetadataToItem(item, meta) {
+      if (!item || !meta) return false;
+      var lib = getMetaLib();
+      var changed = false;
+      if (lib && lib.applyMetadataToItem) {
+        try { changed = !!lib.applyMetadataToItem(item, meta); } catch (e) { changed = false; }
+      } else {
+        /* Không có metadata.js: áp tối thiểu, cùng quy tắc (title →
+           tagTitle, artist/album tag thắng thư mục, duration chỉ khi
+           len còn null). */
+        if (meta.title && item.tagTitle !== meta.title) { item.tagTitle = meta.title; changed = true; }
+        if (meta.artist && item.artist !== meta.artist) { item.artist = meta.artist; changed = true; }
+        if (meta.album && item.album !== meta.album) { item.album = meta.album; changed = true; }
+        if (meta.duration && (item.len === null || item.len === undefined)) { item.len = Math.round(meta.duration); changed = true; }
+        if (meta.source) item.metaSource = meta.source;
+        if (meta.status) item.metaStatus = meta.status;
+      }
+      if (changed) { refreshPlaylistRows(); refreshMlRows(); updateInfoEls(); }
+      /* Đợt 6: tag về muộn (probe async sau khi đã phát) mà là bài đang
+         phát thì màn hình khóa đổi theo tên/nghệ sĩ thật. */
+      if (changed && playlistState.items[playlistState.current] === item) updateMediaSession();
+      return changed;
+    }
+    function probeLocalMetadata(item, file, probeOpts) {
+      if (!item || !file) return Promise.resolve(null);
+      var lib = getMetaLib();
+      if (!lib || !lib.probeFile) return Promise.resolve(null);
+      var p = null;
+      try { p = lib.probeFile(file, probeOpts || {}); } catch (e) { return Promise.resolve(null); }
+      return Promise.resolve(p).then(function (meta) {
+        if (meta) applyMetadataToItem(item, meta);
+        return meta || null;
+      }).catch(function () { return null; });
+    }
+    /* Tên hiển thị: tag title (nếu có) else tên file — dùng ở ML và
+       bảng trackinfo. Playlist + ticker GIỮ item.name (tên file) như
+       cũ, không đổi (quyết đợt 5). */
+    function metadataDisplayName(item) {
+      if (!item) return "";
+      var lib = getMetaLib();
+      if (lib && lib.displayTitle) { try { return lib.displayTitle(item); } catch (e) { /* bỏ qua */ } }
+      return item.tagTitle || item.name || "";
+    }
+    function metadataDisplayArtist(item) {
+      var lib = getMetaLib();
+      if (lib && lib.displayArtist) { try { return lib.displayArtist(item); } catch (e) { /* bỏ qua */ } }
+      var a = item && (item.artist || "").replace(/^\s+|\s+$/g, "");
+      return a ? a : "Không rõ";
+    }
+    function metadataDisplayAlbum(item) {
+      var lib = getMetaLib();
+      if (lib && lib.displayAlbum) { try { return lib.displayAlbum(item); } catch (e) { /* bỏ qua */ } }
+      var a = item && (item.album || "").replace(/^\s+|\s+$/g, "");
+      return a ? a : "Không rõ";
+    }
     /* Đợt v10.0 (việc 5: thêm nhạc local): tách đường dẫn tương đối của
        file trong thư mục đã chọn (webkitRelativePath) thành nhóm/album/
        nghệ sĩ — cầu nối cho metadata (tag ID3 đọc sau): nhóm = thư mục
@@ -1733,6 +2040,10 @@
           relPath: pp.relPath, album: pp.album, artist: pp.artist
         });
         probeLocalDuration(playlistState.items[playlistState.items.length - 1]);
+        /* Đợt 5: đọc tag (nghệ sĩ/title/album/thời lượng) — bất đồng
+           bộ, về sau tự vẽ lại hàng playlist/ML (xem applyMetadataToItem);
+           file không tag thì không đổi gì. */
+        probeLocalMetadata(playlistState.items[playlistState.items.length - 1], f);
         added++;
       }
       if (added) {
@@ -1952,6 +2263,7 @@
       /* Đợt A (9.9, việc 3): đổi lựa chọn thì PLTime đổi theo (tổng →
          thời gian đã chọn); vẽ tại chỗ, không re-render. */
       updateInfoEls();
+      refreshClassicMain(); /* Đợt v10.1: Classic — đổi lựa chọn thì chữ chạy đổi theo */
       return true;
     }
     /* Đợt A (9.9, việc 3): bỏ chọn (bấm nền trống của danh sách) — PLTime
@@ -1961,6 +2273,7 @@
       playlistState.selected = -1;
       refreshPlaylistRows();
       updateInfoEls();
+      refreshClassicMain(); /* Đợt v10.1: Classic — bỏ chọn thì chữ chạy đổi theo */
       return true;
     }
     /* Nhấp đúp = phát: đặt current + playing (state cho đợt E dùng tiếp).
@@ -1994,6 +2307,7 @@
       /* Đợt E — phát thật qua audio engine (mục không có link nhạc
          thì chỉ hiện trạng thái, xem startPlaybackForCurrent). */
       startPlaybackForCurrent();
+      updateMediaSession(); /* Đợt 6: đổi bài thì màn hình khóa đổi theo */
       persistPlayback();
       return true;
     }
@@ -2223,6 +2537,19 @@
     var EQF = opts.eqf || null;
     if (!EQF && typeof AmpEqf !== "undefined" && AmpEqf) EQF = AmpEqf;
     if (!EQF && typeof window !== "undefined" && window.AmpEqf) EQF = window.AmpEqf;
+    /* Đợt 5 (03/11: metadata nhạc) — module tag (metadata.js):
+       index.html truyền qua opts.metadata (window.AmpMetadata, nạp
+       trước renderer.js); test tiêm qua opts hoặc global.AmpMetadata.
+       Không có module thì file local chỉ probe duration bằng thẻ audio
+       tạm như cũ (đợt L 9.8), nghệ sĩ/album giữ suy từ thư mục. */
+    var META = opts.metadata || null;
+    function getMetaLib() {
+      if (META) return META;
+      try { if (typeof AmpMetadata !== "undefined" && AmpMetadata) { META = AmpMetadata; return META; } } catch (e) { /* bỏ qua */ }
+      try { if (typeof window !== "undefined" && window.AmpMetadata) { META = window.AmpMetadata; return META; } } catch (e) { /* bỏ qua */ }
+      try { if (typeof globalThis !== "undefined" && globalThis.AmpMetadata) { META = globalThis.AmpMetadata; return META; } } catch (e) { /* bỏ qua */ }
+      return null;
+    }
     /* Áp 1 bộ frac EQ {preamp, eq1..eq10} (0..1, 0.5 = 0 dB) vào
        drawerState + slider đang hiển thị + lưu state phát. Dùng chung
        cho preset có sẵn và preset .eqf/.q1. Engine chỉ nhận khi slider
@@ -3839,6 +4166,11 @@
         var cv = document.createElement("canvas");
         cv.className = "vis";
         cv.width = vw; cv.height = vh;
+        /* Đợt 4: bấm vào vis để đổi kiểu (BAR → sóng → tắt), như Webamp.
+           CSS .stage .vis để pointer-events:none nên bật lại inline. */
+        cv.style.pointerEvents = "auto"; cv.style.cursor = "pointer";
+        cv.title = "Bấm để đổi kiểu vis";
+        cv.onclick = function () { cycleVisType("display"); };
         cv.style.left = x + "px"; cv.style.top = y + "px";
         cv.style.width = vw + "px"; cv.style.height = vh + "px";
         setAbs(cv, parentEl, x, y);
@@ -4064,9 +4396,9 @@
        component native của Winamp (không có trong XML, không vẽ được từ
        model) nên Amp MÔ PHỎNG ruột: cây thư viện bên trái + danh sách
        nhạc bên phải, dùng dữ liệu file nhạc local đã nạp vào playlist
-       (tên bài + thời lượng; nghệ sĩ/album KHÔNG có vì model mục của Amp
-       — parseM3U + file local — không đọc metadata nghệ sĩ/album, chỉ
-       đọc được thời lượng; không bịa cột giả).
+       (tên bài + nghệ sĩ/album từ tag ID3 — đợt 5 — + thời lượng;
+       file không có tag thì nghệ sĩ/album hiện "Không rõ", album/
+       nghệ sĩ suy từ thư mục nếu có).
        Cây thư viện (như Winamp thật): Local Media → Audio / Video /
        Radio & TV / Tất cả; Playlists → Danh sách hiện tại. Bấm nút cây
        thì lọc danh sách phải; nhấp đúp hàng thì phát (như playlist).
@@ -4097,9 +4429,49 @@
       }
       return out;
     }
+    /* Đợt 5 (03/11: metadata nhạc) — tiêu đề cột ML: Tên bài / Nghệ sĩ /
+       Album / Thời lượng. Hàng tiêu đề KHÔNG có class "row" nên
+       buildMlRows (chỉ xóa .row) không xóa nó; tạo 1 lần, giữ lại khi
+       vẽ lại danh sách. */
+    var ML_COLUMNS = ["name", "artist", "album", "len"];
+    function ensureMlHeader(listDiv) {
+      if (!listDiv || !document || !document.createElement) return null;
+      var old = null;
+      try { old = listDiv.querySelector(".ml-header"); } catch (e) { old = null; }
+      if (old) return old;
+      var head = document.createElement("div");
+      head.className = "ml-header";
+      head.style.display = "flex";
+      head.style.fontWeight = "bold";
+      head.style.borderBottom = "1px solid #6788c9";
+      head.style.padding = "2px 0";
+      var defs = [
+        { cls: "ml-name", text: "Tên bài", flex: "1 1 auto" },
+        { cls: "ml-artist", text: "Nghệ sĩ", flex: "0 0 110px" },
+        { cls: "ml-album", text: "Album", flex: "0 0 120px" },
+        { cls: "ml-len", text: "Thời lượng", flex: "0 0 auto" }
+      ];
+      for (var i = 0; i < defs.length; i++) {
+        var s = document.createElement("span");
+        s.className = defs[i].cls;
+        s.style.flex = defs[i].flex;
+        s.style.minWidth = "0";
+        s.style.overflow = "hidden";
+        s.style.textOverflow = "ellipsis";
+        s.style.whiteSpace = "nowrap";
+        if (i > 0) s.style.marginLeft = "6px";
+        s.textContent = defs[i].text;
+        head.appendChild(s);
+      }
+      /* Chèn lên đầu danh sách (trước các hàng .row). */
+      if (listDiv.firstChild) listDiv.insertBefore(head, listDiv.firstChild);
+      else listDiv.appendChild(head);
+      return head;
+    }
     function buildMlRows(listDiv) {
       var olds = listDiv.querySelectorAll(".row");
       for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
+      ensureMlHeader(listDiv);
       var sel = playlistSelColors();
       var rows = mlFilteredItems();
       for (var r = 0; r < rows.length; r++) {
@@ -4122,8 +4494,34 @@
           nameSpan.style.overflow = "hidden";
           nameSpan.style.textOverflow = "ellipsis";
           nameSpan.style.whiteSpace = "nowrap";
-          nameSpan.textContent = playlistRowText(rec.item, rec.idx + 1);
+          /* Đợt 5: ML hiện tên bài từ tag title (nếu có) — playlist +
+             ticker vẫn dùng tên file như cũ. */
+          nameSpan.textContent = (rec.idx + 1) + ". " + metadataDisplayName(rec.item);
           row.appendChild(nameSpan);
+          /* Đợt 5: cột Nghệ sĩ / Album từ tag (đợt A v9.9 ghi rõ ML chưa
+             có 2 cột này vì model không đọc metadata). File không tag:
+             nghệ sĩ/album suy từ thư mục nếu có, không thì "Không rõ"
+             (quy ước gom nhóm của Webamp fork). Radio cũng "Không rõ". */
+          var artSpan = document.createElement("span");
+          artSpan.className = "ml-artist";
+          artSpan.style.flex = "0 0 110px";
+          artSpan.style.minWidth = "0";
+          artSpan.style.overflow = "hidden";
+          artSpan.style.textOverflow = "ellipsis";
+          artSpan.style.whiteSpace = "nowrap";
+          artSpan.style.marginLeft = "6px";
+          artSpan.textContent = metadataDisplayArtist(rec.item);
+          row.appendChild(artSpan);
+          var albSpan = document.createElement("span");
+          albSpan.className = "ml-album";
+          albSpan.style.flex = "0 0 120px";
+          albSpan.style.minWidth = "0";
+          albSpan.style.overflow = "hidden";
+          albSpan.style.textOverflow = "ellipsis";
+          albSpan.style.whiteSpace = "nowrap";
+          albSpan.style.marginLeft = "6px";
+          albSpan.textContent = metadataDisplayAlbum(rec.item);
+          row.appendChild(albSpan);
           var lenSpan = document.createElement("span");
           lenSpan.className = "pl-len";
           lenSpan.style.flex = "0 0 auto";
@@ -4190,7 +4588,8 @@
       return {
         filter: mlFilter, selected: mlSelected,
         hasWindow: !!mlListDiv, count: mlFilteredItems().length,
-        total: playlistState.items.length
+        total: playlistState.items.length,
+        columns: ML_COLUMNS.slice()
       };
     }
     function hasMediaLibrary() {
@@ -4963,7 +5362,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v9 · Playlist Editor (đợt C): 41 kênh radio.m3u. Nhấp 1 lần để chọn, nhấp đúp để phát (đợt E mới có tiếng). Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.1 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -5051,14 +5450,7 @@
         { label: "Bài trước", action: function () { prevTrack(); } },
         { label: "Bài sau", action: function () { nextTrack(demo.repeat === 1 || demo.shuffle); } },
         { label: "Lặp lại: " + repeatLabel(), action: function () { cycleRepeat(); } },
-        { label: (demo.shuffle ? "✓ " : "") + "Phát ngẫu nhiên (Shuffle)", action: function () {
-          demo.shuffle = !demo.shuffle;
-          var keys = Object.keys(cfgGroups);
-          for (var i = 0; i < keys.length; i++) {
-            if (/;Shuffle$/.test(keys[i])) { cfgState.set(keys[i], demo.shuffle ? "on" : "off"); refreshCfgGroup(keys[i]); }
-          }
-          persistPlayback();
-        } }
+        { label: (demo.shuffle ? "✓ " : "") + "Phát ngẫu nhiên (Shuffle)", action: function () { toggleShuffle(); } }
       ];
     }
     function optionsMenuItems(anchorDiv) {
@@ -5166,16 +5558,26 @@
       var i = (typeof idx === "number" && items[idx]) ? idx : playlistState.current;
       if (i < 0 || !items[i]) i = playlistState.selected >= 0 ? playlistState.selected : 0;
       var it = items[i] || null;
-      if (!it) return { index: -1, name: "", group: "", url: "", len: null, live: false, local: false, kbps: null, khz: null, playing: false, kind: "" };
+      if (!it) return { index: -1, name: "", title: "", artist: "Không rõ", album: "Không rõ", group: "", url: "", len: null, lenText: "Trực tiếp", live: false, local: false, fileSize: null, fileSizeText: null, metaStatus: "none", metaSource: "", kbps: null, khz: null, playing: false, kind: "" };
       var live = it.len == null;
       var kbps = null;
       if (it.local && it.fileSize && it.len && it.len > 0) kbps = String(Math.round(it.fileSize * 8 / it.len / 1000));
       var khz = null;
       try { var sr = audioEngine && audioEngine.getSampleRate ? audioEngine.getSampleRate() : null; if (sr && sr > 0) khz = String(Math.round(sr / 1000)); } catch (e) { khz = null; }
+      /* Đợt 5: nghệ sĩ/album/thời lượng/kích thước từ metadata tag.
+         KBPS/KHZ vẫn tính như cũ (không lấy từ tag — đã chốt không
+         làm); fileSizeText dùng format của metadata.js nếu có. */
+      var lib5 = getMetaLib();
+      var fileSizeText = null;
+      if (lib5 && lib5.formatFileSize) { try { fileSizeText = lib5.formatFileSize(it.fileSize || null); } catch (e) { fileSizeText = null; } }
+      if (fileSizeText === null && it.fileSize) fileSizeText = Math.round(it.fileSize / 1024) + " KB";
       return {
-        index: i, name: it.name || "", group: it.group || "", url: it.url || "",
+        index: i, name: it.name || "", title: metadataDisplayName(it),
+        artist: metadataDisplayArtist(it), album: metadataDisplayAlbum(it),
+        group: it.group || "", url: it.url || "",
         len: it.len != null ? it.len : null, lenText: live ? "Trực tiếp" : fmtTime(it.len),
-        live: live, local: !!it.local, fileSize: it.fileSize || null,
+        live: live, local: !!it.local, fileSize: it.fileSize || null, fileSizeText: fileSizeText,
+        metaStatus: it.metaStatus || "none", metaSource: it.metaSource || "",
         kbps: kbps, khz: khz, playing: playlistState.playing && playlistState.current === i,
         kind: it.kind || ""
       };
@@ -5199,12 +5601,15 @@
       box.style.wordBreak = "break-word";
       var title = document.createElement("div");
       title.style.fontWeight = "bold";
-      title.textContent = st.name;
+      title.textContent = st.title || st.name;
       box.appendChild(title);
       var rows = [
         "Nhóm: " + (st.group || "(không rõ)"),
+        "Nghệ sĩ: " + st.artist,
+        "Album: " + st.album,
         "Link: " + (st.url || "(file local)"),
         "Thời lượng: " + st.lenText,
+        "Kích thước: " + (st.fileSizeText || "—"),
         "Trạng thái: " + (st.playing ? "Đang phát" : "Đã chọn") + " · Số thứ tự: " + (st.index + 1),
         "KBPS: " + (st.kbps !== null ? st.kbps : "—") + " · KHZ: " + (st.khz !== null ? st.khz : "—")
       ];
@@ -5374,8 +5779,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.0 — Winamp Modern",
-        "Phiên bản Amp: 10.0 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.1 — Winamp Modern",
+        "Phiên bản Amp: 10.1 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -5532,6 +5937,11 @@
       if (el.getAttribute("shadow") === "1") div.style.textShadow = "1px 1px #000";
     }
     async function setTickerText(rec) {
+      /* Đợt v10.1 (Classic): rec Classic không có fontId/holder — chữ
+         chạy của nó do refreshClassicMain() vẽ bằng sprite TEXT.bmp.
+         Gọi vào đây (playPlaylistItem/showTickerError/clearTickerError)
+         thì chỉ refresh, KHÔNG ghi đè holder bằng chữ Arial. */
+      if (rec && rec.classic) { refreshClassicMain(); return; }
       /* Đợt E — ticker hiện mục ĐANG HÁT (tên kênh/bài, BỎ DẤU vì font
          marquee chỉ có ASCII), kèm "(M:SS)" khi mục có thời lượng.
          Chưa phát gì thì giữ bài Demo như đợt A. Lỗi phát (kênh lỗi /
@@ -5615,6 +6025,7 @@
     var timerElsSeq = 0;
     async function updateTimerEls() {
       var mySeq = ++timerElsSeq;
+      refreshClassicMain(); /* Đợt v10.1: Classic — đồng hồ số + đồng hồ mini (đồng bộ, rẻ) */
       for (var i = 0; i < timerEls.length; i++) {
         var rec = timerEls[i];
         try {
@@ -5701,6 +6112,7 @@
          choke để đồng bộ vòng vis: đang phát thì vòng chạy (vis cửa sổ
          chính theo nhạc), dừng thì vòng dừng (vis về khung cuối). */
       syncAvsAnim();
+      refreshClassicMain(); /* Đợt v10.1: Classic — đèn play/pause, đồng hồ, chữ chạy, mono/stereo */
     }
     function updateProgress() {
       for (var i = 0; i < progressEls.length; i++) {
@@ -5722,11 +6134,13 @@
           try { rec.setFrac(demo.seekFrac, true); } catch (e) { /* bỏ qua */ }
         }
       }
+      refreshClassicMain(); /* Đợt v10.1: Classic — thumb seek/volume/balance + kbps/khz */
     }
     function updateVolumebar() {
       for (var i = 0; i < volumebarEls.length; i++) {
         volumebarEls[i].div.style.width = Math.max(2, Math.round(demo.volume * volumebarEls[i].maxW)) + "px";
       }
+      refreshClassicMain(); /* Đợt v10.1: Classic — thumb volume */
     }
     /* Vẽ vis — đợt D: mẫu sóng sin như đợt A khi chưa có tiếng; CÓ analyser
        (điểm nối đợt E, setAvsAnalyser) thì vẽ theo tần số thật.
@@ -5784,7 +6198,7 @@
       lastAvsFrame = { mode: lastAvsFrame.mode || "sample", maxBin: 0, heights: [], peaks: [] };
     }
     resetAvsVisState();
-    function getAvsFrame() { return { mode: lastAvsFrame.mode, maxBin: lastAvsFrame.maxBin, heights: lastAvsFrame.heights.slice(), peaks: lastAvsFrame.peaks.slice() }; }
+    function getAvsFrame() { return { mode: lastAvsFrame.mode, maxBin: lastAvsFrame.maxBin, heights: lastAvsFrame.heights.slice(), peaks: lastAvsFrame.peaks.slice(), visType: lastAvsFrame.visType || "bar" }; }
     /* Giá trị mục tiêu (hàng 0..15) của cột k: ánh xạ log như Webamp trên
        các bin getByteFrequencyData của Amp (0..255 → 0..15 hàng). */
     function avsLogTarget(k, freq) {
@@ -5821,9 +6235,49 @@
       avsGradCanvas = cv;
       return cv;
     }
+    /* Đợt 4 (03/11) — giá trị sóng tại vị trí p (0..1 ngang canvas), -1..1:
+       - real + có time-domain: mẫu thật từ getByteTimeDomainData.
+       - real + không có time-domain (stub/jsdom): biên độ theo bin tần số,
+         dấu theo sine (đủ để vẽ sóng, không bịa thành tín hiệu im).
+       - flat: 0 (đường thẳng giữa — vis im).
+       - sample: sine trang trí như cột mẫu. */
+    function visWaveValue(p, visMode, freq, td) {
+      if (visMode === "flat") return 0;
+      if (visMode === "real" && td && td.length) {
+        var v = td[Math.min(td.length - 1, Math.floor(p * td.length))] || 128;
+        return (v - 128) / 128;
+      }
+      if (visMode === "real" && freq && freq.length) {
+        var bin = freq[Math.min(freq.length - 1, Math.floor(p * freq.length))] || 0;
+        return Math.sin(p * Math.PI * 8 + avsPhase) * (bin / 255);
+      }
+      return Math.sin(p * Math.PI * 8 + avsPhase);
+    }
+    /* Biên độ sóng (0..1) của cột k trong n cột — ghi vào heights cho test. */
+    function visWaveAmp(k, n, visMode, freq, td) {
+      return Math.abs(visWaveValue((k + 0.5) / n, visMode, freq, td));
+    }
+    /* Vẽ 1 đường sóng ngang canvas (ctx2 null trong jsdom thì thôi). */
+    function drawVisWave(ctx2, W, H, visMode, freq, td, col) {
+      if (!ctx2 || !W || !H) return;
+      try {
+        if (typeof ctx2.beginPath !== "function") return;
+        ctx2.beginPath();
+        for (var x = 0; x <= W; x += 2) {
+          var y = H / 2 - visWaveValue(x / W, visMode, freq, td) * (H / 2 - 2);
+          if (x === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
+        }
+        ctx2.strokeStyle = col;
+        ctx2.lineWidth = 1;
+        if (typeof ctx2.stroke === "function") ctx2.stroke();
+      } catch (e) { /* stub canvas thiếu method -> thôi */ }
+    }
     /* Vẽ 1 khung vis AVS (ctx2 null trong jsdom thì chỉ tính heights/peaks
-       cho test). H: chiều cao canvas; rowH = H/16. */
-    function drawAvsVis(ctx2, W, H, visMode, freq, maxBin, useXmlCol, col) {
+       cho test). H: chiều cao canvas; rowH = H/16.
+       Đợt 4: thêm visType ("bar"|"osc"|"none") + td (time-domain):
+       osc = đường sóng (không falloff/peak), none = xóa trắng. */
+    function drawAvsVis(ctx2, W, H, visMode, freq, maxBin, useXmlCol, col, visType, td) {
+      visType = visType || "bar";
       var rowH = H / AVS_ROWS;
       var heights = [], peaks = [];
       var grad = null;
@@ -5832,6 +6286,25 @@
         ctx2.fillStyle = VIS_BG;
         ctx2.fillRect(0, 0, W, H);
         grad = avsBarGradient(useXmlCol, col);
+      }
+      if (visType === "none") {
+        /* Tắt vis: canvas chỉ còn nền, không falloff/peak. */
+        resetAvsVisState();
+        for (var kn = 0; kn < AVS_BARS; kn++) { heights.push(0); peaks.push(0); }
+        lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
+        return;
+      }
+      if (visType === "osc") {
+        /* Sóng: vẽ đường + heights = biên độ từng cột, không falloff/peak. */
+        resetAvsVisState();
+        var waveCol = useXmlCol ? (visXmlBands[0] || "#fff") : col;
+        if (ctx2) drawVisWave(ctx2, W, H, visMode, freq, td, waveCol);
+        for (var ko = 0; ko < AVS_BARS; ko++) {
+          heights.push(Math.round(visWaveAmp(ko, AVS_BARS, visMode, freq, td) * (H - 4)) + 2);
+          peaks.push(0);
+        }
+        lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
+        return;
       }
       if (visMode !== "real") {
         /* flat/sample: vẽ trực tiếp, reset state falloff/peak. */
@@ -5847,7 +6320,7 @@
             ctx2.fillRect(k * bw + 1, H - hh, Math.max(1, bw - 2), hh);
           }
         }
-        lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks };
+        lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
         return;
       }
       /* real: mẫu log theo nhóm 4 (wide bandwidth) + falloff + peak. */
@@ -5880,10 +6353,10 @@
           ctx2.fillRect(bx, H - peakPx, bwid, 2);
         }
       }
-      lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks };
+      lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
     }
     function drawVisStatic() {
-      var freq = null, maxBin = 0;
+      var freq = null, maxBin = 0, td = null;
       var hasAnalyser = !!(avsAnalyser && typeof avsAnalyser.getByteFrequencyData === "function" && avsAnalyser.frequencyBinCount);
       if (hasAnalyser) {
         try {
@@ -5891,12 +6364,21 @@
           avsAnalyser.getByteFrequencyData(freq);
           for (var fi = 0; fi < freq.length; fi++) if (freq[fi] > maxBin) maxBin = freq[fi];
         } catch (e) { freq = null; maxBin = 0; }
+        /* Đợt 4: time-domain cho dạng sóng (oscilloscope). Không có hàm
+           (stub/jsdom) thì td = null — visWaveValue tự suy từ freq/sine. */
+        if (typeof avsAnalyser.getByteTimeDomainData === "function") {
+          try {
+            td = new Uint8Array(avsAnalyser.fftSize || avsAnalyser.frequencyBinCount * 2);
+            avsAnalyser.getByteTimeDomainData(td);
+          } catch (e) { td = null; }
+        }
       }
       /* Đợt B (9.9): chế độ vẽ theo EQ + tín hiệu (xem ghi chú trên). */
       var visMode = (!hasAnalyser || !drawerState.eqOn) ? "sample" : (maxBin >= 4 ? "real" : "flat");
       var useXmlCol = avsState.visVariant === 0;
       var col = (VIS_VARIANTS[avsState.visVariant] || VIS_VARIANTS[0]).col;
       var heights = [];
+      var firstVisType = visCanvases.length ? ((visCanvases[0].fillBg === true) ? visTypeAvs : visTypeDisplay) : visTypeDisplay;
       for (var i = 0; i < visCanvases.length; i++) {
         var v = visCanvases[i];
         var ctx2 = null;
@@ -5906,13 +6388,54 @@
            gradient hàng); canvas display giữ nguyên 16 cột trực tiếp
            bên dưới (người dùng xác nhận 15:14 đã giống Webamp). */
         if (v.fillBg === true) {
-          drawAvsVis(ctx2, v.cv.width || 0, v.cv.height || 0, visMode, freq, maxBin, useXmlCol, col);
+          /* Đợt 4 (Milkdrop): Milkdrop bật thì khỏi vẽ vis thường lên
+             canvas đang ẩn (tiết kiệm CPU/pin). */
+          if (milkdropActive) continue;
+          drawAvsVis(ctx2, v.cv.width || 0, v.cv.height || 0, visMode, freq, maxBin, useXmlCol, col, visTypeAvs, td);
+          continue;
+        }
+        /* Đợt 4 — kiểu vis của vùng display (bar/osc/none), áp cho cả
+           canvas display Modern lẫn vis Classic (classic:true). */
+        var vtype = visTypeDisplay;
+        if (vtype === "none") {
+          if (ctx2) { try { ctx2.clearRect(0, 0, v.cv.width || 0, v.cv.height || 0); } catch (e) { /* bỏ qua */ } }
+          if (i === 0) for (var kn = 0; kn < VIS_BANDS; kn++) heights.push(0);
+          continue;
+        }
+        if (vtype === "osc") {
+          var Wo = v.cv.width || 0, Ho = v.cv.height || 0;
+          if (ctx2) {
+            try { ctx2.clearRect(0, 0, Wo, Ho); } catch (e) { /* bỏ qua */ }
+            drawVisWave(ctx2, Wo, Ho, visMode, freq, td, useXmlCol ? (v.bands[0] || "#fff") : col);
+          }
+          if (i === 0) for (var ko = 0; ko < VIS_BANDS; ko++) heights.push(Math.round(visWaveAmp(ko, VIS_BANDS, visMode, freq, td) * (Ho - 4)) + 2);
           continue;
         }
         if (!ctx2) { /* jsdom không có canvas 2d: vẫn tính heights cho test */
           if (i === 0) {
             var H0 = v.cv.height || 0;
             for (var k0 = 0; k0 < VIS_BANDS; k0++) heights.push(visBarHeight(k0, visMode, freq, H0));
+          }
+          continue;
+        }
+        /* Đợt v10.1 (Classic): vis Classic vẽ gradient theo HÀNG (màu
+           viscolor.txt 2..17, đỉnh->đáy) như BarPaintHandler của Webamp:
+           mỗi cột chia 16 hàng, hàng nào sáng thì tô màu của hàng đó
+           (hàng đáy = bands[15]). Canvas display của Modern vẫn vẽ 16
+           cột 1 màu/cột như cũ (người dùng xác nhận 15:14 đã giống
+           Webamp, không đụng tới). */
+        if (v.classic === true) {
+          var Wc = v.cv.width, Hc = v.cv.height;
+          ctx2.clearRect(0, 0, Wc, Hc);
+          var nc = VIS_BANDS, bwc = Wc / nc, rh = Hc / 16;
+          for (var kc = 0; kc < nc; kc++) {
+            var hhc = visBarHeight(kc, visMode, freq, Hc);
+            if (i === 0) heights.push(hhc);
+            var litRows = Math.round(hhc / rh);
+            for (var rr = 0; rr < litRows; rr++) {
+              ctx2.fillStyle = (v.bands && v.bands[15 - rr]) || "#fff";
+              ctx2.fillRect(kc * bwc + 1, Hc - (rr + 1) * rh, bwc - 2, rh - 1);
+            }
           }
           continue;
         }
@@ -5930,7 +6453,7 @@
           ctx2.fillRect(k * bw + 1, H - hh, bw - 2, hh);
         }
       }
-      lastVisFrame = { mode: visMode, maxBin: maxBin, heights: heights };
+      lastVisFrame = { mode: visMode, maxBin: maxBin, heights: heights, visType: firstVisType };
       /* Đợt D (9.9): khung beat theo bass thật (chỉ mode real mới có tín
          hiệu — flat/sample thì về khung 0, không giả vờ có nhạc). */
       var bass = 0;
@@ -5971,7 +6494,7 @@
       }
       return 2 + Math.abs(Math.sin(k * 0.9 + avsPhase)) * (H - 6);
     }
-    function getVisFrame() { return { mode: lastVisFrame.mode, maxBin: lastVisFrame.maxBin, heights: lastVisFrame.heights.slice() }; }
+    function getVisFrame() { return { mode: lastVisFrame.mode, maxBin: lastVisFrame.maxBin, heights: lastVisFrame.heights.slice(), visType: lastVisFrame.visType || "bar" }; }
     /* Vòng động cho vis: mỗi frame tăng phase rồi vẽ lại.
        Đợt B (9.9): vòng chạy khi AVS mở HOẶC đang phát (trước đây chỉ khi
        AVS mở nên vis cửa sổ chính đứng yên khi AVS đóng). Không có
@@ -6128,6 +6651,62 @@
        innerHTML nhưng node JS còn tham chiếu nên chỉ bị gỡ khỏi DOM rồi
        gắn lại, không mất trạng thái). PHÁT THẬT là đợt E: đợt D chỉ tạo
        + đặt đúng vị trí + đổi hộp; chưa gán src, chưa phát. */
+    /* Đợt 4 (03/11) — BUG "đóng cửa sổ video thì bị tạm ngừng":
+       GỐC: renderLayoutInner vẽ vào div build tách rời rồi swapIn() làm
+       live.innerHTML = "" — gỡ cả thẻ <video> đang phát khỏi document,
+       và khi AVS đóng thì wrap không được gắn lại đâu cả (thẻ video nằm
+       ngoài document cho tới khi mở lại cửa sổ). Trên trình duyệt điện
+       thoại, thẻ video rời khỏi document thì bị tạm ngừng (pause) — đúng
+       như Hải báo 16:42. closeAvs() tự nó không pause gì (chỉ đổi state).
+       SỬA (lấy cách của Webamp fork — media/currentVideo.ts
+       getVideoHolder: "chỗ chứa tạm thẻ video khi cửa sổ đóng, thẻ vẫn
+       phát nền"): giữ thẻ video LUÔN trong document bằng 1 holder ẩn
+       cố định 2×2, opacity:0 (KHÔNG display:none), gắn vào document.body.
+       - ensureAvsMedia tạo wrap xong thì park ngay (thẻ video có trong
+         document từ lúc sinh ra, kể cả khi AVS chưa từng mở).
+       - swapIn park wrap TRƯỚC khi live.innerHTML = "" (khỏi bị gỡ).
+       - attachAvsMedia (mở cửa sổ) dời wrap từ holder vào cửa sổ như cũ.
+       Đóng cửa sổ giờ chỉ ẩn hình, tiếng vẫn phát, đồng hồ vẫn chạy;
+       mở lại thì hình hiện lại, tiếng không ngắt. */
+    var avsParkEl = null;
+    function getAvsPark() {
+      if (avsParkEl) return avsParkEl;
+      if (!document || !document.createElement) return null;
+      var h = null;
+      try { h = document.createElement("div"); } catch (e) { return null; }
+      if (!h) return null;
+      h.id = "amp-avs-park";
+      try { h.setAttribute("aria-hidden", "true"); } catch (e) { /* bỏ qua */ }
+      /* Như fork: fixed 2×2, opacity 0 — KHÔNG display:none. */
+      try {
+        h.style.position = "fixed"; h.style.left = "0px"; h.style.top = "0px";
+        h.style.width = "2px"; h.style.height = "2px"; h.style.overflow = "hidden";
+        h.style.opacity = "0"; h.style.pointerEvents = "none";
+      } catch (e) { /* bỏ qua */ }
+      var parent = null;
+      try { parent = document.body || document.documentElement; } catch (e) { parent = null; }
+      if (!parent || !parent.appendChild) return null;
+      try { parent.appendChild(h); } catch (e) { return null; }
+      avsParkEl = h;
+      return h;
+    }
+    function parkAvsMedia() {
+      if (!avsMedia) return false;
+      var holder = getAvsPark();
+      if (!holder) return false;
+      try {
+        if (avsMedia.wrap.parentElement !== holder) holder.appendChild(avsMedia.wrap);
+        return true;
+      } catch (e) { return false; }
+    }
+    function getAvsParkState() {
+      var video = avsMedia ? avsMedia.video : null;
+      var connected = false;
+      try { connected = !!(video && video.isConnected); } catch (e) { connected = false; }
+      var parked = false;
+      try { parked = !!(avsMedia && avsParkEl && avsMedia.wrap.parentElement === avsParkEl); } catch (e) { parked = false; }
+      return { hasMedia: !!avsMedia, parked: parked, videoConnected: connected, video: video, wrap: avsMedia ? avsMedia.wrap : null };
+    }
     function ensureAvsMedia() {
       if (avsMedia) return avsMedia;
       var wrap = document.createElement("div");
@@ -6149,10 +6728,15 @@
       var cv = document.createElement("canvas");
       cv.className = "vis";
       cv.dataset.avsCanvas = "1";
+      /* Đợt 4: bấm vào vis AVS để đổi kiểu riêng (BAR → sóng → tắt). */
+      cv.style.pointerEvents = "auto"; cv.style.cursor = "pointer";
+      cv.title = "Bấm để đổi kiểu vis";
+      cv.onclick = function () { cycleVisType("avs"); };
       cv.style.position = "absolute"; cv.style.left = "0px"; cv.style.top = "0px";
       wrap.appendChild(v);
       wrap.appendChild(cv);
       avsMedia = { wrap: wrap, video: v, canvas: cv };
+      parkAvsMedia(); /* Đợt 4: thẻ video có trong document từ lúc tạo */
       return avsMedia;
     }
     /* Gắn hộp media vào một hộp cha (nhúng hoặc rời) tại rect cho trước;
@@ -6166,16 +6750,44 @@
       m.video.style.display = avsState.mode === "video" ? "" : "none";
       m.canvas.width = Math.max(40, rect.w); m.canvas.height = Math.max(20, rect.h);
       m.canvas.style.width = rect.w + "px"; m.canvas.style.height = rect.h + "px";
-      m.canvas.style.display = avsState.mode === "vis" ? "" : "none";
+      /* Đợt 4 (Milkdrop): Milkdrop bật thì canvas vis thường ẩn, canvas
+         Milkdrop hiện thay (xem applyMilkdropVisibility). */
+      m.canvas.style.display = (avsState.mode === "vis" && !milkdropActive) ? "" : "none";
       setAbs(m.video, m.wrap, 0, 0);
       setAbs(m.canvas, m.wrap, 0, 0);
       applyVideoScaleToEl();
       parentEl.appendChild(m.wrap);
+      applyMilkdropVisibility();
       /* Đợt K (9.7): canvas AVS giữ nền tối (fillBg: true) như trước; màu cột
          dùng chung visXmlBands (màu XML của <vis> chính). */
       visCanvases.push({ cv: m.canvas, bands: visXmlBands, fillBg: true });
       return m;
     }
+    /* Đợt 4 (Milkdrop) — canvas Milkdrop (milkdrop.js gắn vào wrap) hiện
+       thay canvas vis thường khi Milkdrop bật + AVS đang ở chế độ vis;
+       các trường hợp còn lại thì canvas Milkdrop ẩn, vis thường theo mode
+       như cũ. Gọi sau mỗi lần gắn wrap + khi bật/tắt Milkdrop. */
+    var milkdropActive = false, milkdropCanvas = null;
+    function applyMilkdropVisibility() {
+      var showMd = !!(milkdropActive && milkdropCanvas && avsState.mode === "vis" && avsState.open);
+      try {
+        if (milkdropCanvas) milkdropCanvas.style.display = showMd ? "" : "none";
+        if (avsMedia) avsMedia.canvas.style.display = (avsState.mode === "vis" && !showMd) ? "" : "none";
+      } catch (e) { /* bỏ qua */ }
+      return showMd;
+    }
+    function setMilkdropCanvas(canvas) {
+      milkdropCanvas = canvas || null;
+      applyMilkdropVisibility();
+      return !!milkdropCanvas;
+    }
+    function setMilkdropActive(on) {
+      milkdropActive = !!on;
+      var shown = applyMilkdropVisibility();
+      if (milkdropActive) drawVisStatic(); /* vẽ lại khung vis thường lần cuối cho khỏi dính hình cũ khi tắt */
+      return { active: milkdropActive, shown: shown };
+    }
+    function getMilkdropState() { return { active: milkdropActive, hasCanvas: !!milkdropCanvas }; }
     function attachEmbeddedAvsMedia(T) {
       var vg = null;
       try { vg = T.querySelector('[data-gid="video.group"]'); } catch (e) { vg = null; }
@@ -6337,17 +6949,921 @@
       attachResizeHandles(win, kind === "video" ? "Video" : "AVS", "normal");
       return sz.h;
     }
-    /* Skin Classic: stage chỉ chứa cửa sổ rời (nếu đang mở), không thì
-       trống — không có layout main để vẽ. Trả về chiều cao stage. */
-    async function renderClassicStage(T) {
-      var sz = (avsState.open && avsState.detached) ? detachedWinSize(avsState.mode) : { w: DETACHED_WIN_W, h: 0 };
-      T.style.width = sz.w + "px";
-      var h = 0;
-      if (avsState.open && avsState.detached) h = await appendDetachedWindow(T, 0);
-      T.style.height = h + "px";
+    /* ---------- Đợt v10.1 (việc 3: Classic) — cửa sổ chính Classic ----------
+       Vẽ cửa sổ chính 275×116 (+ shade 275×14) của skin Classic (.wsz)
+       từ BMP theo bảng tọa độ + hình học của định dạng Winamp 2 (xem
+       classic.js: chuyển từ skinParser.js/skinParserUtils.ts/
+       skinSprites.ts/regionParser.ts + MainWindow/*.tsx + main-window.css
+       của Webamp fork — KHÔNG bê Redux/React, chỉ lấy dữ liệu + hàm thuần).
+       Kỹ thuật vẽ: div + background-image = blob: URL của sheet BMP,
+       background-size = cỡ thật của sheet (đo từ header BMP),
+       background-position = -x,-y (giống spriteDiv của Modern).
+       Nút bấm nối vào đúng hàm đã có của Amp: togglePlay/pause/
+       stopPlayback/prevTrack/nextTrack (hàng transport), seek/volume/
+       balance (thanh trượt kéo bằng pointer, đăng ký sliderRecords để
+       updateProgress/setBalance đồng bộ thumb), EQ mở/đóng ngăn kéo
+       (onDrawerToggle/setDrawerOpen), PL mở/đóng playlist
+       (onPlaylistToggle), shade/minimize/close qua onShadeToggle/
+       onMinimize/onPlayerClose, Eject mở menu thêm nhạc local, About
+       mở bảng giới thiệu, O (clutter) mở menu chính, D đổi zoom 1x/fit,
+       I mở thông tin bài, V đổi kiểu vis. Đồng hồ bấm đổi đếm lên/ngược
+       (toggleTimerMode, như Modern); chữ chạy dùng font TEXT.bmp 5×6 +
+       vòng cuộn ticker đã có (tickerEls/stepTicker); vis 76×16 (shade
+       38×5) vẽ qua drawVisStatic với gradient theo HÀNG từ viscolor.txt
+       (màu 2..17, đỉnh->đáy) — xem nhánh `classic` trong drawVisStatic.
+       CHƯA CÓ (ghi rõ, đợt sau): cửa sổ Playlist Classic (nút PL chỉ
+       đổi trạng thái + sáng đèn, chưa vẽ cửa sổ playlist — xem ghi chú
+       ở nút PL; playlist/m3u đã chốt không lấy ở đợt này), cửa sổ EQ
+       Classic (nút EQ chỉ mở/đóng ngăn kéo Modern), cửa sổ ML Classic,
+       vùng click region.txt (chưa áp mask đa giác — cửa sổ vẫn chữ nhật),
+       con trỏ .cur riêng của skin, work-indicator (Amp không có trạng
+       thái "đang tải" riêng nên luôn ẩn).
+       renderClassicStage là ĐIỂM VÀO DUY NHẤT (cả renderLayoutInner lẫn
+       renderStackedInner đều qua đây): vẽ main/shade + cửa sổ AVS rời
+       (nếu đang tách), đặt cỡ stage, trả tổng chiều cao. */
+    var ClassicLib = opts.Classic || null;
+    if (!ClassicLib) {
+      try { ClassicLib = (typeof globalThis !== "undefined" && globalThis.AmpClassic) || null; } catch (e) { ClassicLib = null; }
+    }
+    var classicMainRec = null; /* rec cửa sổ chính Classic đang vẽ (null khi skin Modern) */
+    var classicShadeRec = null; /* rec shade Classic đang vẽ */
+    function classicLib() { return (RES && RES.kind === "classic" && ClassicLib) ? ClassicLib : null; }
+    function classicData() { return (RES && RES.kind === "classic" && RES.classic) ? RES.classic : null; }
+    function classicSheetUrl(sheet) {
+      var c = classicData();
+      if (!c || !c.sheets || !c.sheets[sheet]) return null;
+      return c.sheets[sheet].url || null;
+    }
+    function classicSheetSize(sheet) {
+      var c = classicData();
+      if (!c || !c.sheets || !c.sheets[sheet]) return null;
+      return c.sheets[sheet].size || null;
+    }
+    /* 1 sprite cắt từ sheet: div 1 ô, background = sheet, background-size
+       = cỡ thật của sheet, background-position = -x,-y. */
+    function classicSpriteDiv(sheet, spriteName) {
+      var lib = classicLib();
+      if (!lib) return null;
+      var rect = lib.spriteRect(sheet, spriteName);
+      var url = classicSheetUrl(sheet);
+      if (!rect || !url) return null;
+      var div = document.createElement("div");
+      div.className = "spr";
+      div.dataset.classicSprite = spriteName;
+      div.style.position = "absolute";
+      div.style.width = rect.width + "px"; div.style.height = rect.height + "px";
+      div.style.backgroundImage = 'url("' + url + '")';
+      var sz = classicSheetSize(sheet);
+      if (sz) div.style.backgroundSize = sz.w + "px " + sz.h + "px";
+      div.style.backgroundPosition = (-rect.x) + "px " + (-rect.y) + "px";
+      div.style.backgroundRepeat = "no-repeat";
+      div.style.imageRendering = "pixelated";
+      return div;
+    }
+    /* Đổi ảnh của 1 div sprite đã có (đổi trạng thái nút/chữ số). */
+    function classicSetSprite(div, sheet, spriteName) {
+      var lib = classicLib();
+      if (!lib || !div) return false;
+      var rect = lib.spriteRect(sheet, spriteName);
+      var url = classicSheetUrl(sheet);
+      if (!rect || !url) return false;
+      div.style.backgroundImage = 'url("' + url + '")';
+      var sz = classicSheetSize(sheet);
+      if (sz) div.style.backgroundSize = sz.w + "px " + sz.h + "px";
+      div.style.backgroundPosition = (-rect.x) + "px " + (-rect.y) + "px";
+      div.style.width = rect.width + "px"; div.style.height = rect.height + "px";
+      div.dataset.classicSprite = spriteName;
+      return true;
+    }
+    /* 1 ký tự font TEXT.bmp 5×6 (ký tự lạ -> trắng). */
+    function classicCharDiv(ch) {
+      var lib = classicLib();
+      var div = document.createElement("div");
+      div.style.display = "inline-block";
+      div.style.width = "5px"; div.style.height = "6px";
+      div.style.verticalAlign = "top";
+      if (!lib) { div.textContent = ch; return div; }
+      classicSetChar(div, ch);
+      return div;
+    }
+    function classicSetChar(div, ch) {
+      var lib = classicLib();
+      var url = classicSheetUrl("TEXT");
+      if (!lib || !url || !div) return false;
+      var r = lib.charSprite(ch);
+      div.style.backgroundImage = 'url("' + url + '")';
+      var sz = classicSheetSize("TEXT");
+      if (sz) div.style.backgroundSize = sz.w + "px " + sz.h + "px";
+      div.style.backgroundPosition = (-r.x) + "px " + (-r.y) + "px";
+      div.style.backgroundRepeat = "no-repeat";
+      div.style.imageRendering = "pixelated";
+      div.textContent = "";
+      return true;
+    }
+    function classicTextRow(text) {
+      var row = document.createElement("div");
+      row.style.whiteSpace = "nowrap";
+      row.style.lineHeight = "6px";
+      row.style.fontSize = "0px";
+      var s = String(text == null ? "" : text);
+      for (var i = 0; i < s.length; i++) row.appendChild(classicCharDiv(s[i]));
+      return row;
+    }
+    /* Nút Classic: div ở geo với sprite thường; giữ chuột thì đổi sang
+       activeSprite, thả thì về (hoặc selectedSprite khi trạng thái bật).
+       refresh() do rec giữ để refreshClassicMain đổi ảnh theo state. */
+    function classicButton(parent, geo, sheet, o) {
+      var div = document.createElement("div");
+      div.className = "btn";
+      if (o.id) div.dataset.classicBtn = o.id;
+      div.style.position = "absolute";
+      div.style.left = geo.x + "px"; div.style.top = geo.y + "px";
+      div.style.width = geo.w + "px"; div.style.height = geo.h + "px";
+      div.style.cursor = "pointer";
+      div.style.pointerEvents = "auto";
+      if (o.title) div.title = o.title;
+      setAbs(div, parent, geo.x, geo.y);
+      parent.appendChild(div);
+      var inner = null;
+      if (o.sprite) {
+        inner = classicSpriteDiv(sheet, o.sprite);
+        if (inner) {
+          inner.style.left = "0px"; inner.style.top = "0px";
+          setAbs(inner, div, 0, 0);
+          div.appendChild(inner);
+        }
+      }
+      var rec = { div: div, inner: inner, geo: geo, sheet: sheet, o: o, pressed: false };
+      rec.refresh = function () {
+        if (!inner) return;
+        var sel = false;
+        try { sel = !!(o.isSelected && o.isSelected()); } catch (e) { sel = false; }
+        var name = o.sprite;
+        if (rec.pressed) name = (sel && o.activeSelectedSprite) ? o.activeSelectedSprite : (o.activeSprite || o.sprite);
+        else if (sel && o.selectedSprite) name = o.selectedSprite;
+        classicSetSprite(inner, sheet, name);
+      };
+      var pressOn = function (e) { rec.pressed = true; rec.refresh(); if (e && e.preventDefault) e.preventDefault(); };
+      var pressOff = function () { if (!rec.pressed) return; rec.pressed = false; rec.refresh(); };
+      div.addEventListener("mousedown", pressOn);
+      div.addEventListener("touchstart", pressOn);
+      div.addEventListener("mouseup", pressOff);
+      div.addEventListener("mouseleave", pressOff);
+      div.addEventListener("touchend", pressOff);
+      div.onclick = function () { if (o.onClick) o.onClick(div); };
+      return rec;
+    }
+    /* Thanh trượt Classic (seek/volume/balance): nền là dải ảnh dài của
+       sheet (VOLUME/BALANCE: background-position-y = -offset theo công
+       thức fork), thumb là sprite riêng. Kéo bằng pointer (giống
+       renderSlider: fracFromEvent dùng getBoundingClientRect, trả null
+       khi rect 0 — test stub rect để kéo được trong jsdom). Đăng ký vào
+       sliderRecords để updateProgress (SEEK) / setBalance (PAN) đồng bộ
+       thumb. thumbSprite có thể là hàm (frac) -> tên sprite (shade seek
+       đổi thumb trái/phải theo vị trí). */
+    function classicSlider(parent, geo, sheet, cfg) {
+      var div = document.createElement("div");
+      div.className = "slider";
+      if (cfg.id) div.dataset.classicSlider = cfg.id;
+      div.style.position = "absolute";
+      div.style.left = geo.x + "px"; div.style.top = geo.y + "px";
+      div.style.width = geo.w + "px"; div.style.height = geo.h + "px";
+      div.style.cursor = "pointer";
+      div.style.pointerEvents = "auto";
+      if (cfg.title) div.title = cfg.title;
+      setAbs(div, parent, geo.x, geo.y);
+      parent.appendChild(div);
+      var track = document.createElement("div");
+      track.style.position = "absolute";
+      track.style.left = "0px"; track.style.top = "0px";
+      track.style.width = geo.w + "px"; track.style.height = geo.h + "px";
+      var sheetUrl = classicSheetUrl(sheet);
+      if (sheetUrl) track.style.backgroundImage = 'url("' + sheetUrl + '")';
+      var sz = classicSheetSize(sheet);
+      if (sz) track.style.backgroundSize = sz.w + "px " + sz.h + "px";
+      track.style.backgroundRepeat = "no-repeat";
+      track.style.imageRendering = "pixelated";
+      setAbs(track, div, 0, 0);
+      div.appendChild(track);
+      var thumbName0 = (typeof cfg.thumbSprite === "function") ? cfg.thumbSprite(cfg.frac0 || 0) : cfg.thumbSprite;
+      var thumb = classicSpriteDiv(sheet, thumbName0);
+      if (thumb) {
+        thumb.style.left = "0px"; thumb.style.top = (cfg.thumbY || 0) + "px";
+        setAbs(thumb, div, 0, cfg.thumbY || 0);
+        div.appendChild(thumb);
+      }
+      var rec = {
+        div: div, track: track, thumb: thumb, w: geo.w, h: geo.h,
+        tw: cfg.thumbW, th: cfg.thumbH, action: cfg.action, frac: cfg.frac0 || 0,
+        dragging: false, cfg: cfg
+      };
+      rec.place = function () {
+        if (thumb) thumb.style.left = Math.round(rec.frac * (geo.w - cfg.thumbW)) + "px";
+        var off = cfg.trackOffset ? cfg.trackOffset(rec.frac) : 0;
+        track.style.backgroundPosition = "0px " + (-off) + "px";
+        if (thumb && typeof cfg.thumbSprite === "function") {
+          classicSetSprite(thumb, sheet, cfg.thumbSprite(rec.frac));
+        }
+      };
+      rec.setFrac = function (f, silent) {
+        rec.frac = Math.max(0, Math.min(1, f));
+        rec.place();
+        if (cfg.onSet) cfg.onSet(rec.frac, !!silent, rec);
+      };
+      var fracFromEvent = function (e) {
+        var rect = null;
+        try { rect = div.getBoundingClientRect(); } catch (err) { rect = null; }
+        if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+        var cx = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+        return (cx - rect.left - cfg.thumbW / 2) / Math.max(1, geo.w - cfg.thumbW);
+      };
+      var onDown = function (e) {
+        var f = fracFromEvent(e);
+        if (f === null) return;
+        rec.dragging = true;
+        rec.setFrac(f);
+        if (e.preventDefault) e.preventDefault();
+      };
+      var onMove = function (e) {
+        if (!rec.dragging) return;
+        var f = fracFromEvent(e);
+        if (f === null) return;
+        rec.setFrac(f);
+        if (e.preventDefault) e.preventDefault();
+      };
+      var onUp = function () { rec.dragging = false; };
+      div.addEventListener("mousedown", onDown);
+      div.addEventListener("touchstart", onDown);
+      try {
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+        document.addEventListener("touchmove", onMove);
+        document.addEventListener("touchend", onUp);
+      } catch (err) { /* môi trường test không có document đầy đủ */ }
+      rec.place();
+      sliderRecords.push(rec);
+      return rec;
+    }
+    /* Chữ của dòng chạy Classic: giống setTickerText nhưng KHÔNG kèm
+       "(M:SS)" (marquee Winamp 2 chỉ hiện tên). */
+    function classicMarqueeText() {
+      if (tickerError) return tickerError;
+      if (playlistState.playing && playlistState.items[playlistState.current]) {
+        return stripDiacritics(playlistState.items[playlistState.current].name);
+      }
+      var cur0 = playlistState.items[playlistState.current];
+      return cur0 ? stripDiacritics(cur0.name) : "";
+    }
+    /* 4 chữ số đồng hồ từ timerDisplayText ("M:SS" / "-M:SS"). Đồng hồ
+       Classic chỉ có 2 ô phút: phút >= 100 thì chỉ hiện 2 số cuối. */
+    function classicTimeParts() {
+      var txt = timerDisplayText();
+      var minus = txt.charAt(0) === "-";
+      if (minus) txt = txt.slice(1);
+      var parts = txt.split(":");
+      var m = parts[0] || "0", s = parts[1] || "00";
+      if (m.length > 2) m = m.slice(-2);
+      if (m.length < 2) m = "0" + m;
+      s = (s + "00").slice(0, 2);
+      return { minus: minus, digits: [m.charAt(0), m.charAt(1), s.charAt(0), s.charAt(1)] };
+    }
+    /* Đồng bộ mọi phần động của cửa sổ chính/shade Classic từ state hiện
+       tại. Gọi từ updateStatusEls/updateTimerEls/updateProgress/
+       updateVolumebar/updateChannelsIndicator (điểm choke đã có) +
+       selectPlaylistItem/clearPlaylistSelection (đổi lựa chọn thì chữ
+       chạy đổi theo). Rẻ + có guard nên gọi thừa cũng không sao. */
+    function refreshClassicMain() {
+      var rec = classicMainRec || classicShadeRec;
+      if (!rec) return;
+      var lib = classicLib(), C = classicData();
+      if (!lib || !C) return;
+      var state = demo.playing ? "play" : (demo.t > 0 ? "pause" : "stop");
+      if (rec.playPauseDiv) {
+        var indName = state === "play" ? "MAIN_PLAYING_INDICATOR"
+          : state === "pause" ? "MAIN_PAUSED_INDICATOR" : "MAIN_STOPPED_INDICATOR";
+        classicSetSprite(rec.playPauseDiv, "PLAYPAUS", indName);
+      }
+      if (rec.timeDiv) {
+        /* Fork ẩn hẳn đồng hồ khi dừng (.stop #time { display:none });
+           tạm dừng thì vẫn hiện (fork nháy bằng CSS, Amp không nháy). */
+        rec.timeDiv.style.display = state === "stop" ? "none" : "";
+        var tp = classicTimeParts();
+        var sheet = lib.digitSheetName(C);
+        for (var d = 0; d < 4; d++) {
+          classicSetSprite(rec.digitDivs[d], sheet, lib.digitSpriteName(tp.digits[d], C));
+        }
+        var ms = lib.minusSprite(C);
+        classicSetSprite(rec.minusDiv, ms.sheet, tp.minus ? ms.name
+          : (ms.name === "MINUS_SIGN_EX" ? "NO_MINUS_SIGN_EX" : "NO_MINUS_SIGN"));
+      }
+      if (rec.miniTimeChars) {
+        var tp2 = classicTimeParts();
+        var chars = state === "stop" ? [" ", " ", " ", " ", " "]
+          : [(tp2.minus ? "-" : " "), tp2.digits[0], tp2.digits[1], tp2.digits[2], tp2.digits[3]];
+        for (var mc = 0; mc < 5; mc++) classicSetChar(rec.miniTimeChars[mc], chars[mc]);
+      }
+      if (rec.marqueeHolder && rec.tickerRec) {
+        var text = classicMarqueeText();
+        if (text !== rec.marqueeText) {
+          rec.marqueeText = text;
+          rec.marqueeHolder.innerHTML = "";
+          rec.marqueeHolder.appendChild(classicTextRow(text));
+          rec.tickerRec.textW = text.length * 5;
+          rec.tickerRec.offset = 0;
+          rec.tickerRec._tickPause = 0;
+          try { rec.marqueeHolder.style.transform = ""; } catch (e) { /* bỏ qua */ }
+          syncTickerAnim();
+        }
+        if (rec.marqueeDiv) rec.marqueeDiv.style.filter = tickerError ? "hue-rotate(-120deg)" : "";
+      }
+      if (rec.kbpsDiv) {
+        var info = getSongInfoState();
+        if (state === "stop") {
+          rec.kbpsDiv.style.display = "none";
+          if (rec.khzDiv) rec.khzDiv.style.display = "none";
+        } else {
+          rec.kbpsDiv.style.display = "";
+          if (rec.khzDiv) rec.khzDiv.style.display = "";
+          if (info.kbps !== rec.kbpsText) {
+            rec.kbpsText = info.kbps;
+            rec.kbpsDiv.innerHTML = "";
+            rec.kbpsDiv.appendChild(classicTextRow(info.kbps));
+          }
+          if (rec.khzDiv && info.khz !== rec.khzText) {
+            rec.khzText = info.khz;
+            rec.khzDiv.innerHTML = "";
+            rec.khzDiv.appendChild(classicTextRow(info.khz));
+          }
+        }
+      }
+      if (rec.monoDiv && rec.stereoDiv) {
+        var m = null;
+        try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
+        var ch = (!demo.playing) ? "none" : (m === "mono" ? "mono" : "stereo");
+        classicSetSprite(rec.monoDiv, "MONOSTER", ch === "mono" ? "MAIN_MONO_SELECTED" : "MAIN_MONO");
+        classicSetSprite(rec.stereoDiv, "MONOSTER", ch === "stereo" ? "MAIN_STEREO_SELECTED" : "MAIN_STEREO");
+      }
+      if (rec.volumeRec) { rec.volumeRec.frac = demo.volume; rec.volumeRec.place(); }
+      if (rec.balanceRec) { rec.balanceRec.frac = drawerState.balance; rec.balanceRec.place(); }
+      if (rec.buttons) {
+        var keys = Object.keys(rec.buttons);
+        for (var bi = 0; bi < keys.length; bi++) {
+          try { rec.buttons[keys[bi]].refresh(); } catch (e) { /* bỏ qua */ }
+        }
+      }
+    }
+    function getClassicMainState() {
+      var rec = classicMainRec || classicShadeRec;
+      if (!rec) return null;
+      return {
+        shade: !!rec.shade, w: rec.w, h: rec.h,
+        marqueeText: rec.marqueeText || "",
+        timeText: timerDisplayText(),
+        playing: !!demo.playing,
+        volume: demo.volume, balance: drawerState.balance,
+        seekFrac: demo.seekFrac,
+        shuffle: !!demo.shuffle, repeat: demo.repeat,
+        drawerOpen: !!drawerState.open,
+        sheets: classicData() ? Object.keys(classicData().sheets) : []
+      };
+    }
+    /* Nút EQ Classic: mở/đóng ngăn kéo (trong Amp ngăn kéo CHỨA EQ —
+       cửa sổ EQ Classic riêng chưa vẽ, đợt sau). Đang mở ở tab EQ thì
+       đóng, không thì mở ở tab EQ. */
+    function classicToggleEq() {
+      if (drawerState.open && drawerTab === "eq") {
+        if (onDrawerToggle) onDrawerToggle(false); else setDrawerOpen(false);
+      } else {
+        openDrawerTab("eq");
+      }
+    }
+    /* Nút PL Classic: đổi trạng thái playlist (như Modern). Cửa sổ
+       Playlist Classic CHƯA VẼ ở đợt này (playlist/m3u đã chốt không
+       lấy) — nút chỉ đổi trạng thái + sáng đèn; cửa sổ playlist sẽ
+       vẽ ở đợt sau. */
+    function classicTogglePlaylist() {
+      if (onPlaylistToggle) onPlaylistToggle();
+    }
+    /* Menu chính từ nút O trên titlebar: gộp các mục File/Play/Options/
+       View/Help đã có của Amp (showPlaylistMenu). */
+    function classicOpenMainMenu(anchorDiv) {
+      var items = [];
+      try { items = items.concat(fileMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
+      try { items = items.concat(playMenuItems()); } catch (e) { /* bỏ qua */ }
+      try { items = items.concat(optionsMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
+      try { items = items.concat(viewMenuItems()); } catch (e) { /* bỏ qua */ }
+      try { items = items.concat(helpMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
+      if (items.length) showPlaylistMenu(anchorDiv, items);
+    }
+    /* Vẽ cửa sổ chính Classic (275×116) vào T (div build). Trả rec. */
+    async function renderClassicMainWindow(T) {
+      var lib = classicLib(), C = classicData();
+      var G = lib.CLASSIC_MAIN;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = "0px";
+      win.style.width = G.w + "px"; win.style.height = G.h + "px";
+      win.dataset.classicWindow = "main";
+      win._absX = T._absX || 0; win._absY = T._absY || 0;
+      T.appendChild(win);
+      var rec = { shade: false, w: G.w, h: G.h, win: win, buttons: {}, marqueeText: null, kbpsText: null, khzText: null };
+      /* Nền cửa sổ = MAIN.bmp nguyên tấm. */
+      var bg = classicSpriteDiv("MAIN", "MAIN_WINDOW_BACKGROUND");
+      if (bg) { bg.style.left = "0px"; bg.style.top = "0px"; setAbs(bg, win, 0, 0); win.appendChild(bg); }
+      /* Titlebar + 4 nút góc (luôn dạng selected = đang focus, như
+         Webamp mặc định; bấm đúp nền titlebar thì thu gọn). */
+      var tb = classicSpriteDiv("TITLEBAR", "MAIN_TITLE_BAR_SELECTED");
+      if (tb) { tb.style.left = G.titlebar.x + "px"; tb.style.top = G.titlebar.y + "px"; setAbs(tb, win, G.titlebar.x, G.titlebar.y); win.appendChild(tb); }
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1"; /* vùng dblclick về normal (test + debug) */
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = "275px"; titleZone.style.height = "14px";
+      titleZone.style.cursor = "default";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { if (onShadeToggle) onShadeToggle(true); };
+      rec.buttons.option = classicButton(win, G.option, "TITLEBAR", {
+        id: "option", sprite: "MAIN_OPTIONS_BUTTON", activeSprite: "MAIN_OPTIONS_BUTTON_DEPRESSED",
+        title: "Menu Winamp", onClick: function (div) { classicOpenMainMenu(div); }
+      });
+      rec.buttons.minimize = classicButton(win, G.minimize, "TITLEBAR", {
+        id: "minimize", sprite: "MAIN_MINIMIZE_BUTTON", activeSprite: "MAIN_MINIMIZE_BUTTON_DEPRESSED",
+        title: "Thu nhỏ", onClick: function () { if (onMinimize) onMinimize(); else if (onPlayerClose) onPlayerClose(); }
+      });
+      rec.buttons.shade = classicButton(win, G.shadeBtn, "TITLEBAR", {
+        id: "shade", sprite: "MAIN_SHADE_BUTTON", activeSprite: "MAIN_SHADE_BUTTON_DEPRESSED",
+        title: "Bật/tắt chế độ thu gọn", onClick: function () { if (onShadeToggle) onShadeToggle(true); }
+      });
+      rec.buttons.close = classicButton(win, G.close, "TITLEBAR", {
+        id: "close", sprite: "MAIN_CLOSE_BUTTON", activeSprite: "MAIN_CLOSE_BUTTON_DEPRESSED",
+        title: "Đóng", onClick: function () { if (onPlayerClose) onPlayerClose(); }
+      });
+      /* Clutter bar: nền + 5 nút nhỏ. Fork chỉ nối D (doublesize) + O
+         mở menu Options; Amp nối thêm I (thông tin bài) + V (đổi kiểu
+         vis); A chưa có tương đương web nên chỉ hiện chữ. */
+      var cl = classicSpriteDiv("TITLEBAR", "MAIN_CLUTTER_BAR_BACKGROUND");
+      if (cl) { cl.style.left = G.clutter.x + "px"; cl.style.top = G.clutter.y + "px"; setAbs(cl, win, G.clutter.x, G.clutter.y); win.appendChild(cl); }
+      var clutterBtns = G.clutter.buttons;
+      for (var ci = 0; ci < clutterBtns.length; ci++) {
+        (function (cb) {
+          var geo = { x: G.clutter.x, y: G.clutter.y + cb.y, w: 8, h: cb.h };
+          var btn = classicButton(win, geo, "TITLEBAR", {
+            id: "clutter-" + cb.id, sprite: null, title:
+              cb.id === "o" ? "Menu Options" :
+              cb.id === "a" ? "Luôn ở trên cùng (chưa có trên web)" :
+              cb.id === "i" ? "Thông tin bài" :
+              cb.id === "d" ? "Đổi cỡ 1x / Vừa màn hình" : "Đổi kiểu hiệu ứng",
+            isSelected: function () {
+              if (cb.id === "d") { try { return !!(isZoomFit && isZoomFit()); } catch (e) { return false; } }
+              return false;
+            },
+            onClick: function (div) {
+              if (cb.id === "o") classicOpenMainMenu(div);
+              else if (cb.id === "i") showTrackInfo(div);
+              else if (cb.id === "d") {
+                if (onZoom) {
+                  var fit = false;
+                  try { fit = !!(isZoomFit && isZoomFit()); } catch (e) { fit = false; }
+                  onZoom(fit ? "1" : "fit");
+                }
+              }
+              else if (cb.id === "v") cycleVisVariant(1);
+            }
+          });
+          /* Nút clutter không có sprite thường (trong suốt trên nền);
+             chỉ hiện sprite *_SELECTED khi trạng thái bật (D = zoom fit). */
+          btn.refresh = function () {
+            var sel = false;
+            try { sel = !!(btn.o.isSelected && btn.o.isSelected()); } catch (e) { sel = false; }
+            if (btn.inner) {
+              if (sel) { if (!btn.inner.parentElement) btn.div.appendChild(btn.inner); classicSetSprite(btn.inner, "TITLEBAR", cb.selectedSprite); }
+              else if (btn.inner.parentElement) btn.inner.parentElement.removeChild(btn.inner);
+            } else if (sel) {
+              var spr = classicSpriteDiv("TITLEBAR", cb.selectedSprite);
+              if (spr) { spr.style.left = "0px"; spr.style.top = "0px"; btn.div.appendChild(spr); btn.inner = spr; }
+            }
+          };
+          rec.buttons["clutter-" + cb.id] = btn;
+        })(clutterBtns[ci]);
+      }
+      /* Đèn trạng thái phát + work-indicator (luôn ẩn — Amp không có
+         trạng thái "đang tải" riêng; giữ div để đủ hình học). */
+      rec.playPauseDiv = classicSpriteDiv("PLAYPAUS", "MAIN_STOPPED_INDICATOR");
+      if (rec.playPauseDiv) {
+        rec.playPauseDiv.style.left = G.playPause.x + "px"; rec.playPauseDiv.style.top = G.playPause.y + "px";
+        setAbs(rec.playPauseDiv, win, G.playPause.x, G.playPause.y);
+        win.appendChild(rec.playPauseDiv);
+      }
+      var workDiv = classicSpriteDiv("PLAYPAUS", "MAIN_WORKING_INDICATOR");
+      if (workDiv) {
+        workDiv.style.left = G.workIndicator.x + "px"; workDiv.style.top = G.workIndicator.y + "px";
+        workDiv.style.display = "none";
+        setAbs(workDiv, win, G.workIndicator.x, G.workIndicator.y);
+        win.appendChild(workDiv);
+      }
+      /* Đồng hồ: 4 chữ số + dấu trừ; bấm đổi đếm lên/ngược. */
+      var timeDiv = document.createElement("div");
+      timeDiv.dataset.classicTime = "1";
+      timeDiv.style.position = "absolute";
+      timeDiv.style.left = G.time.x + "px"; timeDiv.style.top = G.time.y + "px";
+      timeDiv.style.width = G.time.w + "px"; timeDiv.style.height = G.time.h + "px";
+      timeDiv.style.cursor = "pointer";
+      timeDiv.title = "Bấm để đổi đếm lên / đếm ngược";
+      setAbs(timeDiv, win, G.time.x, G.time.y);
+      win.appendChild(timeDiv);
+      timeDiv.onclick = function () { toggleTimerMode(); refreshClassicMain(); };
+      rec.timeDiv = timeDiv;
+      rec.digitDivs = [];
+      var sheet0 = lib.digitSheetName(C);
+      for (var di = 0; di < 4; di++) {
+        var dg = classicSpriteDiv(sheet0, lib.digitSpriteName("0", C));
+        if (dg) {
+          dg.style.left = G.time.digitXs[di] + "px"; dg.style.top = "0px";
+          setAbs(dg, timeDiv, G.time.digitXs[di], 0);
+          timeDiv.appendChild(dg);
+        }
+        rec.digitDivs.push(dg);
+      }
+      var ms0 = lib.minusSprite(C);
+      rec.minusDiv = classicSpriteDiv(ms0.sheet, ms0.name === "MINUS_SIGN_EX" ? "NO_MINUS_SIGN_EX" : "NO_MINUS_SIGN");
+      if (rec.minusDiv) {
+        rec.minusDiv.style.left = ms0.x + "px"; rec.minusDiv.style.top = ms0.y + "px";
+        setAbs(rec.minusDiv, timeDiv, ms0.x, ms0.y);
+        timeDiv.appendChild(rec.minusDiv);
+      }
+      /* Vis 76×16: canvas trong suốt trên nền display của MAIN.bmp,
+         đăng ký visCanvases để drawVisStatic vẽ (classic:true = gradient
+         theo hàng từ viscolor.txt). */
+      var visCv = document.createElement("canvas");
+      visCv.width = G.vis.w; visCv.height = G.vis.h;
+      visCv.dataset.classicVis = "1";
+      visCv.style.position = "absolute";
+      visCv.style.left = G.vis.x + "px"; visCv.style.top = G.vis.y + "px";
+      visCv.style.width = G.vis.w + "px"; visCv.style.height = G.vis.h + "px";
+      visCv.style.imageRendering = "pixelated";
+      /* Đợt 4: bấm vào vis Classic để đổi kiểu (BAR → sóng → tắt). */
+      visCv.style.pointerEvents = "auto"; visCv.style.cursor = "pointer";
+      visCv.title = "Bấm để đổi kiểu vis";
+      visCv.onclick = function () { cycleVisType("display"); };
+      setAbs(visCv, win, G.vis.x, G.vis.y);
+      win.appendChild(visCv);
+      var visBands = (C.viscolors || []).slice(2, 18);
+      visCanvases.push({ cv: visCv, bands: visBands, fillBg: false, classic: true });
+      rec.visCanvas = visCv;
+      /* Chữ chạy (marquee) 154×6 + kbps/khz 5×6. */
+      var mq = document.createElement("div");
+      mq.dataset.classicMarquee = "1";
+      mq.style.position = "absolute";
+      mq.style.left = G.marquee.x + "px"; mq.style.top = G.marquee.y + "px";
+      mq.style.width = G.marquee.w + "px"; mq.style.height = "12px";
+      mq.style.paddingTop = "3px";
+      mq.style.overflow = "hidden";
+      mq.title = "Tên bài";
+      setAbs(mq, win, G.marquee.x, G.marquee.y);
+      win.appendChild(mq);
+      var holder = document.createElement("div");
+      holder.style.whiteSpace = "nowrap";
+      holder.style.willChange = "transform";
+      mq.appendChild(holder);
+      rec.marqueeDiv = mq;
+      rec.marqueeHolder = holder;
+      rec.tickerRec = { holder: holder, textW: 0, boxW: G.marquee.w, offset: 0, _tickPause: 0, classic: true };
+      tickerEls.push(rec.tickerRec);
+      rec.kbpsDiv = document.createElement("div");
+      rec.kbpsDiv.dataset.classicKbps = "1";
+      rec.kbpsDiv.style.position = "absolute";
+      rec.kbpsDiv.style.left = G.kbps.x + "px"; rec.kbpsDiv.style.top = G.kbps.y + "px";
+      rec.kbpsDiv.style.width = G.kbps.w + "px"; rec.kbpsDiv.style.height = G.kbps.h + "px";
+      rec.kbpsDiv.style.overflow = "hidden";
+      setAbs(rec.kbpsDiv, win, G.kbps.x, G.kbps.y);
+      win.appendChild(rec.kbpsDiv);
+      rec.khzDiv = document.createElement("div");
+      rec.khzDiv.dataset.classicKhz = "1";
+      rec.khzDiv.style.position = "absolute";
+      rec.khzDiv.style.left = G.khz.x + "px"; rec.khzDiv.style.top = G.khz.y + "px";
+      rec.khzDiv.style.width = G.khz.w + "px"; rec.khzDiv.style.height = G.khz.h + "px";
+      rec.khzDiv.style.overflow = "hidden";
+      setAbs(rec.khzDiv, win, G.khz.x, G.khz.y);
+      win.appendChild(rec.khzDiv);
+      /* Mono/stereo. */
+      rec.monoDiv = classicSpriteDiv("MONOSTER", "MAIN_MONO");
+      if (rec.monoDiv) {
+        rec.monoDiv.style.left = (G.monoStereo.x + G.monoStereo.mono.x) + "px";
+        rec.monoDiv.style.top = G.monoStereo.y + "px";
+        setAbs(rec.monoDiv, win, G.monoStereo.x + G.monoStereo.mono.x, G.monoStereo.y);
+        win.appendChild(rec.monoDiv);
+      }
+      rec.stereoDiv = classicSpriteDiv("MONOSTER", "MAIN_STEREO");
+      if (rec.stereoDiv) {
+        rec.stereoDiv.style.left = (G.monoStereo.x + G.monoStereo.stereo.x) + "px";
+        rec.stereoDiv.style.top = G.monoStereo.y + "px";
+        setAbs(rec.stereoDiv, win, G.monoStereo.x + G.monoStereo.stereo.x, G.monoStereo.y);
+        win.appendChild(rec.stereoDiv);
+      }
+      /* Volume / balance: nền dải + thumb kéo. */
+      rec.volumeRec = classicSlider(win, { x: G.volume.x, y: G.volume.y, w: G.volume.w, h: G.volume.h },
+        "VOLUME", {
+          id: "volume", action: "VOLUME", title: "Thanh âm lượng",
+          thumbSprite: "MAIN_VOLUME_THUMB", thumbActiveSprite: "MAIN_VOLUME_THUMB_SELECTED",
+          thumbW: G.volume.thumbW, thumbH: G.volume.thumbH, thumbY: G.volume.thumbY,
+          frac0: demo.volume,
+          trackOffset: function () { return lib.volumeTrackOffset(demo.volume); },
+          onSet: function (frac) {
+            demo.volume = frac; updateVolumebar();
+            applyEngineVolume();
+            persistPlayback();
+          }
+        });
+      rec.balanceRec = classicSlider(win, { x: G.balance.x, y: G.balance.y, w: G.balance.w, h: G.balance.h },
+        "BALANCE", {
+          id: "balance", action: "PAN", title: "Cân bằng trái/phải",
+          thumbSprite: "MAIN_BALANCE_THUMB", thumbActiveSprite: "MAIN_BALANCE_THUMB_ACTIVE",
+          thumbW: G.balance.thumbW, thumbH: G.balance.thumbH, thumbY: G.balance.thumbY,
+          frac0: drawerState.balance,
+          trackOffset: function () { return lib.balanceTrackOffset(drawerState.balance); },
+          onSet: function (frac) { applyBalance(frac); }
+        });
+      /* EQ / PL. */
+      rec.buttons.eq = classicButton(win, G.eqButton, "SHUFREP", {
+        id: "equalizer-button", sprite: "MAIN_EQ_BUTTON", selectedSprite: "MAIN_EQ_BUTTON_SELECTED",
+        activeSprite: "MAIN_EQ_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_EQ_BUTTON_DEPRESSED_SELECTED",
+        title: "Bật/tắt Bộ chỉnh âm (ngăn kéo)",
+        isSelected: function () { return !!drawerState.open; },
+        onClick: function () { classicToggleEq(); refreshClassicMain(); }
+      });
+      rec.buttons.playlist = classicButton(win, G.playlistButton, "SHUFREP", {
+        id: "playlist-button", sprite: "MAIN_PLAYLIST_BUTTON", selectedSprite: "MAIN_PLAYLIST_BUTTON_SELECTED",
+        activeSprite: "MAIN_PLAYLIST_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_PLAYLIST_BUTTON_DEPRESSED_SELECTED",
+        title: "Bật/tắt Soạn Playlist",
+        isSelected: function () { try { return !!(isPlaylistOpen && isPlaylistOpen()); } catch (e) { return false; } },
+        onClick: function () { classicTogglePlaylist(); refreshClassicMain(); }
+      });
+      /* Thanh tua (seek). */
+      rec.seekRec = classicSlider(win, { x: G.position.x, y: G.position.y, w: G.position.w, h: G.position.h },
+        "POSBAR", {
+          id: "position", action: "SEEK", title: "Thanh tua",
+          thumbSprite: "MAIN_POSITION_SLIDER_THUMB", thumbActiveSprite: "MAIN_POSITION_SLIDER_THUMB_SELECTED",
+          thumbW: G.position.thumbW, thumbH: G.position.thumbH, thumbY: 0,
+          frac0: demo.seekFrac, trackOffset: null,
+          onSet: function (frac, silent, r) {
+            if (silent) return;
+            var sought = false;
+            if (audioEngine) sought = audioEngine.seekToFraction(frac);
+            if (!sought) {
+              var curSeek = playlistState.items[playlistState.current];
+              if (curSeek && curSeek.kind === "track" && !curSeek.url) {
+                demo.seekFrac = frac;
+                demo.t = frac * (curSeek.len || 0);
+                updateTimerEls(); updateProgress();
+              } else if (audioEngine && curSeek && curSeek.url) {
+                r.frac = demo.seekFrac;
+                r.place();
+              }
+            }
+          }
+        });
+      /* Hàng nút transport + eject + shuffle/repeat + about. */
+      rec.buttons.prev = classicButton(win, G.prev, "CBUTTONS", {
+        id: "previous", sprite: "MAIN_PREVIOUS_BUTTON", activeSprite: "MAIN_PREVIOUS_BUTTON_ACTIVE",
+        title: "Bài trước", onClick: function () { prevTrack(); }
+      });
+      rec.buttons.play = classicButton(win, G.play, "CBUTTONS", {
+        id: "play", sprite: "MAIN_PLAY_BUTTON", activeSprite: "MAIN_PLAY_BUTTON_ACTIVE",
+        title: "Phát", onClick: function () { togglePlay(); }
+      });
+      rec.buttons.pause = classicButton(win, G.pause, "CBUTTONS", {
+        id: "pause", sprite: "MAIN_PAUSE_BUTTON", activeSprite: "MAIN_PAUSE_BUTTON_ACTIVE",
+        title: "Tạm dừng", onClick: function () {
+          if (audioEngine) audioEngine.pause();
+          else { demo.playing = false; playlistState.playing = false; updateStatusEls(); }
+        }
+      });
+      rec.buttons.stop = classicButton(win, G.stop, "CBUTTONS", {
+        id: "stop", sprite: "MAIN_STOP_BUTTON", activeSprite: "MAIN_STOP_BUTTON_ACTIVE",
+        title: "Dừng", onClick: function () { stopPlayback(); }
+      });
+      rec.buttons.next = classicButton(win, G.next, "CBUTTONS", {
+        id: "next", sprite: "MAIN_NEXT_BUTTON", activeSprite: "MAIN_NEXT_BUTTON_ACTIVE",
+        title: "Bài tiếp", onClick: function () { nextTrack(demo.repeat === 1 || demo.shuffle); }
+      });
+      rec.buttons.eject = classicButton(win, G.eject, "CBUTTONS", {
+        id: "eject", sprite: "MAIN_EJECT_BUTTON", activeSprite: "MAIN_EJECT_BUTTON_ACTIVE",
+        title: "Mở tập tin", onClick: function (div) { showLocalAddMenu(div); }
+      });
+      rec.buttons.shuffle = classicButton(win, G.shuffle, "SHUFREP", {
+        id: "shuffle", sprite: "MAIN_SHUFFLE_BUTTON", selectedSprite: "MAIN_SHUFFLE_BUTTON_SELECTED",
+        activeSprite: "MAIN_SHUFFLE_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_SHUFFLE_BUTTON_SELECTED_DEPRESSED",
+        title: "Bật/tắt ngẫu nhiên",
+        isSelected: function () { return !!demo.shuffle; },
+        onClick: function () {
+          demo.shuffle = !demo.shuffle;
+          persistPlayback();
+          refreshClassicMain();
+        }
+      });
+      rec.buttons.repeat = classicButton(win, G.repeat, "SHUFREP", {
+        id: "repeat", sprite: "MAIN_REPEAT_BUTTON", selectedSprite: "MAIN_REPEAT_BUTTON_SELECTED",
+        activeSprite: "MAIN_REPEAT_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_REPEAT_BUTTON_SELECTED_DEPRESSED",
+        title: "Lặp lại: bấm để xoay Tắt → Lặp tất cả → Lặp 1 bài",
+        isSelected: function () { return demo.repeat !== 0; },
+        onClick: function () {
+          cycleRepeat();
+          refreshClassicMain();
+        }
+      });
+      var aboutZone = document.createElement("div");
+      aboutZone.dataset.classicAbout = "1";
+      aboutZone.style.position = "absolute";
+      aboutZone.style.left = G.about.x + "px"; aboutZone.style.top = G.about.y + "px";
+      aboutZone.style.width = G.about.w + "px"; aboutZone.style.height = G.about.h + "px";
+      aboutZone.style.cursor = "pointer";
+      aboutZone.title = "Giới thiệu về Amp";
+      setAbs(aboutZone, win, G.about.x, G.about.y);
+      win.appendChild(aboutZone);
+      aboutZone.onclick = function () { openAbout(aboutZone); };
+      rec.aboutZone = aboutZone;
+      classicMainRec = rec;
+      return rec;
+    }
+    /* Vẽ shade Classic (275×14) vào T. Trả rec. Nền shade + transport thu
+       nhỏ (icon đã vẽ sẵn trong nền, chỉ còn vùng bấm trong suốt) + seek
+       mini + đồng hồ mini (ký tự 5×6) + vis mini 38×5. */
+    async function renderClassicShadeWindow(T) {
+      var lib = classicLib(), C = classicData();
+      var G = lib.CLASSIC_SHADE;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = "0px";
+      win.style.width = G.w + "px"; win.style.height = G.h + "px";
+      win.dataset.classicWindow = "shade";
+      win._absX = T._absX || 0; win._absY = T._absY || 0;
+      T.appendChild(win);
+      var rec = { shade: true, w: G.w, h: G.h, win: win, buttons: {}, marqueeText: null, kbpsText: null, khzText: null };
+      var bg = classicSpriteDiv("TITLEBAR", "MAIN_SHADE_BACKGROUND_SELECTED");
+      if (bg) { bg.style.left = "0px"; bg.style.top = "0px"; setAbs(bg, win, 0, 0); win.appendChild(bg); }
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1"; /* vùng dblclick về normal (test + debug) */
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = "275px"; titleZone.style.height = "14px";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { if (onShadeToggle) onShadeToggle(false); };
+      rec.buttons.option = classicButton(win, { x: 6, y: 3, w: 9, h: 9 }, "TITLEBAR", {
+        id: "option", sprite: "MAIN_OPTIONS_BUTTON", activeSprite: "MAIN_OPTIONS_BUTTON_DEPRESSED",
+        title: "Menu Winamp", onClick: function (div) { classicOpenMainMenu(div); }
+      });
+      rec.buttons.minimize = classicButton(win, { x: 244, y: 3, w: 9, h: 9 }, "TITLEBAR", {
+        id: "minimize", sprite: "MAIN_MINIMIZE_BUTTON", activeSprite: "MAIN_MINIMIZE_BUTTON_DEPRESSED",
+        title: "Thu nhỏ", onClick: function () { if (onMinimize) onMinimize(); else if (onPlayerClose) onPlayerClose(); }
+      });
+      rec.buttons.shade = classicButton(win, { x: 254, y: 3, w: 9, h: 9 }, "TITLEBAR", {
+        id: "shade", sprite: "MAIN_SHADE_BUTTON_SELECTED", activeSprite: "MAIN_SHADE_BUTTON_SELECTED_DEPRESSED",
+        title: "Về chế độ đầy đủ", onClick: function () { if (onShadeToggle) onShadeToggle(false); }
+      });
+      rec.buttons.close = classicButton(win, { x: 264, y: 3, w: 9, h: 9 }, "TITLEBAR", {
+        id: "close", sprite: "MAIN_CLOSE_BUTTON", activeSprite: "MAIN_CLOSE_BUTTON_DEPRESSED",
+        title: "Đóng", onClick: function () { if (onPlayerClose) onPlayerClose(); }
+      });
+      /* Transport thu nhỏ: vùng bấm trong suốt (icon nằm trong nền). */
+      function shadeTransport(geo, id, title, fn) {
+        var z = document.createElement("div");
+        z.dataset.classicBtn = id;
+        z.style.position = "absolute";
+        z.style.left = geo.x + "px"; z.style.top = geo.y + "px";
+        z.style.width = geo.w + "px"; z.style.height = geo.h + "px";
+        z.style.cursor = "pointer";
+        z.title = title;
+        setAbs(z, win, geo.x, geo.y);
+        win.appendChild(z);
+        z.onclick = fn;
+        rec.buttons[id] = { div: z, refresh: function () { /* không có sprite để đổi */ } };
+        return z;
+      }
+      shadeTransport(G.prev, "previous", "Bài trước", function () { prevTrack(); });
+      shadeTransport(G.play, "play", "Phát", function () { togglePlay(); });
+      shadeTransport(G.pause, "pause", "Tạm dừng", function () {
+        if (audioEngine) audioEngine.pause();
+        else { demo.playing = false; playlistState.playing = false; updateStatusEls(); }
+      });
+      shadeTransport(G.stop, "stop", "Dừng", function () { stopPlayback(); });
+      shadeTransport(G.next, "next", "Bài tiếp", function () { nextTrack(demo.repeat === 1 || demo.shuffle); });
+      shadeTransport(G.eject, "eject", "Mở tập tin", function (div) { showLocalAddMenu(div); });
+      /* Vis mini 38×5 + seek mini 17×7 + đồng hồ mini. */
+      var visCv = document.createElement("canvas");
+      visCv.width = G.vis.w; visCv.height = G.vis.h;
+      visCv.dataset.classicVis = "1";
+      visCv.style.position = "absolute";
+      visCv.style.left = G.vis.x + "px"; visCv.style.top = G.vis.y + "px";
+      visCv.style.width = G.vis.w + "px"; visCv.style.height = G.vis.h + "px";
+      visCv.style.imageRendering = "pixelated";
+      /* Đợt 4: bấm vào vis Classic để đổi kiểu (BAR → sóng → tắt). */
+      visCv.style.pointerEvents = "auto"; visCv.style.cursor = "pointer";
+      visCv.title = "Bấm để đổi kiểu vis";
+      visCv.onclick = function () { cycleVisType("display"); };
+      setAbs(visCv, win, G.vis.x, G.vis.y);
+      win.appendChild(visCv);
+      var visBands = (C.viscolors || []).slice(2, 18);
+      visCanvases.push({ cv: visCv, bands: visBands, fillBg: false, classic: true });
+      rec.visCanvas = visCv;
+      rec.seekRec = classicSlider(win, { x: G.position.x, y: G.position.y, w: G.position.w, h: G.position.h },
+        "TITLEBAR", {
+          id: "position", action: "SEEK", title: "Thanh tua",
+          thumbSprite: function (frac) {
+            if (frac <= 0.33) return "MAIN_SHADE_POSITION_THUMB_LEFT";
+            if (frac >= 0.66) return "MAIN_SHADE_POSITION_THUMB_RIGHT";
+            return "MAIN_SHADE_POSITION_THUMB";
+          },
+          thumbW: 3, thumbH: 7, thumbY: 0,
+          frac0: demo.seekFrac, trackOffset: null,
+          onSet: function (frac, silent, r) {
+            if (silent) return;
+            var sought = false;
+            if (audioEngine) sought = audioEngine.seekToFraction(frac);
+            if (!sought) {
+              var curSeek = playlistState.items[playlistState.current];
+              if (curSeek && curSeek.kind === "track" && !curSeek.url) {
+                demo.seekFrac = frac;
+                demo.t = frac * (curSeek.len || 0);
+                updateTimerEls(); updateProgress();
+              } else if (audioEngine && curSeek && curSeek.url) {
+                r.frac = demo.seekFrac;
+                r.place();
+              }
+            }
+          }
+        });
+      /* Nền seek mini là sprite riêng (không phải dải dài): vẽ đè lên
+         track của classicSlider (track mặc định dùng cả sheet TITLEBAR). */
+      var posBg = classicSpriteDiv("TITLEBAR", "MAIN_SHADE_POSITION_BACKGROUND");
+      if (posBg && rec.seekRec) {
+        posBg.style.left = "0px"; posBg.style.top = "0px";
+        rec.seekRec.track.innerHTML = "";
+        rec.seekRec.track.appendChild(posBg);
+        rec.seekRec.track.style.backgroundImage = "";
+      }
+      /* Đồng hồ mini: 5 ký tự 5×6 ở offset 1,7,12,20,25 (MiniTime.tsx
+         của fork); bấm đổi đếm lên/ngược. Dừng thì hiện toàn trắng. */
+      var timeDiv = document.createElement("div");
+      timeDiv.dataset.classicMiniTime = "1";
+      timeDiv.style.position = "absolute";
+      timeDiv.style.left = G.time.x + "px"; timeDiv.style.top = G.time.y + "px";
+      timeDiv.style.width = G.time.w + "px"; timeDiv.style.height = G.time.h + "px";
+      timeDiv.style.cursor = "pointer";
+      timeDiv.title = "Bấm để đổi đếm lên / đếm ngược";
+      setAbs(timeDiv, win, G.time.x, G.time.y);
+      win.appendChild(timeDiv);
+      timeDiv.onclick = function () { toggleTimerMode(); refreshClassicMain(); };
+      rec.timeDiv = null; /* shade không dùng đồng hồ số 9×13 */
+      rec.miniTimeChars = [];
+      var charXs = [1, 7, 12, 20, 25];
+      for (var ci = 0; ci < 5; ci++) {
+        var chDiv = classicCharDiv(" ");
+        chDiv.style.position = "absolute";
+        chDiv.style.left = charXs[ci] + "px"; chDiv.style.top = "0px";
+        setAbs(chDiv, timeDiv, charXs[ci], 0);
+        timeDiv.appendChild(chDiv);
+        rec.miniTimeChars.push(chDiv);
+      }
+      rec.playPauseDiv = null; /* shade không có đèn play/pause riêng */
+      classicShadeRec = rec;
+      return rec;
+    }
+    /* Skin Classic: vẽ cửa sổ chính (hoặc shade) + cửa sổ AVS rời (nếu
+       đang tách). Trả về chiều cao stage. Điểm vào duy nhất cho cả
+       renderLayoutInner lẫn renderStackedInner. Không có classic.js /
+       classic data thì về đường cũ (chỉ cửa sổ rời). */
+    async function renderClassicStage(T, shade, opts) {
+      opts = opts || {};
+      /* Lượt render mới: reset registry như renderLayoutInner (lượt
+         stacked không reset sẵn — không reset thì vis/ticker/slider cũ
+         dồn lại). */
+      visCanvases = []; statusEls = []; tickerEls = []; timerEls = [];
+      progressEls = []; volumebarEls = []; infoEls = []; sliderRecords = [];
+      animLayerRecs = [];
+      channelsRec = null;
+      classicMainRec = null; classicShadeRec = null;
+      T.innerHTML = "";
+      var lib = classicLib(), C = classicData();
+      var totalH = 0;
+      if (lib && C) {
+        if (shade) await renderClassicShadeWindow(T);
+        else await renderClassicMainWindow(T);
+        totalH = shade ? lib.CLASSIC_SHADE.h : lib.CLASSIC_MAIN.h;
+        T.style.width = (shade ? lib.CLASSIC_SHADE.w : lib.CLASSIC_MAIN.w) + "px";
+      } else {
+        var sz0 = (avsState.open && avsState.detached) ? detachedWinSize(avsState.mode) : { w: DETACHED_WIN_W, h: 0 };
+        T.style.width = sz0.w + "px";
+      }
+      if (!opts.noDetached && avsState.open && avsState.detached) {
+        totalH += await appendDetachedWindow(T, totalH);
+      }
+      T.style.height = totalH + "px";
+      refreshClassicMain();
       drawVisStatic();
       syncAvsAnim(); /* Đợt B (9.9): vòng vis chạy khi AVS mở HOẶC đang phát */
-      return h;
+      return totalH;
     }
 
     /* Vẽ 1 layout. Trả về chiều cao cuối sau trim (và sau shift nếu có). */
@@ -6413,6 +7929,11 @@
          captureScrollState) — swapIn trả lại sau khi hoán đổi. */
       var prevScroll = captureScrollState();
       function swapIn() {
+        /* Đợt 4: park thẻ video TRƯỚC khi xóa live — không thì
+           live.innerHTML = "" gỡ thẻ đang phát khỏi document. */
+        try {
+          if (avsMedia && live.contains && live.contains(avsMedia.wrap)) parkAvsMedia();
+        } catch (e) { /* bỏ qua */ }
         live.innerHTML = "";
         live.style.width = build.style.width;
         live.style.height = build.style.height;
@@ -6436,11 +7957,11 @@
          Render nguyên tử nên stage thật chưa hề bị chạm tới lúc này. */
       var resolved = resolveLayout(container, layoutId);
       if (!resolved) {
-        /* Đợt D — skin Classic không có layout nào: cửa sổ chính không vẽ
-           được từ model; stage chỉ chứa cửa sổ rời (nếu đang mở). */
+        /* Đợt v10.1 — skin Classic không có layout nào: vẽ cửa sổ chính
+           Classic từ BMP (renderClassicStage) thay vì chỉ cửa sổ rời. */
         if (RES.kind === "classic" && lowerStr(container) === "main") {
           lastLayout = null; lastTitle = titleText || "";
-          var ch = await renderClassicStage(T);
+          var ch = await renderClassicStage(T, layoutId === "shade", opts);
           swapIn();
           return ch;
         }
@@ -6660,6 +8181,10 @@
          (xem captureScrollState). */
       var prevScrollStacked = captureScrollState();
       function swapIn() {
+        /* Đợt 4: park thẻ video TRƯỚC khi xóa live (như renderLayout). */
+        try {
+          if (avsMedia && live.contains && live.contains(avsMedia.wrap)) parkAvsMedia();
+        } catch (e) { /* bỏ qua */ }
         live.innerHTML = "";
         live.style.width = build.style.width;
         live.style.height = build.style.height;
@@ -6667,11 +8192,12 @@
         lastStage = live;
         restoreScrollState(prevScrollStacked);
       }
-      /* Skin Classic không có playlist để xếp: chỉ vẽ cửa sổ rời. */
+      /* Skin Classic không có playlist để xếp: vẽ cửa sổ chính Classic
+         (+ cửa sổ rời nếu đang tách), không vẽ cửa sổ playlist. */
       if (RES.kind === "classic") {
         T.innerHTML = "";
         T._absX = 0; T._absY = 0;
-        var ch2 = await renderClassicStage(T);
+        var ch2 = await renderClassicStage(T, !!opts.shadeMode, opts);
         swapIn();
         return ch2;
       }
@@ -6918,6 +8444,8 @@
       menuGroupVisible: menuGroupVisible, visButtonAction: visButtonAction,
       detachOptionOn: detachOptionOn,
       getVisFrame: getVisFrame, getTickerMode: tickerMode, getTickerState: getTickerState,
+      /* Đợt v10.1 (việc 3: Classic) — cửa sổ chính Classic (.wsz). */
+      getClassicMainState: getClassicMainState, refreshClassicMain: refreshClassicMain,
       /* Đợt v10.0 (việc AVS-vis): khung vis AVS kiểu Webamp. */
       getAvsFrame: getAvsFrame, AVS_BARS: AVS_BARS, AVS_ROWS: AVS_ROWS,
       stepTicker: stepTicker, syncTickerAnim: syncTickerAnim,
@@ -6953,10 +8481,19 @@
       setBeatVisOn: setBeatVisOn, getBeatVisState: getBeatVisState, getBeatFrame: getBeatFrame,
       setBalance: setBalance, getPanState: getPanState,
       setVideoInfo: setVideoInfo, cycleVisVariant: cycleVisVariant,
+      cycleVisType: cycleVisType, setVisType: setVisType, getVisTypes: getVisTypes, VIS_TYPES: VIS_TYPES, /* Đợt 4: kiểu vis bar/osc/none */
       setAvsAnalyser: setAvsAnalyser, getAvsAnalyser: getAvsAnalyser,
       getVisXmlBands: function () { return visXmlBands.slice(); },
       restoreAvsState: restoreAvsState, isVideoItem: isVideoItem,
       getAvsMedia: getAvsMedia, resetAvsMedia: resetAvsMedia,
+      getAvsParkState: getAvsParkState, parkAvsMedia: parkAvsMedia, /* Đợt 4: holder giữ thẻ video khi đóng cửa sổ */
+      setMilkdropCanvas: setMilkdropCanvas, setMilkdropActive: setMilkdropActive, getMilkdropState: getMilkdropState, /* Đợt 4: Milkdrop */
+      /* Đợt 6 (03/11: Media Session API + hotkeys — lấy từ fork, gỡ khỏi Redux). */
+      updateMediaSession: updateMediaSession, getMediaSessionState: getMediaSessionState,
+      currentMediaMeta: currentMediaMeta,
+      seekBy: seekBy, adjustVolume: adjustVolume,
+      toggleMute: toggleMute, setMuted: setMuted, isMuted: isMuted,
+      toggleShuffle: toggleShuffle, handleHotkey: handleHotkey,
       /* Đợt E — phát tiếng: nối audio.js + điều khiển phát + lưu state. */
       setAudioEngine: setAudioEngine, getAudioEngine: getAudioEngine,
       getEqState: getEqState, getPlaybackState: getPlaybackState,
@@ -6969,6 +8506,10 @@
       showTickerError: showTickerError, clearTickerError: clearTickerError,
       getTickerError: getTickerError,
       addLocalFiles: addLocalFiles, openLocalFolderPicker: openLocalFolderPicker,
+      /* Đợt 5 (03/11: metadata nhạc — đọc tag file local). */
+      probeLocalMetadata: probeLocalMetadata, applyMetadataToItem: applyMetadataToItem,
+      metadataDisplayName: metadataDisplayName, metadataDisplayArtist: metadataDisplayArtist,
+      metadataDisplayAlbum: metadataDisplayAlbum, getMetaLib: getMetaLib,
       /* Đợt v10.0 (việc 5: thêm nhạc local — 1 bài hoặc cả thư mục). */
       openLocalFilePicker: openLocalFilePicker, localPathParts: localPathParts,
       showLocalAddMenu: showLocalAddMenu,

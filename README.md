@@ -1,19 +1,23 @@
-# Amp v10 — Winamp Modern (đợt v10.0: tích hợp Webamp fork — EQF .eqf/.q1 + vis giống Webamp + Fit/căn dọc + thêm nhạc 1 bài/thư mục + viên KBPS/KHZ + beat đúng XML + resize chạm mượt)
+# Amp v10.1 — Winamp Modern (đợt v10.1: Classic skin parser — vẽ được cửa sổ chính .wsz + shade Classic)
 
-Bản phát hành duy nhất: **version 10.0** (đợt v10.0 bump từ 9.9 — xem mục Đợt v10.0; các đợt sau giữ 10.0, chỉ bump tiếp nếu loader đổi).
+Bản phát hành duy nhất: **version 10.1** (đợt v10.1 bump từ 10.0 vì loader đổi cho Classic — xem mục Đợt v10.1; các đợt sau giữ 10.1, chỉ bump tiếp nếu loader đổi).
 
 ## Có gì trong gói
 
 | File | Version | Nội dung |
 |---|---|---|
-| `index.html` | 10.0 (`window.AMP_VERSION`) | Vỏ trang + toolbar + kiểm version + self-check lúc chạy |
-| `skin-loader.js` | LOADER_VERSION 10.0 | Mở `.wal`/`.zip`, đọc XML, gom model (bitmap/font/màu/groupdef/layout), suy `embeddedAvs`, `drawerRestY`, `snapadjustbottom` |
-| `renderer.js` | RENDERER_VERSION 10.0 | Vẽ cửa sổ chính + shade + ngăn kéo + playlist + AVS/Video (nhúng + cửa sổ rời), EQ/Options/Color Themes, playlist `.m3u` |
-| `audio.js` | AUDIO_VERSION 10.0 | Phát tiếng thật: native trước, HLS sau 6s/lỗi; chuỗi EQ (preamp + 10 biquad + master + analyser); MediaElementSource mỗi thẻ 1 lần |
-| `eqf.js` | EQF_VERSION 10.0 | Đọc/ghi preset EQ Winamp `.eqf`/`.q1` (header v1.1, 268B/preset) + map sang 10 dải + preamp của Amp (đợt v10.0) |
-| `skin-browser.js` | BROWSER_VERSION 10.0 | Chọn skin từ kho Webamp: GraphQL `skins.webamp.org` (Modern .wal + Classic .wsz, md5 làm id, CDN `r2.webampskins.org`), tìm theo tên, cache 24h, fallback danh sách mẫu (đợt v10.0 việc 2) |
+| `index.html` | 10.1 (`window.AMP_VERSION`) | Vỏ trang + toolbar + kiểm version + self-check lúc chạy |
+| `classic.js` | CLASSIC_VERSION 10.1 | **MỚI đợt v10.1:** parser skin Classic (.wsz) chuyển từ Webamp fork — đọc `viscolor.txt`/`pledit.txt`/`region.txt`/`genex.bmp`, bảng tọa độ 281 sprite Winamp 2, hình học cửa sổ chính 275×116 + shade 275×14 |
+| `skin-loader.js` | LOADER_VERSION 10.1 | Mở `.wal`/`.zip`, đọc XML, gom model (bitmap/font/màu/groupdef/layout), suy `embeddedAvs`, `drawerRestY`, `snapadjustbottom`; `.wsz` không có skin.xml thì parse thật bằng `classic.js` |
+| `renderer.js` | RENDERER_VERSION 10.1 | Vẽ cửa sổ chính + shade + ngăn kéo + playlist + AVS/Video (nhúng + cửa sổ rời), EQ/Options/Color Themes, playlist `.m3u`; **đợt v10.1: vẽ cửa sổ chính Classic + shade Classic từ BMP, nút bấm được**; **đợt 4: holder park giữ thẻ video khi đóng cửa sổ (tiếng vẫn phát), vis bấm đổi kiểu bar/sóng/tắt từng vùng, nối Milkdrop** |
+| `audio.js` | AUDIO_VERSION 10.1 | Phát tiếng thật: native trước, HLS sau 6s/lỗi; chuỗi EQ (preamp + 10 biquad + master + analyser); MediaElementSource mỗi thẻ 1 lần; **đợt 4: crossfade trộn bài bằng engine 2 thẻ audio (A/B) + ramp gain, mặc định 2s** |
+| `milkdrop.js` | MILKDROP_VERSION 10.1 | **MỚI đợt 4:** Milkdrop/butterchurn — nạp `butterchurn@2.6.7` + `butterchurn-presets@2.4.7` qua CDN lúc chạy (lazy, chỉ khi bật), preset mặc định qua URL, fallback preset nhúng sẵn; canvas gắn vào hộp AVS thay vis thường |
+| `eqf.js` | EQF_VERSION 10.1 | Đọc/ghi preset EQ Winamp `.eqf`/`.q1` (header v1.1, 268B/preset) + map sang 10 dải + preamp của Amp (đợt v10.0) |
+| `metadata.js` | METADATA_VERSION 10.1 | **MỚI đợt 5:** đọc tag nhạc local — `music-metadata-browser@2.5.11` qua CDN ESM (dynamic import, dự phòng esm.sh) + parser ID3v2/v1 + FLAC Vorbis comment nhúng sẵn khi CDN chết; ghi title/artist/album/duration vào model mục playlist |
+| `maki.js` | MAKI_VERSION 10.1 | **MỚI đợt 7 (giai đoạn a):** parser + inspect script MAKI — đọc file `.maki` của skin (magic `FG`, formatVersion 23), liệt kê method/binding/ẩn-hiện/gán text; CHỈ ĐỌC, không chạy code MAKI (interpreter thật là giai đoạn b, để sau) |
+| ~~`skin-browser.js`~~ | ~~BROWSER_VERSION 10.1~~ | **ĐÃ GỠ HẲN ở đợt 5** (xem mục "Đợt 5"): chọn skin từ kho Webamp (GraphQL `skins.webamp.org`, panel `#skin-panel`, menu "Chọn skin từ kho…") bỏ luôn theo chốt của Hải — chỉ giữ "Nạp skin .wal/.zip…" chọn file tay |
 | `winampmodern566.wal` | — | Skin Winamp Modern 566 (mặc định, tự nạp lúc mở trang) |
-| `base-2.91.wsz` | — | Skin Classic mẫu (không có vùng AVS nhúng → chỉ dùng cửa sổ Video/Hiệu ứng rời) |
+| `base-2.91.wsz` | — | Skin Classic mẫu — **đợt v10.1 vẽ được cửa sổ chính + shade, nút bấm được** (trước đây chỉ phát tiếng qua cửa sổ Video/Hiệu ứng rời) |
 | `radio.m3u` | — | Playlist mặc định: 41 kênh radio/TV (không còn bài Demo) (giữ tên + thứ tự gốc) |
 
 ## Đợt v10.0 (đã bump + đóng zip — tích hợp Webamp fork đợt 1 + báo lỗi 3/11)
@@ -44,9 +48,29 @@ Test mới: skin-browser-test 103 + page-test thêm 8 (menu 6 mục + panel tĩn
 - **Fallback khi mạng/GraphQL lỗi:** hiện danh sách mẫu nhúng sẵn `FALLBACK_SKINS` (8 skin: 566 + base-2.91 có sẵn trong gói — md5 tính từ file trong gói, `fetch_skin_by_md5` trả đúng tên — + 6 md5 đã kiểm 200 trên r2) + nút "Chọn file tay…" mở hộp chọn file như cũ. Skin "local" tải bằng `fetch()` đường dẫn tương đối trong gói.
 - KHÔNG lấy đợt này: vis FFTNullsoft, Options, KBPS/KHZ, media engine, playlist/m3u, React/Redux, SkinEngine_WAL, server skin-database — đã chốt không làm.
 
+## Đợt v10.1 (việc 3: Classic skin parser — vẽ được cửa sổ chính .wsz)
+
+**Bump 10.0 → 10.1 vì loader đổi cho Classic** (loader nay parse thật `.wsz` thay vì trả stub). Test mới: classic-test 117 + skin-browser-test thêm 1 (check thẻ script `classic.js?v=10.1`) = **118 test mới**; tổng jsdom **2294 PASS, 0 FAIL** (2176 cũ + 118 mới). `harness.js` LOAD OK (cả thư mục làm việc và bản giải nén từ zip). Zip nay có **11 file** (10 cũ + `classic.js` mới).
+
+### Nguồn fork + cách chuyển (parser Redux → renderer Amp, không bê nguyên)
+- Nguồn: `packages/webamp/js/skinParser.js` (giải `.wsz`, đọc `viscolor.txt`/`pledit.txt`/`genex.txt`/`region.txt`), `skinParserUtils.ts` (cắt sprite, `getPlaylistStyle`, `getGenExColors`), `skinSprites.ts` (bảng tọa độ mọi sprite Winamp 2 — dữ liệu định dạng tĩnh), `regionParser.ts` (vùng click không chữ nhật).
+- Fork trả cấu trúc cho Redux (ảnh cắt sẵn thành data-URL, state Redux) — Amp không dùng Redux nên **chỉ lấy dữ liệu thuần + hàm thuần, viết lớp vẽ riêng**: `classic.js` giữ nguyên bảng tọa độ + hàm đọc `.txt` (parse theo đúng regex của fork: `parseViscolors` gán tuần tự 24 màu, `parseIni` key thường hoá/bỏ ngoặc, `parseRegion` bỏ polygon <3 điểm, `getFileFromZip` không phân biệt hoa/thường + file trùng tên thì file SAU thắng) và trả **dữ liệu thô** (`sheets` = {file, url, size từ header BMP}, `viscolors`, `playlistStyle`, `region`, `genExColors`, `cursors`); **renderer.js vẽ sprite theo tọa độ** bằng div + `background-image` = nguyên sheet BMP + `background-size` = kích thước thật + `background-position: -x,-y` (cùng cách với `spriteDiv` của Modern, không giải mã pixel, trình duyệt hiện BMP native qua blob: URL).
+- `.wsz` = zip chứa bitmap (main.bmp, cbuttons.bmp, titlebar.bmp, playpaus.bmp, shufrep.bmp, posbar.bmp, volume.bmp, balance.bmp, monoster.bmp, eqmain.bmp, eq_ex.bmp, pledit.bmp, nums_ex.bmp, text.bmp…) + `.txt` (viscolor/pledit/genex/region). `base-2.91.wsz` có 32 file, 15 sheet BMP (KHÔNG có `nums_ex.bmp` → số lấy từ `numbers.bmp`), `viscolor.txt` 24 dòng, `pledit.txt` SelectedBG `#0000C6` (khác mặc định `#0000FF`), `region.txt` toàn comment → region `{}` (đúng test "default file as empty" của fork), 11 file `.cur`.
+- `genex.bmp` KHÔNG nằm trong bảng sprite của fork (ML không hỗ trợ) nên `classic.js` tìm riêng; màu genex (22 màu, hàng y=0, x=48..90 bước 2) chỉ đọc được ở trình duyệt thật (Image + canvas) — jsdom trả `null`, test assert đúng vậy.
+
+### Cửa sổ chính Classic 275×116 (chuẩn Winamp 2) — đã vẽ + bấm được
+- Titlebar (nút option/minimize/shade/close 9×9), display (đồng hồ 4 số + dấu trừ, vis 76×16, marquee 154×6, KBPS/KHZ, mono/stereo), prev/play/pause/stop/next/eject, seek 248×10, volume 68×13, balance 38×13, shuffle/repeat, EQ/PL, clutter bar O/A/I/D/V, vùng about.
+- Nút bấm được (ít nhất): **Play** (gọi `togglePlay`), **Pause**, **Stop**, **Prev/Next** (phát mục trước/sau qua `playPlaylistItem`), **seek** (kéo → `seekToFraction`), **volume** (kéo → `setVolume` + `demo.volume`), **balance** (kéo → PAN), **EQ** (mở/đóng ngăn kéo ở tab EQ), **PL** (đổi trạng thái playlist qua `onPlaylistToggle`), **shade/minimize/close**, **shuffle** (bật/tắt), **repeat** (xoay Tắt → Lặp toàn bộ → Lặp 1 bài), **clutter D** (đổi zoom 1x/fit), **clutter I** (thông tin bài), **clutter V** (đổi kiểu vis), **clutter O** (menu chính), bấm đồng hồ đổi đếm lên/đếm ngược, lỗi kênh hiện chữ đỏ không dấu trên marquee (`hue-rotate(-120deg)` như fork).
+- **Shade Classic 275×14 có rồi:** nền shade + cùng 4 nút titlebar, transport thu nhỏ (prev/play/pause/stop/next/eject), vis mini 38×5, seek mini 17×7 (thumb trái/giữa/phải theo vị trí), đồng hồ mini 5 ký tự; dblclick titlebar (hoặc nút shade) về normal.
+- Đồng bộ trạng thái qua `refreshClassicMain()` gắn vào các điểm choke sẵn có (`updateStatusEls`/`updateTimerEls`/`updateProgress`/`updateVolumebar`/`updateChannelsIndicator`/`selectPlaylistItem`/`clearPlaylistSelection`) — đèn play/pause, đồng hồ, marquee, KBPS/KHZ, mono/stereo, thumb slider, nút shuffle/repeat/EQ/PL tự đổi theo. Chữ chạy Classic đăng ký vào `tickerEls` với cờ `classic: true` nên `setTickerText` không ghi đè bằng chữ Arial (đã chặn trong `setTickerText`, kèm test).
+- Vis Classic vẽ gradient theo HÀNG (màu `viscolor.txt` 2..17, đỉnh→đáy) như `BarPaintHandler` của Webamp — nhánh `classic: true` trong `drawVisStatic`, không đụng vis Modern (16 cột 1 màu/cột như cũ).
+- Công thức lấy đúng từ fork: volume `round(vol*28)` → offset `(s−1)*15` (100%→405, 50%→195); balance `floor(|bal|/100*27)` → offset `s*15`. Số dùng `NUMS_EX` khi có, không thì `NUMBERS` (dấu trừ `NUMBERS` 5×1 ở (−1,6); `NUMS_EX` dùng nguyên ô 9×13 — khác fork một chút, fork giữ hộp 5×1 rồi cắt glyph).
+- KHÔNG có đợt này (ghi rõ): **cửa sổ Playlist Classic chưa vẽ** (nút PL chỉ đổi trạng thái + sáng đèn), **cửa sổ EQ Classic chưa vẽ** (nút EQ chỉ mở/đóng ngăn kéo Modern ở tab EQ), cửa sổ ML Classic chưa vẽ, `region.txt` chưa áp mặt nạ polygon (cửa sổ vẫn chữ nhật), cursor `.cur` của skin chưa dùng, đèn work-indicator luôn ẩn (Amp không có trạng thái "đang tải" riêng).
+- Tương thích ngược: loader KHÔNG có `classic.js` (vd test cũ chỉ nạp skin-loader.js) thì `classic=null` và renderer về đường cũ — chỉ cửa sổ Video/Hiệu ứng rời, `renderLayout("main","normal")` trả 0 (đã giữ test ở multi-skin-test).
+
 ### (1) Preset EQ `.eqf`/`.q1` (winamp-eqf, Webamp fork)
 
-- File mới `eqf.js` (thuần JS, không dependency, nạp qua `<script src="eqf.js?v=10.0">`): `parseEqf`/`createEqf` theo đúng spec Winamp — header `"Winamp EQ library file v1.1"` (27B) + `0x1A "!--"` (4B), mỗi preset 268B (tên 257B Latin-1 kết thúc NUL + 11 byte giá trị, byte lưu = `64 − giá trị`, thứ tự 60/170/310/600/1000/3000/6000/12000/14000/16000 Hz + preamp, thang 1–64, 33 = phẳng 0 dB). Kiểm bằng file mẫu thật của Webamp (`winamp_sample.q1` 4 preset, `max`/`min`/`midline.EQF`).
+- File mới `eqf.js` (thuần JS, không dependency, nạp qua `<script src="eqf.js?v=10.1">`): `parseEqf`/`createEqf` theo đúng spec Winamp — header `"Winamp EQ library file v1.1"` (27B) + `0x1A "!--"` (4B), mỗi preset 268B (tên 257B Latin-1 kết thúc NUL + 11 byte giá trị, byte lưu = `64 − giá trị`, thứ tự 60/170/310/600/1000/3000/6000/12000/14000/16000 Hz + preamp, thang 1–64, 33 = phẳng 0 dB). Kiểm bằng file mẫu thật của Webamp (`winamp_sample.q1` 4 preset, `max`/`min`/`midline.EQF`).
 - **Cách map (ghi rõ — dải Amp khác tâm tần số dải .eqf):** map theo VỊ TRÍ, tần số tăng dần — hz60→eq1 … hz16000→eq10, preamp→preamp (tâm biquad của Amp là 31.5/63/125/250/500/1000/2000/4000/8000/16000 Hz, cùng thứ tự/số lượng). Đổi đúng theo dB, KHÔNG theo kiểu tuyến tính 1..64→0..100 của Webamp: dB = (v−33)×12/31 (v≥33), (v−33)×12/32 (v≤33); 33 → đúng 0 dB; sai số round-trip ≤ ~0,2 dB.
 - Menu PRESETS (ngăn kéo EQ) thêm 2 mục: "Nạp preset .eqf…" (chọn file `.eqf`/`.q1` → 1 preset thì áp ngay vào 10 slider + preamp; nhiều preset thì mở bảng chọn kiểu menu PRESETS) và "Lưu preset .eqf…" (ghi preset hiện tại thành file `amp-eq.eqf` tải về, tên "Entry1"). Preset mang qua lại được với Winamp PC (cùng định dạng file).
 - KHÔNG lấy từ Webamp đợt này: vis FFTNullsoft, Options, KBPS/KHZ, media engine, playlist/m3u, React/Redux, SkinEngine_WAL, server skin-database (đã chốt).
@@ -89,11 +113,190 @@ Test mới: skin-browser-test 103 + page-test thêm 8 (menu 6 mục + panel tĩn
 
 ### Đợt sau (ghi chú Milkdrop/butterchurn — Hải nhắc 15:16, làm ở đợt 7)
 
+- ~~Làm ở đợt 7~~ — **đã làm ở ĐỢT 4 (03/11, xem mục "Đợt 4" dưới):** `milkdrop.js` mới, preset mặc định qua URL (đã kiểm sống), fallback nhúng sẵn, công tắc trong menu ⋯ (mặc định TẮT).
+
 - Thư viện hiệu ứng phải lấy link trực tiếp trên mạng, khỏi tải về — đúng cách Webamp làm: preset nạp theo 3 dạng (object sẵn / hàm / URL — `fetch(url).then(r => r.json())`); butterchurn + butterchurn-presets qua CDN, không đóng gói vào zip.
 - Đã kiểm 3/11: `https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js` còn sống (UMD thật, `window.butterchurn`); `https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js` còn sống (UMD thật, `window.butterchurnPresets`, `getPresets()` trả map tên→preset). Nguồn preset mặc định của Webamp là `butterchurn-presets/dist/base.js` → map thành danh sách `{name, butterchurnPresetObject}`. Fork dùng butterchurn 3.0.0-beta.5 + presets 3.0.0-beta.4 (đóng gói); Amp theo quy tắc CDN 2.6.7/2.4.7 đã kiểm sống — đợt 7 quyết giữ 2.6.7 hay lên 3.x.
 - Đợt 7 phải: nạp butterchurn + presets qua `<script>` CDN lúc chạy (KHÔNG đóng gói); preset mặc định chọn theo tên qua `getPresets()` → `loadPreset`; hỗ trợ dạng URL (`fetch` trực tiếp); fallback = 1 preset object nhúng sẵn trong code nếu CDN chết (báo rõ); ghi trong README là preset lấy từ mạng, không đóng gói; test jsdom (mock fetch nạp URL + CDN chết thì fallback + `loadPreset` gọi đúng preset).
 
 
+## Đợt 4 (03/11 — panel skin + vis sóng + Milkdrop + crossfade + đóng video không pause; GIỮ 10.1, không đổi loader)
+
+**Không bump version** (loader không đổi — chỉ thêm `milkdrop.js` mới + sửa `index.html`/`renderer.js`/`audio.js`/`skin-browser.js`). Test mới: `batch4-test.js` 161 test; tổng jsdom **2455 PASS, 0 FAIL** (2294 cũ + 161 mới). `harness.js` LOAD OK (cả thư mục làm việc và bản giải nén từ zip, đã nạp thêm `milkdrop.js`). Zip nay có **12 file** (11 cũ + `milkdrop.js` mới). Menu ⋯ thêm 2 mục: "Crossfade: …" và "Milkdrop: …". **Đợt 5 thay mục (1) dưới đây bằng gỡ hẳn tính năng chọn skin từ kho (batch4 còn 169 test — xem mục "Đợt 5").**
+
+### (1) ~~BUG ƯU TIÊN — panel "Chọn skin từ kho Webamp" tự hiện, đóng không được (Hải báo 16:35)~~ — ĐÃ GỠ HẲN TÍNH NĂNG Ở ĐỢT 5, KHÔNG SỬA LỖI NÀY NỮA
+
+> **Đợt 5 (03/11, 17:13): Hải chốt BỎ LUÔN cửa sổ chọn skin từ kho** (thay cho việc fix lỗi đóng panel này) — lý do: chạy trên mạng không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên nên cửa sổ đó vô dụng; lúc test danh sách skin trong panel cũng đang trống (ghi nhận lại, không điều tra thêm). Nội dung gốc của mục (1) giữ lại dưới đây làm lịch sử — test A1–A23 cũ đã thay bằng test gỡ A1–A14 + nạp skin tay A15–A31 (xem mục "Đợt 5").
+
+- **Gốc:** CSS `#skin-panel` đặt `display:flex` nên đè quy tắc `[hidden]{display:none}` của trình duyệt — thuộc tính `hidden` trên `<div id="skin-panel" hidden>` hoàn toàn vô tác dụng. `open()`/`close()` trong `skin-browser.js` (gán `hidden=false/true`) đều không đổi gì trên màn hình.
+- **Sửa (`index.html`):** thêm quy tắc tường minh `#skin-panel[hidden],#menu-pop[hidden],#btn-reopen[hidden]{display:none;}` đặt SAU các quy tắc display. Đã rà các phần tử khác dùng `hidden` + `display`: `#menu-pop` và `#btn-reopen` không có quy tắc display riêng nên `[hidden]` của trình duyệt vẫn ăn, nhưng vẫn đưa vào quy tắc chung cho chắc; `#skinpick` (input) không có display riêng nên không lỗi; `#status` dùng class `.show` chứ không dùng `hidden`.
+- **Panel choán chỗ trên màn 360px (Hải báo 16:45):** panel cũ rộng `min(340px, 100vw-20px)`, cao tới `min(480px, 100vh-20px)` — phủ gần hết màn hình, che trình phát, không test được. Thu lại: rộng `min(320px, 100vw-32px)`, cao tối đa `min(400px, 100vh-140px)` (chừa 140px cho trình phát phía dưới); màn hẹp (≤480px) thì ảnh thu nhỏ 64×40 (cũ 96×60), padding nhỏ lại, cao tối đa 360px. Vẫn đủ xem tên skin + ảnh.
+- **Chạm ngoài để đóng (`skin-browser.js` `wireSkinPanel`):** lắng nghe click ở document — chạm ngoài panel thì đóng; bỏ qua cú chạm đã mở panel (ghi `openedAt`, bỏ qua click trong 250ms — cú chạm mở nổi bọt lên document SAU khi `open()` chạy, không chặn thì vừa mở đã đóng), bỏ qua chạm vào nút ⋯ / menu ⋯, bỏ qua chạm trong panel; thêm phím Esc để đóng.
+- **Chọn xong tự đóng:** đã có từ đợt v10.0 (`onSelectSkin` resolve → `close()`); test khóa lại — chọn skin lỗi thì panel Ở LẠI + báo lỗi trong panel.
+- Kiểm chứng (test A1–A23 trong `batch4-test.js`): CSS tĩnh + jsdom với `index.html` thật — load trang `display:none`, mở `display:flex`, đóng lại `display:none`; mở → chạm ngoài đóng, chạm trong không đóng, bấm ✕ đóng, chọn skin OK tự đóng, chọn skin lỗi ở lại.
+
+### (2) Đóng cửa sổ video thì bị tạm ngừng — sửa: tiếng vẫn phát (Hải báo 16:42)
+
+- **Gốc:** `closeAvs()` tự nó không pause gì (chỉ đổi state). Lỗi ở `renderLayoutInner`/`renderStackedInner`: vẽ vào div `build` tách rời rồi `swapIn()` làm `live.innerHTML = ""` — gỡ cả thẻ `<video>` đang phát khỏi document, và khi AVS đóng thì wrap không được gắn lại đâu cả (thẻ video nằm ngoài document cho tới khi mở lại cửa sổ). Trên trình duyệt điện thoại, thẻ video rời khỏi document thì bị tạm ngừng.
+- **Sửa (`renderer.js` — lấy cách của Webamp fork, `media/currentVideo.ts` `getVideoHolder`: "chỗ chứa tạm thẻ video khi cửa sổ đóng, thẻ vẫn phát nền"):** holder ẩn `#amp-avs-park` (`position:fixed; 2×2; opacity:0`, KHÔNG `display:none`, gắn vào `document.body`, `aria-hidden`) giữ thẻ video LUÔN trong document:
+  - `ensureAvsMedia()` tạo wrap xong thì park ngay (thẻ video có trong document từ lúc sinh ra, kể cả khi AVS chưa từng mở — trước đây phát kênh video mà chưa mở cửa sổ thì thẻ video cũng nằm ngoài document).
+  - `swapIn()` (cả 2 chỗ renderLayout/renderStacked) park wrap TRƯỚC khi `live.innerHTML = ""`.
+  - `attachAvsMedia()` (mở cửa sổ) dời wrap từ holder vào cửa sổ như cũ.
+  - `resetAvsMedia()` (chỉ dùng khi EQ tắt mà thẻ cũ đã có source + URL cross-origin) vẫn pause + xóa src như cũ — đó là đường nạp lại, không phải đường đóng cửa sổ.
+- Đóng cửa sổ giờ chỉ ẩn hình, tiếng vẫn phát, đồng hồ vẫn chạy; mở lại thì hình hiện lại, tiếng không ngắt. Kiểm chứng (test B0–B15): cùng 1 thẻ video trước/sau đóng/mở lại, `isConnected === true`, `pause()` không được gọi lần nào, `src` giữ nguyên, thẻ nằm trong holder khi đóng và trở lại stage khi mở.
+
+### (3) Vis dạng sóng (oscilloscope) + bấm vis đổi kiểu (Hải nói rõ 16:39)
+
+- Webamp có 2 dạng vis: sóng + cột; Amp v10.0 mới chỉ vẽ cột. Thêm dạng sóng + bấm vào vis để đổi kiểu như Webamp, xoay **BAR → OSCILLOSCOPE → NONE → BAR…**. Vẫn dùng analyser thật của Amp (KHÔNG bê code vis của Webamp, chỉ lấy kiểu dáng/hành vi đổi kiểu).
+- **Mỗi vùng bấm đổi kiểu RIÊNG như Webamp:** vis trong display (16 cột) dùng `visTypeDisplay`, vis trong vùng AVS (75 cột) dùng `visTypeAvs` (`renderer.js`: `cycleVisType(which)` / `setVisType(which, type)` / `getVisTypes()`, lưu cùng state AVS `localStorage "amp9-avs-v9"` để lần nạp sau giữ kiểu đã chọn). Nút VIS_Prev/Next trong skin vẫn đổi MÀU cột (variant) như cũ — đổi kiểu và đổi màu là 2 thứ khác nhau.
+- **Vẽ sóng:** `drawVisStatic` lấy thêm time-domain (`getByteTimeDomainData`, có guard khi stub không có hàm thì suy từ freq/sine); `drawVisWave` vẽ 1 đường polyline ngang canvas; `visWaveValue`/`visWaveAmp` tính giá trị/biên độ theo chế độ real/flat/sample (flat = đường thẳng giữa — vis im; sample = sine trang trí). Dạng NONE: xóa canvas, heights toàn 0, không falloff/peak. Vạch vis giống Webamp giữ nguyên (cột bar không đụng tới).
+- **Bấm được:** canvas vis display (`.stage .vis` vốn `pointer-events:none` nên bật lại inline `pointer-events:auto` + `cursor:pointer`), canvas AVS, cả 2 canvas vis Classic — đều có `onclick` gọi `cycleVisType` đúng vùng.
+- Kiểm chứng (test C1–C40): xoay đủ vòng bar→osc→none→bar từng vùng, sóng lên xuống theo time-domain, none toàn 0, bấm canvas đổi đúng vùng, khôi phục từ state đã lưu.
+
+### (4) Milkdrop / butterchurn (`milkdrop.js` MỚI — việc 7 của v10.0)
+
+- **Lấy quy ước từ Webamp fork, KHÔNG bê code:** `actionCreators/milkdrop.ts` (`normalizePresetTypes` — 3 dạng preset) + `components/MilkdropWindow/Visualizer.tsx` (`createVisualizer(ctx, canvas, {meshWidth 32, meshHeight 24, pixelRatio, onlyUseWASM:true})`, `connectAudio(analyser)`, `loadPreset(preset, transitionTime)`, `render()` mỗi frame rAF) + `webamp-demo/js/butterchurnOptions.ts` (preset JSON lẻ ở `unpkg.com/butterchurn-presets/*.json`). Amp làm gọn: KHÔNG có preset cycling/random/overlay/drop file `.milk` — chỉ 1 preset mặc định + chuyển preset bằng 3 dạng trên.
+- **Preset lấy từ mạng, KHÔNG đóng gói vào zip:**
+  - Lib (lazy-load bằng thẻ `<script>` lúc chạy, chỉ khi bật): `https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js` và `https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js` — đã kiểm sống 03/11 (UMD thật).
+  - Preset mặc định dạng **URL** (đã kiểm sống 03/11: HTTP 200, JSON hợp lệ, 3824 byte): `https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/presets/converted/Zylot%20-%20Star%20Ornament.json` — fetch trực tiếp, không tải file về.
+  - Fallback: đúng preset đó **nhúng sẵn** trong code (`FALLBACK_PRESET`, 3824 byte minified) — dùng khi fetch URL lỗi VÀ tra kho preset cũng lỗi. CHỈ fallback preset, KHÔNG fallback lib: CDN lib chết thì Milkdrop không chạy được, vis AVS thường ở lại (báo rõ, không crash).
+- **Nối vào Amp:** `milkdrop.js` `createMilkdrop({document, window, fetchImpl, getAudioContext, getAnalyser, onStatus})` → `attachTo(wrap)` gắn canvas vào hộp AVS; `renderer.setMilkdropCanvas(canvas)` / `setMilkdropActive(on)` ẩn canvas vis thường và hiện canvas Milkdrop khi AVS ở chế độ vis (đồng thời `drawVisStatic` khỏi vẽ vis thường lên canvas đang ẩn — tiết kiệm CPU); `index.html` thêm mục menu ⋯ "Milkdrop: Bật/Tắt" (`toggleMilkdrop`, lưu `localStorage "amp9-milkdrop-v1"`, khôi phục sau khi nạp trang), `syncMilkdrop()` sau mỗi render (chỉ chạy vòng render khi AVS mở ở chế độ vis + đang phát), `onPlayingChange` nối `setPlaying` + `ensureReady` (bật Milkdrop trước khi phát nhạc lần đầu thì tạo visualizer nốt khi có AudioContext).
+- **Giới hạn (ghi rõ):** Milkdrop chỉ "nghe" được nhạc khi **EQ BẬT** (analyser của Amp chỉ có tín hiệu khi tiếng đi qua chuỗi EQ — cùng giới hạn như vis, xem đợt B); EQ tắt thì preset vẫn chạy hình nhưng không theo nhạc. **Tốn GPU/pin trên điện thoại nên MẶC ĐỊNH TẮT** — bật từ menu ⋯ khi cần. butterchurn không có hàm hủy visualizer: tắt chỉ dừng vòng render + ẩn canvas, bật lại dùng tiếp visualizer cũ.
+- Kiểm chứng (test D1–D32): hằng CDN/preset, enable nạp lib + tạo visualizer + `loadPreset` đúng preset URL, URL lỗi → library, cả hai lỗi → fallback nhúng sẵn, CDN chết → reject + `libsFailed` (không crash), 3 dạng preset (object/hàm/URL/tên), vòng render chỉ chạy khi enabled + playing + visible, `setSize` đổi cỡ canvas + visualizer.
+
+### (5) Crossfade trộn bài hát — LÀM MỚI, không phải lấy từ Webamp (Hải hỏi 16:35)
+
+- **Ghi rõ: Webamp fork KHÔNG có tính năng crossfade trộn nhạc để lấy** (main chat đã rà: kết quả tìm chỉ có cross-fade của CSS và class MAKI, không phải trộn bài) — phần này **làm mới hoàn toàn** bằng engine 2 thẻ như ghi chú v9.9, không lấy được từ Webamp.
+- **Cách làm (`audio.js`):** thêm thẻ audio thứ hai `audioElB` (+ `audioSrcB` riêng, cũng nối vào preamp khi EQ bật) — bài mới nạp vào thẻ CÒN LẠI (A↔B luân phiên) để 2 thẻ phát chồng nhau. Khi thẻ mới bắt đầu phát thật (sự kiện `playing`/`timeupdate`) thì ramp tuyến tính: bài cũ giảm dần về 0, bài mới tăng dần từ 0 lên đủ tiếng trong thời gian crossfade, xong thì pause thẻ cũ. Ramp bằng `el.volume` theo bước 100ms (chạy được cả khi EQ bật — lúc đó `el.volume` là 1 qua master — lẫn EQ tắt/native).
+- **Điều khiển:** menu ⋯ "Crossfade: …" xoay Tắt → 1s → 2s → 4s → Tắt; **mặc định 2s** (`CROSSFADE_DEFAULT_MS`, lưu `localStorage "amp9-xfade-ms"`); `setCrossfade(ms)`/`getCrossfade()` (kẹp 0..10000, 0 = tắt).
+- **Giới hạn (ghi rõ):** chỉ **audio → audio** (chuyển sang kênh video thì cắt cứng như cũ); **bấm lại đúng bài/kênh đang phát thì cắt cứng** (nạp lại, giữ nguyên đường thử lại 3s + báo lỗi kênh — không crossfade); **đổi EQ giữa lúc crossfade thì hủy fade** (thẻ cũ dừng ngay, thẻ mới nạp lại theo đường EQ mới); **đổi âm lượng giữa lúc fade** thì ramp vẫn đi tới đích cũ, xong `applyVolume()` chuẩn hóa lại; bài mới lỗi trong lúc chờ/ramp thì **bỏ lần chuyển, trả bài cũ đang phát** (không thử lại, không báo lỗi — người nghe không bị ngắt). Theo dõi trạng thái phát theo từng thẻ (`playingEls`) để retry sau lỗi không nạp đè lên thẻ cũ đang phát.
+- Kiểm chứng (test E0–E8): ramp giữa chừng (A giảm/B tăng), ramp xong (A pause, B đủ tiếng, A về volume 1), tắt crossfade → cắt cứng, cùng URL → cắt cứng, sang video → cắt cứng, bài mới lỗi → trả bài cũ + không báo lỗi, EQ bật (B có source riêng), 3 bài liên tiếp luân phiên A-B-A, `stop()` dừng cả 2 thẻ.
+
+### Còn chờ test trên điện thoại thật (đợt 4)
+
+- ~~Panel chọn skin: load trang không tự hiện; bấm ✕ / chạm ngoài thì biến mất và ở yên; chọn xong 1 skin thì tự đóng; panel thu nhỏ có đủ xem tên + ảnh trên màn 360px không.~~ — **ĐÃ GỠ Ở ĐỢT 5, không còn test mục này** (thay bằng: menu ⋯ không còn mục skins, nạp skin tay .wal/.wsz vẫn chạy — xem mục "Đợt 5").
+- Đóng cửa sổ video: **tiếng vẫn phát, đồng hồ vẫn chạy**; mở lại: hình hiện lại, tiếng không ngắt (đặc biệt kênh TV360 id=2/id=4 khi EQ tắt — vẫn chờ từ v9.8).
+- Vis: bấm vào vis trong display đổi cột → sóng → tắt; bấm vào vis vùng AVS đổi riêng; sóng theo nhạc thật khi EQ bật.
+- Milkdrop: bật từ menu ⋯ (cần mạng để nạp lib + preset qua URL); preset "Zylot - Star Ornament" chạy + theo nhạc khi EQ bật; tắt thì về vis thường; kiểm tra pin/nóng máy khi để lâu.
+- Crossfade: chuyển bài/kênh nghe bài cũ nhỏ dần + bài mới lớn dần trong ~2s; đổi thời gian trong menu ⋯ (Tắt/1s/2s/4s); chuyển sang kênh video thì cắt cứng (không fade).
+
+## Đợt 5 (03/11 — metadata nhạc + gỡ chọn skin từ kho Webamp; GIỮ 10.1, không đổi loader)
+
+**Không bump version** (loader không đổi — chỉ thêm `metadata.js` mới + sửa `index.html`/`renderer.js`, và gỡ `skin-browser.js`). Test mới: `metadata-test.js` 121 test; `batch4-test.js` đổi mục A (23 test panel cũ → 14 test gỡ + 17 test nạp skin tay = 169 test, tăng ròng 8); `skin-browser-test.js` (104 test) XÓA; `page-test.js` còn 88 test (90 cũ − 2 test panel). Tổng jsdom **2478 PASS, 0 FAIL** (2455 cũ − 104 skin-browser − 23 panel cũ − 2 page + 121 metadata + 31 batch4-mới). `harness.js` LOAD OK (cả thư mục làm việc và bản giải nén từ zip, đã nạp thêm `metadata.js`, không còn `skin-browser.js`). Zip vẫn có **12 file** (12 cũ − `skin-browser.js` + `metadata.js` mới). Menu ⋯ còn 7 mục (bỏ "Chọn skin từ kho…").
+
+### (1) Metadata nhạc — đọc tag nhạc local (`metadata.js` MỚI)
+
+- **Lấy quy ước từ Webamp fork, KHÔNG bê code:** `fileUtils.ts` `genMediaTags(file, musicMetadata)` — `parseBlob(file, {duration:true, skipPostHeaders:true})`; `genMediaDuration(url)` bằng thẻ `<audio>` tạm (Amp đã có sẵn đường này: `probeLocalDuration`, đợt L 9.8 — giữ nguyên); `actionCreators/files.ts` `fetchMediaTags` — lấy `metadata.common {artist, title, album, picture}` + `format {numberOfChannels, bitrate, sampleRate}`, file không có tag album thì dùng tên thư mục chứa file làm album; `reducers/tracks.ts` `SET_MEDIA_TAGS` ghi title/artist/album vào track. Fork nạp lib bằng bundler (`webamp.ts`: `import * as musicMetadata from "music-metadata"`); Amp không có build step nên nạp lib qua CDN bằng dynamic import().
+- **CDN — ĐÃ KIỂM SỐNG 03/11 (curl, HTTP 200):**
+  - Đường chính (ESM): `https://cdn.jsdelivr.net/npm/music-metadata-browser@2.5.11/+esm` (jsDelivr bundle ESM thật, exports `parseBlob`/`fetchFromUrl`; kéo theo music-metadata@7.14.0 core — đủ parseBlob MP3/FLAC/OGG/M4A/WAV). Nạp lười bằng dynamic import() khi thêm file nhạc lần đầu.
+  - Dự phòng (ESM): `https://esm.sh/music-metadata-browser@2.5.11` (HTTP 200).
+  - **KHÔNG DÙNG:** `.../music-metadata-browser@2.5.11/lib/index.js` (HTTP 200 nhưng là CommonJS — `require("music-metadata/lib/core")`, nạp bằng `<script>` thường lỗi `require is not defined`); bản 0.6.1 mà fork đang dùng đã 404 trên cả 2 CDN. `music-metadata@11.6.0/+esm` cũng sống nhưng là core Node (không có `parseBlob`) nên không phải đường chính.
+- **Fallback không cần mạng (parser nhúng sẵn trong `metadata.js`):** ID3v2.3/v2.4 (khung TIT2/TPE1/TALB, mã hóa Latin-1/UTF-16/UTF-8) + ID3v1 (128 byte cuối) + FLAC Vorbis comment (TITLE/ARTIST/ALBUM). CDN chết/offline thì parser này vẫn đọc được tag MP3/FLAC; ID3 không chứa thời lượng nên duration vẫn do thẻ `<audio>` probe hoặc duration của lib — không bịa duration.
+- **Nối vào Amp (`renderer.js`):** `addLocalFiles` (cả 2 cách thêm nhạc: 1 bài + cả thư mục) gọi `probeLocalMetadata(item, file)` sau `probeLocalDuration`; `applyMetadataToItem` ghi vào model: title (tag) → `item.tagTitle` (tên file ở `item.name` giữ nguyên), artist/album (tag) thắng nghệ sĩ/album suy từ thư mục, duration (tag/lib) chỉ ghi khi `item.len` còn null, bitrate/sampleRate chỉ lưu model (`tagBitrate`/`tagSampleRate`). File không tag thì KHÔNG đổi gì — giữ tên file + thời lượng đã probe, nghệ sĩ/album hiển thị "Không rõ" (quy ước gom nhóm của fork cho radio/.wav không thẻ).
+- **ML thêm cột Nghệ sĩ/Album** (đợt A v9.9 ghi rõ ML chưa có 2 cột này vì model không đọc metadata): hàng tiêu đề "Tên bài / Nghệ sĩ / Album / Thời lượng" + mỗi hàng thêm 2 span `.ml-artist`/`.ml-album`; tên bài trong ML dùng tag title (nếu có); `getMlState().columns = ["name","artist","album","len"]`.
+- **Bảng trackinfo đầy đủ hơn:** tiêu đề = tag title (nếu có), thêm các dòng "Nghệ sĩ: …", "Album: …", "Kích thước: …" (vd "79 B", "1,5 MB" — `formatFileSize`); `getTrackInfoState` thêm `title/artist/album/fileSizeText/metaStatus/metaSource`. **Ticker vẫn hiện tên bài như cũ** (`item.name`, tên file, bỏ dấu) — không đổi sang tag title; hàng playlist cũng giữ tên file.
+- **KHÔNG LẤY (đã chốt):** KBPS/KHZ từ tag — viên KBPS/KHZ vẫn tính như cũ ở `songInfoValues` (KBPS file local = fileSize×8/len, KHZ = AudioContext.sampleRate); bitrate/sampleRate của tag chỉ lưu model, không đưa lên viên đó. Không lấy ảnh bìa (picture) — Amp chưa có chỗ hiện bìa.
+- Kiểm chứng (`metadata-test.js`, 121 test): file nhạc mẫu có tag ID3 thật (tự build byte ID3v2.3 UTF-8/UTF-16 + ID3v1 + FLAC Vorbis comment trong test); normalize dạng music-metadata của fork; lib giả qua CDN → source "lib"; lib lỗi/CDN chết → fallback parser nội bộ (source "id3v2"); không tag → source/status "none", giữ tên file + album thư mục; duration tag không ghi đè len đã probe; ML hiện đúng cột; trackinfo đủ trường.
+
+### (2) GỠ HẲN chọn skin từ kho Webamp (thay việc fix lỗi đóng panel đợt 4)
+
+- **Quyết định của Hải (main chat 17:13, side chat 17:16):** BỎ LUÔN toàn bộ tính năng — panel `#skin-panel` + mục "Chọn skin từ kho…" trong menu ⋯ + file `skin-browser.js` + mọi chỗ kiểm version nhắc `BROWSER_VERSION` trong `index.html`. Lý do: chạy trên mạng không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên nên cửa sổ đó vô dụng; lúc test (ảnh 16:35) danh sách skin trong panel đang trống — ghi nhận lại thôi, quyết định bỏ vẫn giữ nguyên, không điều tra thêm lỗi fetch/render list.
+- **Gỡ sạch:** xóa file `skin-browser.js`; `index.html` bỏ thẻ `<script src="skin-browser.js">`, bỏ panel `#skin-panel` + toàn bộ CSS `.sb-*`, bỏ nút menu `data-act="skins"`, bỏ hàm `openSkinBrowser` + biến `skinBrowser`, bỏ `AmpSkinBrowser`/`BROWSER_VERSION` khỏi `logVersion()` + `checkVersions()` (kẻo báo "bản mix" vì thiếu file); `harness.js` không nạp `skin-browser.js` nữa; xóa `skin-browser-test.js`; `batch4-test.js` mục A viết lại thành kiểm chứng gỡ (A1–A14); `page-test.js` đổi menu 8 → 7 mục + kiểm `#skin-panel` không còn.
+- **Vẫn giữ nạp skin Winamp qua file (Hải khẳng định 17:16):** "Nạp skin .wal/.zip…" chọn file tay là cách duy nhất để nạp skin — và nạp được **cả skin Winamp lẫn skin Webamp** (cùng định dạng file `.wal` Modern / `.wsz` Classic, chỉ khác nguồn tải: Winamp gốc hay tải về từ skin-database/museum của Webamp). Bộ đọc Classic (đợt v10.1) + loader Modern xử lý được cả 2 nguồn, không phân biệt nguồn.
+- Kiểm chứng nạp tay (`batch4-test.js` A15–A31, 17 test): nạp thử bằng đúng đường `Loader.loadSkinFile(buf)` + `renderLayout("main","normal")` (đường `bootSkin` của index.html khi chọn file tay/kéo-thả):
+  - Winamp Modern 566 `.wal` kèm zip → kind modern, 35 nút, vẽ được cửa sổ chính.
+  - Winamp Classic base-2.91 `.wsz` kèm zip → kind classic, 15 sheet BMP, cửa sổ chính Classic 275×116.
+  - **Webamp Classic 3DNow `.wsz`** (tải thật từ `r2.webampskins.org/skins/8a2cfd657fa97b1a511b372f5249d63a.wsz`, đúng 31.432 byte như đợt 2 đã kiểm; file BMP nằm trong thư mục con `3DNow/` — bộ đọc Classic tìm được qua tên file, không đòi file ở gốc zip) → kind classic, 14 sheet BMP (có MAIN), cửa sổ chính Classic 275×116. File mẫu lưu ở `~/workspace/amp-v9-verify/fixtures-webamp/` (chỉ làm fixture test, KHÔNG đóng vào zip giao).
+  - **Webamp Modern 12 `.wal`** (tải thật từ `r2.webampskins.org/skins/c2273648295a986350f0e2007b705e85.wal`, 1.169.207 byte) → kind modern, có layout `main|normal`, vẽ được cửa sổ chính.
+
+### Còn chờ test trên điện thoại thật (đợt 5)
+
+- TV360 id=2/id=4 hiện hình khi EQ tắt, EQ on/off đổi tiếng video — vẫn chờ từ v9.8 (không đổi ở đợt 5).
+- Nạp file nhạc có tag ID3 thì ML/trackinfo hiện Nghệ sĩ/Album đúng (thử 1 bài MP3 có tag + 1 bài không tag để thấy "Không rõ"); nạp 1 bài rồi cả thư mục đều đọc tag được; tắt mạng rồi nạp file MP3 có tag thì tag vẫn hiện (parser nội bộ).
+- Nạp skin tay: chọn file `.wal` Modern + `.wsz` Classic (cả skin Winamp lẫn skin tải về từ Webamp) đều nạp + vẽ được; menu ⋯ chỉ còn 7 mục, không còn mục chọn skin từ kho; load trang không còn panel chọn skin.
+
+## Đợt 6 (03/11 — Media Session API + hotkeys; GIỮ 10.1, không đổi loader)
+
+**Không bump version** (loader không đổi — KHÔNG thêm file JS mới, chỉ sửa `renderer.js` + `index.html`). Test mới: `hotkeys-media-session-test.js` 107 test; tổng jsdom **2585 PASS, 0 FAIL** (2478 cũ + 107 mới). `harness.js` LOAD OK (cả thư mục làm việc và bản giải nén từ zip). Zip vẫn có **12 file**. Menu Help → "Hướng dẫn nhanh" nay là bảng phím tắt (thay text cũ từ đợt C).
+
+### (1) Media Session API (`navigator.mediaSession` — nối vào `renderer.js`, không đụng `audio.js`)
+
+- **Lấy từ fork, gỡ khỏi Redux middleware:** `mediaSession.ts` của fork là middleware Redux (nghe `onTrackDidChange`, dispatch `play/pause/seekBackward(10)/seekForward(10)/previousTrack/nextTrack`); Amp không có Redux nên nối thẳng vào hàm đã có của renderer: `togglePlay` / `prevTrack` / `nextTrack` / `seekBy`. Chỉ vài chục dòng trong `renderer.js` (mục "ĐỢT 6" sau `stopPlayback`): `getMediaSession()` + `updateMediaSession()` + `currentMediaMeta()` + `getMediaSessionState()`.
+- **Metadata bài đang phát:** title = tag title (đợt 5) else tên file; track: artist/album từ tag (trống thì "" — KHÔNG gửi "Không rõ" lên màn hình khóa); đài: artist = tên nhóm (vd "Radio"), album = "". **Không có ảnh bìa** (artwork luôn `[]` như fork khi không có `albumArtUrl` — metadata.js không đọc picture, xem ghi chú metadata.js:187; không bịa URL bìa).
+- **Cập nhật khi:** đổi bài (`playPlaylistItem`), phát/dừng (`onAudioPlayingChange` — đổi cả `playbackState` playing/paused để màn hình khóa vẽ đúng nút play/pause), tag về muộn (`applyMetadataToItem` — probe async sau khi đã phát, chỉ cập nhật khi là bài đang phát), dừng (`stopPlayback` — playbackState về paused, giữ metadata bài).
+- **Action handlers (đăng ký 1 lần):** play → phát tiếp (nếu đang dừng), pause → tạm dừng (nếu đang phát), previoustrack → `prevTrack()`, nexttrack → `nextTrack(wrap theo repeat/shuffle)`, seekbackward/seekforward → tua ∓10s như fork (khác phím mũi tên ±5s, xem dưới). Đài live không tua được (`engine.seekTo` trả false theo seekable) thì im lặng, không báo lỗi.
+- **Không có `navigator.mediaSession` (jsdom/trình duyệt cũ) thì mọi hàm trả false, không ném lỗi, không ảnh hưởng phát.** Test tiêm mediaSession + `MediaMetadata` giả qua `opts.mediaSession` / `opts.MediaMetadata` (chạy thật đọc `navigator` của trình duyệt).
+- **jsdom KHÔNG đo được nút tai nghe / màn hình khóa / thanh thông báo thật** — chỉ đo được metadata + handler gọi đúng hàm. Chờ test trên điện thoại thật (xem dưới).
+
+### (2) Hotkeys — mở rộng ngoài Space (`renderer.handleHotkey`, `index.html` delegate)
+
+- **Bảng phím tắt (đối chiếu `hotkeys.ts` của fork, chỉ lấy phím hợp Amp):**
+
+  | Phím | Hành vi | Ghi chú |
+  |---|---|---|
+  | Space | Phát / tạm dừng | Giữ từ đợt E |
+  | ← / → | Tua ∓5 giây | File nhạc; đài live không tua được (im lặng) |
+  | ↑ / ↓ | Âm lượng ±0,05 (kẹp 0–1, làm tròn 2 chữ số) | Kéo theo volumebar + slider VOLUME đang hiển thị |
+  | N hoặc ] (B) | Bài sau | B giữ tương thích fork |
+  | P hoặc [ (Z) | Bài trước | Z giữ tương thích fork |
+  | M | Tắt / bật tiếng | Giữ `demo.volume` + volumebar, engine về 0 (như mute shade); kéo volume lúc đang mute chỉ đổi mức đã lưu, bấm M mới nghe lại; lưu/khôi phục qua state phát (`muted`) |
+  | L | Lặp lại: Tắt → Lặp tất cả → Lặp 1 bài → Tắt | Như nút Repeat; fork dùng R cho repeat và L để mở file — Amp lấy L cho lặp (theo yêu cầu đợt 6) |
+  | S | Phát ngẫu nhiên (Shuffle) | Tách từ code inline trong `playMenuItems` thành `toggleShuffle()` dùng chung |
+  | X / C / V | Phát / Tạm dừng / Dừng | Theo fork (X play, C pause, V stop) |
+
+- **Không đụng phím tắt trình duyệt:** bấm kèm Ctrl/Alt/Meta thì bỏ qua (fork có Ctrl+D double-size / Ctrl+R đảo playlist / Alt+W/E/G đổi cửa sổ — KHÔNG lấy: Ctrl/Alt là phím tắt trình duyệt, Amp không có double-size). **Không chặn gõ chữ:** focus trong INPUT/TEXTAREA/SELECT/contentEditable thì bỏ qua. Phím lạ thì trả false, để trình duyệt xử lý.
+- **Nối dây:** listener keydown duy nhất trong `index.html` (`wireMenu`, đăng ký 1 lần để đổi skin không đăng ký trùng) nay delegate sang `renderer.handleHotkey(e)` — thay listener chỉ-Space của đợt E; `handleHotkey` tự `preventDefault()` khi đã xử lý. Hàm mới xuất qua API renderer: `handleHotkey`, `seekBy`, `adjustVolume`, `toggleMute`/`setMuted`/`isMuted`, `toggleShuffle`, `updateMediaSession`/`getMediaSessionState`/`currentMediaMeta`.
+- **Mute (M) + mute shade là 2 công tắc độc lập:** `applyEngineVolume()` nay tắt tiếng khi bật cái nào (`isShadeMuted() || demo.muted`); tắt cả 2 mới nghe lại.
+- Kiểm chứng (`hotkeys-media-session-test.js`, 107 test): metadata cập nhật đúng khi đổi bài (tag / không tag / radio), tag về muộn đổi theo, handlers gọi đúng hàm (kể cả seek trên live không ném lỗi), từng phím đúng hành vi (kể cả fallback `keyCode` cho trình duyệt cũ), trong ô input / kèm Ctrl/Alt/Meta / phím lạ đều không kích hoạt, Help hiện đủ phím tắt, `muted` lưu/khôi phục đúng.
+
+### Còn chờ test trên điện thoại thật (đợt 6)
+
+- TV360 id=2/id=4 hiện hình khi EQ tắt, EQ on/off đổi tiếng video — vẫn chờ từ v9.8 (không đổi ở đợt 6).
+- **Mới đợt 6:** bấm nút tai nghe (play/pause/next/prev) thì Amp phát/dừng/chuyển bài theo; khóa màn hình rồi điều khiển từ màn hình khóa / thanh thông báo (tên bài + nghệ sĩ hiện đúng, nút play/pause/next/prev/tua chạy); thử các phím tắt trên bàn phím (Space, mũi tên tua/volume, N/P, M, L, S, X/C/V) — đặc biệt M tắt tiếng rồi bấm lại nghe lại, L xoay đủ 3 trạng thái lặp.
+- Menu Help → "Hướng dẫn nhanh" hiện bảng phím tắt đầy đủ.
+
+
+## Đợt 7 (03/11 — MAKI parser, giai đoạn a: ĐỌC/inspect — GIỮ 10.1, không đổi loader)
+
+**Không bump version** (loader không đổi — chỉ thêm `maki.js` mới + mục menu ⋯ "Xem script MAKI…" + panel `#maki-panel` trong `index.html`). Test mới: `maki-test.js` 126 test; tổng jsdom **2711 PASS, 0 FAIL** (2585 cũ + 126 mới). `harness.js` LOAD OK (cả thư mục làm việc và bản giải nén từ zip, đã nạp thêm `maki.js`). Zip nay có **13 file** (12 cũ + `maki.js` mới). Menu ⋯ nay có 8 mục (thêm "Xem script MAKI…").
+
+### (1) Parser `.maki` — `maki.js` MỚI (chuyển từ Webamp fork, chỉ lấy code `maki/`)
+
+- **Nguồn fork đã đọc kỹ:** `packages/webamp-modern/src/maki/{parser.ts, MakiFile.ts, constants.ts, objects.ts, maki-bytecode.md}` + `objectData/*.json` (std/config/winampconfig/application/fileio/pldir). Snowpack 3 của gói đã cũ nên chỉ lấy code `maki/`, không build cả gói. `interpreter.ts`/`virtualMachine.js`/`skin/makiClasses/*` chỉ đọc để hiểu cách chạy, KHÔNG port (đó là giai đoạn b).
+- **Định dạng file (đã kiểm bằng 29 file thật của 566):** magic `"FG"` + u16 luôn 1027 + u32 formatVersion (566: 23 — parser.ts của fork gọi u16 1027 là "version"; `maki.js` giữ `version` = 1027 cho khớp fork, thêm `formatVersion` = u32 mới là số phiên bản định dạng thật) + classes (16B GUID/class, hex thô phải qua `formatGuid()` y hệt `getFormattedId` của fork mới tra được tên) + methods + variables (primitive 2=int, 3=float, 4=double, 5=boolean, 6=string; biến subclass đánh dấu base `isClass` + `members`/`events`) + strings + bindings (binaryOffset đổi sang commandOffset) + code (opcode + immediate; `call` 0x18 có thể kèm u32 stack protection `0xFFFF000x`, `strangeCall` 0x70 kèm 1 byte số đối số). File `/debug` có thêm filepaths + line numbers sau code — thử đọc lướt, không được thì chỉ warning (không throw). File cụt thì throw rõ (đọc có kiểm giới hạn — file 5 byte không còn lọt như parser gốc).
+- **Bảng dữ liệu sinh từ fork (không bê nguyên objectData):** `CLASS_NAMES` — 49 GUID → tên class xuất hiện trong 29 file 566; `METHOD_ARITY` — 199 method `Class.method` → số đối số (kèm chuỗi kế thừa parentClass như `getMethod` của fork). Skin khác có GUID/method ngoài bảng thì parser vẫn chạy (thiếu tên class / dùng heuristic, ghi rõ).
+- **Nhận dạng kiểu dữ liệu xuyên realm:** `MakiReader` nhận `ArrayBuffer`/`Uint8Array` cả khi khác realm (JSZip ở Node đưa Uint8Array vào code chạy trong jsdom/trình duyệt — `instanceof` khi đó trả false) bằng `ArrayBuffer.isView` + sao chép byte tay.
+- **API:** `parseMaki(buf, id)` / `inspectMaki(parsed)` / `inspectSkinFiles(files)` / `formatGuid(rawHex)` / `classNameOf(guid)` / `COMMANDS`. Lỗi đọc throw Error kèm id file + offset.
+
+### (2) Inspect — đi tuyến tính, mô phỏng ngăn xếp trừu tượng (không chạy code)
+
+- Ngăn xếp giữ giá trị tượng trưng `{type, value, desc}`: push sao chép biến; popTo/mov gán lại; `add` nối chuỗi hằng khi cả 2 đều là chuỗi hằng. Lệnh call: số đối số lấy theo thứ tự (1) byte/u32 kèm theo lệnh, (2) bảng `METHOD_ARITY`, (3) heuristic pop tới OBJECT (tối đa 8, ghi `argCountKnown=false`). Trình biên dịch MAKI đẩy đối số NGƯỢC nên thứ tự pop ra khỏi ngăn xếp CHÍNH LÀ thứ tự trong mã nguồn — đã kiểm bằng `setXmlParam("resize", "bottomright")` trên videoavs.maki.
+- Đích được đặt tên khi suy ra được: `findObject("id")`, `scriptGroup`, `container:x`, `...|layout:y`, `group:`/`object:`, `parentLayout of …`, `new Class`; biến gán từ các giá trị này thì lần gán đầu ghi `firstDesc` để đặt tên cho binding và đích `var#N`. Đích không suy ra được giữ `var#N <Class>`.
+- **Kết quả trên skin 566 (29 file — SỬA SỐ LIỆU: nhiệm vụ đợt 7 ghi "33 file" là sai; `unzip -l winampmodern566.wal | grep -ci maki` = 29):** 24.855 lệnh bytecode · 3.183 call (2.828 strangeCall 0x70 + 355 call 0x18) · 198 binding · 385 sự kiện ẩn/hiện (show/hide/setXmlParam) · 245 gán text · **0 call không rõ số đối số** · 0 opcode lạ · 0 stack protection (566 không dùng) · 967/3.183 call có đích đặt tên đầy đủ. Báo cáo đầy đủ: `~/workspace/amp-v9-verify/maki-566-report.md` (949 dòng: bảng từng file + toàn bộ sự kiện ẩn/hiện/gán text + top method + §4 đối chiếu Amp).
+- **Giới hạn inspect (ghi rõ):** thứ tự sự kiện là thứ tự lệnh trong file, KHÔNG phải thứ tự chạy thật khi có rẽ nhánh; điều kiện hiện/ẩn (vd beat chỉ hiện khi cửa sổ đủ rộng) và giá trị biến lúc chạy không khôi phục được — phải làm giai đoạn b mới biết chính xác.
+
+### (3) Chỗ Amp đoán sai / thiếu so với MAKI thật (chỉ liệt kê — đợt này KHÔNG sửa hành vi)
+
+Tóm tắt §4 của báo cáo (chi tiết + bằng chứng từng mục xem trong `maki-566-report.md`):
+
+- **Thiếu (12 mục):** (1) Notifier popup — `notifier.maki` 331 call, hiện cửa sổ + ghi title/artist/album + đổi ảnh bìa; Amp không có cửa sổ notifier (kèm `notifications_fade_times.maki`: slider thời gian fade/hold). (2) Cửa sổ Album Art (`albumart.maki`). (3) Đổi ticker Songticker ↔ infoticker khi seek/mute/đổi volume. (4) Menu Vis đầy đủ — coloring Normal/Fire/Line, peaks, peakfalloff, falloff, fliph, bandwidth, oscstyle, setMode (`visualizer.maki`). (5) Nhãn dải EQ ISO/Winamp (`eq.maki`). (6) Hiệu ứng About — 4 sao + 2 mắt chạy ngẫu nhiên (`about.maki`). (7) Menubar từng cửa sổ dời nội dung (y = 0/-17/16/17). (8) SeekerGhost khi kéo seek. (9) Nút Mute riêng + volumebar đổi w (`mute.maki`). (10) Đồng bộ shade ↔ normal — `unlinked`/`linkwidth`, dãy ẩn lúc nạp của shadecontrol. (11) Đồng hồ playlist đổi x/w theo nội dung (`pltime.maki`: -215/90 ↔ -180/55; ticker PESongticker bounce/scroll/off). (12) `menualign.maki`/`configtarget.maki` chưa đối chiếu.
+- **Đoán sai (3 mục):** (1) Điều kiện hiện nhóm beat — Amp dùng ngưỡng tràn layout tự đặt; MAKI thật hiện theo rẽ nhánh (kéo cửa sổ đủ rộng) + đổi ảnh `display.right`/`beatleft`/`beatright` sang bộ `*2` khi beat bật (Amp chưa đổi ảnh). (2) `minimum_h` khi mở AVS — MAKI đặt 380 (mở) / 280 (đóng) + resizer `bottomright` ↔ `right`; Amp không áp minimum_h nào. (3) Crossfade — `crossfade.maki` chỉ là giao diện slider (nút tăng/giảm, ghost, overlay); engine trộn bài 2 thẻ của Amp (đợt 4) là làm mới, đừng nhầm 2 thứ.
+- **Khớp (không sửa):** tab ngăn kéo EQ/Options/ColorThemes; chỉ báo kênh mono/stereo/surround (`setChannelsState`, đợt K); ticker bounce/scroll/off trong Options; detach/max/restore/switchto/reattach Video/Vis.
+
+### (4) Xem MAKI trong trang (menu ⋯ → "Xem script MAKI…")
+
+- Panel `#maki-panel` (nền sáng #ECE9D8 như menu ⋯, giữa màn hình, tối đa 340px, cuộn trong): tổng file/lệnh/call/binding/ẩn-hiện/gán text của skin đang nạp + bảng từng file + `<details>` mỗi file (binding, method gọi nhiều, 20 sự kiện ẩn/hiện đầu). Skin Classic không có `.maki` thì báo rõ. **Chỉ xem, không chạy.**
+- Đóng bằng nút ✕ / chạm ngoài / Esc; quy tắc CSS `#maki-panel[hidden]` đặt SAU `display` nên `hidden` thật sự ẩn panel (bài học panel chọn skin đợt 4). Panel này là panel XEM script — đừng nhầm với panel chọn skin đã gỡ ở đợt 5.
+- Nguồn file: `RES.zip` do loader giữ (quét `zip.files` lấy `.maki`, không đổi loader).
+
+### (5) Giai đoạn b — interpreter thật (ĐỂ SAU, không làm đợt này)
+
+Cần port `interpreter.ts` + `virtualMachine.js` + ~70 class GUI (`skin/makiClasses/*`: GuiObj, Group, Layer, Button, Text, Slider, Timer, System, Container, Layout…) + `UIRoot` của fork, rồi nối event/binding vào renderer (thay các hành vi JS viết lại hiện tại bằng chạy MAKI thật). Ước lượng lớn, rủi ro cao (chạy code lạ trong trang, khác biệt hành vi khó lường) — làm riêng 1 đợt sau khi Hải chốt, dựa trên báo cáo §4 đợt này để biết chỗ nào cần khớp.
+
+### Còn chờ test trên điện thoại thật (đợt 7)
+
+- TV360 id=2/id=4 hiện hình khi EQ tắt, EQ on/off đổi tiếng video — vẫn chờ từ v9.8 (không đổi ở đợt 7).
+- **Mới đợt 7:** menu ⋯ → "Xem script MAKI…" hiện bảng 29 file của skin 566 (tổng 24.855 lệnh / 3.183 call / 198 binding); mở 1 file xem binding + method; bấm ✕ / chạm ngoài / Esc đều đóng panel; nạp skin Classic `.wsz` rồi mở panel thì báo "không có file .maki"; nạp skin Modern khác (vd skin Webamp .wal) thì panel liệt kê đúng file `.maki` của skin đó (không còn số của 566).
 ## Đợt A (9.9 — đã bump + đóng zip)
 
 6 việc theo báo lỗi của Hải 03/11 (ảnh 13:09: đồng hồ 5:00, ticker "05 - AVE MARIA...", ngăn kéo EQ mở):
@@ -139,7 +342,7 @@ Test mới: skin-browser-test 103 + page-test thêm 8 (menu 6 mục + panel tĩn
   - **Link Position and Width / Link Position, Unlink Width / Unlink Position and Width** (winshade): shade ở Amp là layout swap của cùng 1 stage (không có cửa sổ shade riêng với vị trí/kích thước riêng) nên link/unlink không có gì để nối; làm tiếp: tách geometry shade riêng.
   - **Notifications** (Show always / Show with windowshade... / Show only when minimized / Never show / Disable in fullscreen + 3 slider fade/hold): Amp chưa có popup notifier (thư mục `notifier/` trong skin chưa được vẽ); làm tiếp: vẽ popup theo `notifier/*.png` + dùng các giá trị này (hiện/ẩn theo chế độ + thời gian fade/hold).
   - **Enable Beat Visualization**: renderer chưa vẽ beat display (bitmap `beat_*` trong skin chưa được dùng); làm tiếp: vẽ beat bars theo analyser như vis.
-  - **Enable crossfading + Crossfade time**: engine chỉ có 1 thẻ `<audio>`/`<video>` nên không overlap 2 bài được; số giây + tick chỉ lưu trạng thái (CFDisplay vẫn hiện số giây); làm tiếp: engine 2 thẻ audio + ramp gain (crossfade thật).
+  - **Enable crossfading + Crossfade time**: ~~engine chỉ có 1 thẻ `<audio>`/`<video>` nên không overlap 2 bài được; số giây + tick chỉ lưu trạng thái (CFDisplay vẫn hiện số giây); làm tiếp: engine 2 thẻ audio + ramp gain (crossfade thật)~~ — **đã làm ở ĐỢT 4** (engine 2 thẻ audio A/B + ramp gain, mặc định 2s, chỉnh trong menu ⋯ Tắt/1s/2s/4s — xem mục Đợt 4 (5)); tick + số giây trong ngăn kéo Options vẫn lưu trạng thái (đồng bộ với menu ⋯), CFDisplay vẫn hiện số giây.
 
 ### (3) KBPS/KHZ đo thật
 
@@ -223,7 +426,7 @@ Nối nốt các nút/hành vi Winamp còn thiếu (đợt cuối trước khi b
 
 ### (6) WA5:Prefs — Preferences + menubar chính thêm mục con
 
-- `renderer.openPreferences(anchorDiv)` (`renderer.js`): bảng Preferences mô phỏng Winamp (nền `#ECE9D8`, hàng toggle không đóng bảng, hàng "Đóng" cuối). Nối thật: Phát lại (EQ, Pan về giữa, Lặp lại), Video/Hiệu ứng (Video, Vis, Giữ tỉ lệ, Beat), Giao diện (ngăn kéo EQ/Options/Color Themes, Shade, Zoom 1x/fit), Skin (Nạp skin… → mở hộp chọn file `.wal/.zip` của trang). Mục "Chưa nối" ghi rõ trong bảng: kiểu file/CD rip, crossfade thật, notifier popup, tìm kiếm toàn thư viện.
+- `renderer.openPreferences(anchorDiv)` (`renderer.js`): bảng Preferences mô phỏng Winamp (nền `#ECE9D8`, hàng toggle không đóng bảng, hàng "Đóng" cuối). Nối thật: Phát lại (EQ, Pan về giữa, Lặp lại), Video/Hiệu ứng (Video, Vis, Giữ tỉ lệ, Beat), Giao diện (ngăn kéo EQ/Options/Color Themes, Shade, Zoom 1x/fit), Skin (Nạp skin… → mở hộp chọn file `.wal/.zip` của trang). Mục "Chưa nối" ghi rõ trong bảng: kiểu file/CD rip, notifier popup (crossfade thật đã làm ở ĐỢT 4), tìm kiếm toàn thư viện.
 - Nhấp đúp vào chỉ báo kênh (stereo/mono, `dblclickaction="WA5:Prefs"` trong XML) → mở Preferences. **Sửa lỗi bắt được khi test:** sprite channels bị thay mới sau ~800ms (`setChannelsState`) làm mất handler nhấp đúp + `pointer-events` → innerHTML đổi sau render (test giu-cu của multi-skin bắt được); nay lưu `dblclick` vào `channelsRec` và gắn lại khi thay sprite.
 - Menubar chính: File → Phát file nhạc… / Phát URL… / Nạp skin .wal/.zip… / Đóng Amp; Play → Phát-Tạm dừng / Dừng / Bài trước / Bài sau / Lặp lại (xoay Tắt → Lặp tất cả → Lặp 1 bài, đồng bộ cfg `;Repeat`) / Shuffle ✓; Options → Preferences… / Ngăn kéo EQ-Options-CT / Thu gọn (Shade) ✓; View → Playlist / Media Library / Ngăn kéo / Video / Hiệu ứng / Thu gọn (Shade) ✓; Help → Giới thiệu về Amp… / Hướng dẫn nhanh. Menubar ML (File/View/Help của cửa sổ ML) chưa nối — xem "Còn thiếu".
 - `index.html` nối 5 opts mới trong `bootSkin` → `createRenderer`: `onMinimize` (→ `hideUi()` dùng chung với nút X), `onOpenSkinPicker` (→ `fileInput.click()`), `onZoom` (→ `setZoom(mode)`), `isShadeMode` (→ `shadeMode`), `skinInfo: SKIN` (tên/version/tác giả cho About).
@@ -236,7 +439,7 @@ Nối nốt các nút/hành vi Winamp còn thiếu (đợt cuối trước khi b
 
 ### (8) about / nowplaying / beatvisualization
 
-- `renderer.openAbout(anchorDiv)`: bảng Amp 10.0 + renderer version + tên/version/tác giả skin đang nạp (qua `skinInfo`); mở từ menu Help → "Giới thiệu về Amp…" và nút About (guid `{d6201408-476a-4308-bf1b-7baca1124b12}`).
+- `renderer.openAbout(anchorDiv)`: bảng Amp 10.1 + renderer version + tên/version/tác giả skin đang nạp (qua `skinInfo`); mở từ menu Help → "Giới thiệu về Amp…" và nút About (guid `{d6201408-476a-4308-bf1b-7baca1124b12}`).
 - `nowplaying`: mở bảng thông tin bài đang phát (mặc định bài current — `showTrackInfo` không truyền idx thì lấy bài đang phát).
 - Beat Visualization: `setBeatVisOn(on)` / `getBeatVisState()` / `getBeatFrame()` — bật/tắt nhóm `player.normal.display.beatvisualization` trong display (nhóm có `visible="0"` trong XML, MAKI gốc ẩn/hiện theo tùy chọn) + đồng bộ tùy chọn Options "Enable Beat Visualization" (checkbox ngăn kéo Options và nút beat là 1 trạng thái). Khung beat (filmstrip 15 khung, ảnh 76×750) đổi theo **bass thật** qua analyser (trung bình 4 bin thấp /255 → khung `round(bass×14)`); không có tín hiệu thì đứng khung 0 — KHÔNG vẽ mẫu giả vờ có nhạc. Chỉ mode "real" (EQ bật + có tín hiệu) mới có bass; flat/sample về khung 0.
 - **Nhóm beat đặt tràn mép phải theo đúng XML:** nhóm ở display (200,11), ảnh 167px → mép phải 372, tràn 18px khỏi cửa sổ 354. Skin gốc ship như vậy nên Winamp thật cũng cắt phần tràn ở mép cửa sổ. **Đợt v10.0 đổi cách xử lý:** không còn vẽ thẳng + cắt bằng `overflow:hidden` nữa — nhóm beat bị GỠ KHỎI DOM khi tràn khỏi layout (kéo rộng ≥372 thì hiện lại), vì Winamp thật chỉ hiện beat khi cửa sổ đủ rộng (MAKI). Xem mục Đợt v10.0 (2).
@@ -354,9 +557,9 @@ Headless Chrome không chạy được trong sandbox này (như đợt A/B/C) n�
   skin không có ở shade).
 - **Version/check chống mix giữ nguyên cơ chế, nhưng im lặng khi đúng:**
   không còn dòng version thường trực trên màn hình — version chỉ ghi
-  vào console (`[Amp] Amp v10 · loader v10.0 · audio v10.0 · renderer v10.0
-  · eqf v10.0 · model fromCache: false · skin: …`) và tiêu đề tab trình duyệt
-  ("Amp v10.0 — Winamp Modern"). Chỉ khi lệch version mới hiện **banner
+  vào console (`[Amp] Amp v10.1 · loader v10.1 · audio v10.1 · renderer v10.1
+  · eqf v10.1 · classic v10.1 · metadata v10.1 · model fromCache: false · skin: …`)
+  và tiêu đề tab trình duyệt ("Amp v10.1 — Winamp Modern"). Chỉ khi lệch version mới hiện **banner
   đỏ** `#status` ("BẢN MIX — version lệch, dừng lại: …") và dừng boot.
   Banner lỗi `#status` ẩn mặc định, chỉ hiện khi có lỗi (banner self-check
   `#drawer-check` đã bỏ ở 9.5 — self-check chỉ ghi console).
@@ -378,16 +581,16 @@ trực. Kiểm bằng 1 trong 2 cách:
 
 - **Console trình duyệt** (F12 → Console): dòng
   ```
-  [Amp] Amp v10 · loader v10.0 · audio v10.0 · renderer v10.0 · eqf v10.0 · model fromCache: false · skin: Winamp Modern
+  [Amp] Amp v10.1 · loader v10.1 · audio v10.1 · renderer v10.1 · eqf v10.1 · classic v10.1 · metadata v10.1 · model fromCache: false · skin: Winamp Modern
   ```
-- **Tiêu đề tab trình duyệt:** "Amp v10.0 — Winamp Modern".
+- **Tiêu đề tab trình duyệt:** "Amp v10.1 — Winamp Modern".
 
-- Cả 5 số phải là **10.0** và `fromCache: false`. Lệch 1 số → trang DỪNG và
+- Cả 6 số phải là **10.1** và `fromCache: false`. Lệch 1 số → trang DỪNG và
   hiện **banner đỏ** ("BẢN MIX — version lệch, dừng lại: …") ngay dưới
   cửa sổ skin (không vẽ giao diện sai trong im lặng). Chụp màn hình
   banner này (hoặc dòng console) là biết đang chạy bản nào.
-- Nguồn sự thật duy nhất: `window.AMP_VERSION = "10.0"` đặt trong
-  `index.html` trước 5 thẻ script. Mỗi file JS tự đối chiếu với manifest
+- Nguồn sự thật duy nhất: `window.AMP_VERSION = "10.1"` đặt trong
+  `index.html` trước 6 thẻ script. Mỗi file JS tự đối chiếu với manifest
   lúc nạp (`MANIFEST_MISMATCH`); file cũ trên host/cache tự tố mình dù
   trang đã mới. `skin-loader.js` kiểm `EXPECTED_LOADER_VERSION` ngay khi
   nạp, trước mọi đọc cache.
@@ -415,8 +618,9 @@ Sau mỗi lần vẽ/mở/khi phát/dừng, trang tự kiểm và hiện cảnh 
 ## Cách test nhanh trên điện thoại (theo thứ tự ưu tiên)
 
 1. **Version:** mở trang, màn hình chỉ thấy skin (không tiêu đề/nút/
-   chữ hướng dẫn); kiểm console phải là `loader v10.0 · audio v10.0 ·
-   renderer v10.0 · eqf v10.0 · model fromCache: false`; không có banner đỏ.
+   chữ hướng dẫn); kiểm console phải là `loader v10.1 · audio v10.1 ·
+   renderer v10.1 · eqf v10.1 · classic v10.1 · metadata v10.1 · model
+   fromCache: false`; không có banner đỏ.
 2. **Cửa sổ chính:** 354×164 (đóng) / 280 (mở ngăn kéo), main y=35,
    display (5,38) 305×67 liền mạch không lằn đen, đồng hồ 0:00, chữ chạy
    tên kênh đang chọn, nút/thanh trượt đúng vị trí như Winamp gốc (khung display
@@ -554,8 +758,8 @@ code hiện tại; chỉ liệt kê những gì đã xác nhận, không đoán:
   bypass); winshade Link Position/Width ×3 (không có cửa sổ shade riêng);
   Notifications 5 mục + 3 slider (chưa có popup notifier); ~~"Enable Beat
   Visualization" (chưa vẽ beat display)~~ — **đã làm ở đợt D** (beat display theo bass thật, xem mục Đợt D (8)); "Enable crossfading + Crossfade
-  time" (engine 1 thẻ audio, chưa crossfade thật — mới chỉ đổi số giây
-  hiển thị). Tick của các mục chưa nối vẫn lưu đúng giá trị đã chọn
+  time" (~~engine 1 thẻ audio, chưa crossfade thật — mới chỉ đổi số giây
+  hiển thị~~) — **đã làm ở ĐỢT 4** (engine 2 thẻ + ramp, xem mục Đợt 4 (5)). Tick của các mục chưa nối vẫn lưu đúng giá trị đã chọn
   (localStorage `amp9-cfg-v9`), hành vi sẽ theo khi làm tiếp.
 - **Media Library (đợt A, đã có — xem mục Đợt A):** khung vẽ từ XML
   (`MLibrary` 790×349), ruột mô phỏng (cây Local Media + Playlists,
@@ -641,18 +845,22 @@ code hiện tại; chỉ liệt kê những gì đã xác nhận, không đoán:
 
 ## Đổi version (cho đợt sau)
 
-Đổi ở 5 chỗ, cùng 1 số (vd 9.5 → 9.6), không sót chỗ nào:
+Đổi ở 8 chỗ, cùng 1 số (vd 10.0 → 10.1), không sót chỗ nào:
 
-1. `index.html`: `window.AMP_VERSION` + `var VERSION` + `?v=` trên 5 thẻ
+1. `index.html`: `window.AMP_VERSION` + `var VERSION` + `?v=` trên 8 thẻ
    script.
-2. `skin-loader.js`: `LOADER_VERSION` + `EXPECTED_LOADER_VERSION`.
-3. `renderer.js`: `RENDERER_VERSION` + `EXPECTED_RENDERER_VERSION`.
-4. `audio.js`: `AUDIO_VERSION` (+ `EXPECTED_AUDIO_VERSION`).
-5. `eqf.js`: `EQF_VERSION` (+ `EXPECTED_EQF_VERSION`).
-6. `skin-browser.js`: `BROWSER_VERSION` (+ `EXPECTED_BROWSER_VERSION`).
-7. Chạy lại `harness.js` + cả 18 test trong `~/workspace/amp-v9-verify/`
-   (phải giữ 2176 PASS, 0 FAIL: main 191, drawer 269, playlist 204, avs
-   215, audio 263, shade 176, page 90, ml-timer-seek-resize 100,
+2. `classic.js`: `CLASSIC_VERSION` + `EXPECTED_CLASSIC_VERSION` (mới đợt v10.1).
+3. `skin-loader.js`: `LOADER_VERSION` + `EXPECTED_LOADER_VERSION`.
+4. `renderer.js`: `RENDERER_VERSION` + `EXPECTED_RENDERER_VERSION`.
+5. `audio.js`: `AUDIO_VERSION` (+ `EXPECTED_AUDIO_VERSION`).
+6. `eqf.js`: `EQF_VERSION` (+ `EXPECTED_EQF_VERSION`).
+7. `metadata.js`: `METADATA_VERSION` (+ `EXPECTED_METADATA_VERSION`).
+8. `maki.js`: `MAKI_VERSION` (+ `EXPECTED_MAKI_VERSION`) (mới đợt 7).
+   (`skin-browser.js`/`BROWSER_VERSION` đã gỡ hẳn ở đợt 5 — không còn trong danh sách này.)
+9. Chạy lại `harness.js` + cả 22 test trong `~/workspace/amp-v9-verify/`
+   (phải giữ 2711 PASS, 0 FAIL: main 191, drawer 269, playlist 204, avs
+   215, audio 263, shade 176, page 88, ml-timer-seek-resize 100,
    vis-options-songinfo 147, multi-skin 59, batch-d 110, eqf 59,
    zoom-fit 49, local-add 56, avs-vis 33, pill 21, resize 31,
-   skin-browser 103) rồi đóng zip lại.
+   classic 117, batch4 169, metadata 121, hotkeys-media-session 107,
+   maki 126) rồi đóng zip lại.

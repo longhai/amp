@@ -7,7 +7,7 @@
    từ Winamp thật: display/seek/playbuttons đều thấp hơn Amp đúng 18px;
    main phải ở y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
      - snapadjustbottom + drawerRestY ghi vào model layout.
-   Version: LOADER_VERSION = "9.2". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.1". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Chạy được cả trình duyệt (window) lẫn Node (module.exports, dùng với
    jsdom trong test). Không dùng Blob khi đọc file trong zip (tránh lỗi
@@ -19,8 +19,15 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.0";
-  var EXPECTED_LOADER_VERSION = "10.0";
+  var LOADER_VERSION = "10.1";
+  var EXPECTED_LOADER_VERSION = "10.1";
+  /* ĐỢT v10.1 (việc 3: Classic parser) — loader đổi: nhánh Classic
+     (.wsz, không có skin.xml) nay parse thật bằng AmpClassic
+     (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
+     cửa sổ chính 275×116) thay vì trả resolve rỗng; asset resolver
+     (fileURL/imgSize) dời lên trước nhánh Classic để resolve Classic
+     cũng dùng được URL thật. Bump 10.0 -> 10.1 ở mọi file (xem README
+     mục "Đổi version"). */
   /* ĐỢT F — version manifest duy nhất: index.html đặt window.AMP_VERSION
      = "10.0" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
      manifest có mà khác version của file thì MANIFEST_MISMATCH = true để
@@ -174,25 +181,97 @@
       if (!real) return null;
       return await zip.file(real).async("string");
     }
+    /* Asset resolver — Đợt v10.1 dời lên ĐÂY (trước nhánh Classic) để
+       cả 2 nhánh (Modern + Classic) dùng chung: trước đây chỉ nhánh
+       Modern có fileURL/imgSize thật, nhánh Classic trả stub null nên
+       renderer không lấy được URL của BMP. imgSize đo bằng header PNG
+       trước (chạy cả jsdom), chỉ dùng Image cho ảnh không phải PNG và
+       khi có trình duyệt thật. */
+    var urlCache = new Map(), sizeCache = new Map();
+    async function blobFor(zipPath) {
+      var real = findPath(zipPath);
+      if (!real) return null;
+      return await zip.file(real).async("arraybuffer");
+    }
+    async function fileURL(zipPath) {
+      if (!zipPath) return null;
+      if (urlCache.has(zipPath)) return urlCache.get(zipPath);
+      var ab = await blobFor(zipPath);
+      if (!ab) { urlCache.set(zipPath, null); return null; }
+      var url = null;
+      try {
+        if (typeof Blob !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+          url = URL.createObjectURL(new Blob([ab]));
+        }
+      } catch (e) { url = null; }
+      if (!url) url = "amp9://" + zipPath; /* fallback cho môi trường test */
+      urlCache.set(zipPath, url);
+      return url;
+    }
+    async function imgSize(zipPath) {
+      if (!zipPath) return null;
+      if (sizeCache.has(zipPath)) return sizeCache.get(zipPath);
+      var ab = await blobFor(zipPath);
+      var size = null;
+      if (ab) size = pngSizeFromBytes(ab);
+      if (!size && ab && typeof Image !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
+        try {
+          var blobUrl = URL.createObjectURL(new Blob([ab]));
+          size = await new Promise(function (resolve) {
+            var im = new Image();
+            var done = false;
+            var timer = setTimeout(function () { if (!done) { done = true; resolve(null); } }, 1500);
+            im.onload = function () { if (!done) { done = true; clearTimeout(timer); resolve({ w: im.naturalWidth, h: im.naturalHeight }); } };
+            im.onerror = function () { if (!done) { done = true; clearTimeout(timer); resolve(null); } };
+            im.src = blobUrl;
+          });
+        } catch (e) { size = null; }
+      }
+      sizeCache.set(zipPath, size);
+      return size;
+    }
     if (rootPrefix) report.notes.push("skin nằm trong thư mục con '" + rootPrefix + "' — đã dùng làm gốc");
 
     var skinXmlText = await readText("skin.xml");
     if (!skinXmlText) {
-      /* ĐỢT D — skin Classic (.wsz, vd base-2.91.wsz): không có skin.xml
-         (chỉ có BMP/CUR/TXT của Winamp 2) nên không có model Modern nào
-         (không groupdef/layout/bitmap XML). KHÔNG throw: trả resolve
-         kind:"classic" với embeddedAvs=null để renderer đi đường cửa sổ
-         Video/Hiệu ứng RỜI — đó là đường duy nhất xem video/vis của
-         skin Classic (DESIGN-CONSTRAINTS.md §1). Cửa sổ chính Classic
-         (vẽ từ BMP) chưa làm ở đợt D — renderer.renderLayout("main")
-         với resolve này chỉ vẽ cửa sổ rời (xem renderer.js). */
-      report.notes.push("skin Classic (.wsz): không có skin.xml — chỉ dùng cửa sổ Video/Hiệu ứng rời (không có vùng AVS nhúng)");
+      /* ĐỢT v10.1 — skin Classic (.wsz, vd base-2.91.wsz): không có
+         skin.xml (chỉ có BMP/CUR/TXT của Winamp 2) nên không có model
+         Modern nào (không groupdef/layout/bitmap XML). KHÔNG throw:
+         parse thật bằng AmpClassic (classic.js — chuyển từ parser của
+         Webamp fork: viscolor.txt, pledit.txt, region.txt, genex.bmp,
+         bảng tọa độ sprite, hình học cửa sổ chính 275×116) rồi trả
+         resolve kind:"classic" với `classic` đính kèm để renderer vẽ
+         cửa sổ chính Classic từ BMP. Không có classic.js (vd test cũ
+         chỉ nạp skin-loader.js) thì classic=null và renderer về đường
+         cũ: chỉ cửa sổ Video/Hiệu ứng rời, không vẽ cửa sổ chính. */
+      report.notes.push("skin Classic (.wsz): không có skin.xml — vẽ cửa sổ chính từ BMP (classic.js) + cửa sổ Video/Hiệu ứng rời (không có vùng AVS nhúng)");
       var classicMaki = names.filter(function (n) { return n.toLowerCase().endsWith(".maki"); })
         .map(function (n) {
           var p = (rootPrefix && n.toLowerCase().indexOf(rootPrefix.toLowerCase()) === 0) ? n.slice(rootPrefix.length) : n;
           return { path: p, size: (zip.files[n] && zip.files[n].uncompressedSize) || 0 };
         })
         .sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
+      var classicLib = opts.Classic || null;
+      if (!classicLib) {
+        try {
+          if (typeof globalThis !== "undefined" && globalThis.AmpClassic) classicLib = globalThis.AmpClassic;
+          else if (typeof window !== "undefined" && window.AmpClassic) classicLib = window.AmpClassic;
+        } catch (e) { classicLib = null; }
+      }
+      var classicData = null;
+      if (classicLib && classicLib.parseClassicSkin) {
+        try {
+          classicData = await classicLib.parseClassicSkin(zip, { findPath: findPath, fileURL: fileURL });
+          report.notes.push("Classic: " + Object.keys(classicData.sheets).length + " sheet BMP"
+            + (classicData.hasNumsEx ? " (có nums_ex.bmp)" : " (không có nums_ex.bmp, dùng numbers.bmp)")
+            + ", viscolor " + classicData.viscolors.length + " màu, region " + Object.keys(classicData.region).length + " section");
+        } catch (e) {
+          report.notes.push("không đọc được skin Classic: " + (e && e.message ? e.message : e));
+          classicData = null;
+        }
+      } else {
+        report.notes.push("classic.js chưa nạp — cửa sổ chính Classic chưa vẽ được (chỉ cửa sổ rời)");
+      }
       var classicResolve = {
         version: LOADER_VERSION, fromCache: false, kind: "classic",
         bitmaps: {}, fonts: {}, colors: {},
@@ -203,10 +282,16 @@
         xmlFiles: [], makiFiles: classicMaki,
         gammasets: [], gammas: [],
         drawer: null, embeddedAvs: null,
-        fileURL: async function () { return null; },
-        imgSize: async function () { return null; },
-        resolveImageRef: function () { return null; },
-        bitmapInfo: async function () { return null; },
+        classic: classicData,
+        fileURL: fileURL, imgSize: imgSize,
+        resolveImageRef: function (ref) { return findPath(ref) ? ref : null; },
+        bitmapInfo: async function (id) {
+          if (!id) return null;
+          var real = findPath(id);
+          if (!real) return null;
+          var s = await imgSize(real);
+          return { file: real, crop: null, w: s ? s.w : 0, h: s ? s.h : 0 };
+        },
         report: report, zip: zip, findPath: findPath,
         screenshotFile: null
       };
@@ -578,51 +663,9 @@
       })
       .sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
 
-    /* Asset resolver. imgSize đo bằng header PNG trước (chạy cả jsdom),
-       chỉ dùng Image cho ảnh không phải PNG và khi có trình duyệt thật. */
-    var urlCache = new Map(), sizeCache = new Map();
-    async function blobFor(zipPath) {
-      var real = findPath(zipPath);
-      if (!real) return null;
-      return await zip.file(real).async("arraybuffer");
-    }
-    async function fileURL(zipPath) {
-      if (!zipPath) return null;
-      if (urlCache.has(zipPath)) return urlCache.get(zipPath);
-      var ab = await blobFor(zipPath);
-      if (!ab) { urlCache.set(zipPath, null); return null; }
-      var url = null;
-      try {
-        if (typeof Blob !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
-          url = URL.createObjectURL(new Blob([ab]));
-        }
-      } catch (e) { url = null; }
-      if (!url) url = "amp9://" + zipPath; /* fallback cho môi trường test */
-      urlCache.set(zipPath, url);
-      return url;
-    }
-    async function imgSize(zipPath) {
-      if (!zipPath) return null;
-      if (sizeCache.has(zipPath)) return sizeCache.get(zipPath);
-      var ab = await blobFor(zipPath);
-      var size = null;
-      if (ab) size = pngSizeFromBytes(ab);
-      if (!size && ab && typeof Image !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
-        try {
-          var blobUrl = URL.createObjectURL(new Blob([ab]));
-          size = await new Promise(function (resolve) {
-            var im = new Image();
-            var done = false;
-            var timer = setTimeout(function () { if (!done) { done = true; resolve(null); } }, 1500);
-            im.onload = function () { if (!done) { done = true; clearTimeout(timer); resolve({ w: im.naturalWidth, h: im.naturalHeight }); } };
-            im.onerror = function () { if (!done) { done = true; clearTimeout(timer); resolve(null); } };
-            im.src = blobUrl;
-          });
-        } catch (e) { size = null; }
-      }
-      sizeCache.set(zipPath, size);
-      return size;
-    }
+    /* Asset resolver đã dời lên trước nhánh Classic (Đợt v10.1) để cả 2
+       nhánh dùng chung fileURL/imgSize; ở đây chỉ còn resolveImageRef +
+       bitmapInfo (cần `bitmaps` của nhánh Modern). */
     function resolveImageRef(ref) {
       if (!ref) return null;
       if (bitmaps[ref]) return bitmaps[ref].file;

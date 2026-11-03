@@ -69,8 +69,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.0";
-  var EXPECTED_AUDIO_VERSION = "10.0";
+  var AUDIO_VERSION = "10.1";
+  var EXPECTED_AUDIO_VERSION = "10.1";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -88,6 +88,8 @@
   var HLS_CDN_URL = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
   var NATIVE_TIMEOUT_MS = 6000;   /* native 6s chưa phát -> rơi về HLS */
   var ERROR_RECHECK_MS = 3000;    /* lỗi lần đầu: thử lại sau 3s chống báo oan */
+  var CROSSFADE_DEFAULT_MS = 2000; /* Đợt 4: crossfade mặc định 2s (0 = tắt) */
+  var CROSSFADE_STEP_MS = 100; /* Đợt 4: bước ramp gain 100ms */
   var ANALYSER_FFT_SIZE = 64;
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -159,12 +161,31 @@
     var measuredChannels = null, measuredForEl = null;
     /* --- media --- */
     var audioEl = null, audioSrc = null, audioSrcEl = null;
+    /* Đợt 4 (03/11) — CROSSFADE (engine 2 thẻ): thẻ audio thứ hai để bài
+       mới phát chồng lên bài cũ trong thời gian crossfade. Webamp fork
+       KHÔNG có tính năng này (chỉ có cross-fade CSS/MAKI) nên làm mới
+       hoàn toàn (xem README đợt 4). Chỉ audio -> audio; video chuyển
+       kênh vẫn cắt cứng như cũ. */
+    var audioElB = null, audioSrcB = null, audioSrcElB = null;
+    var crossfadeMs = CROSSFADE_DEFAULT_MS; /* mặc định 2s; 0 = tắt */
+    var pendingXfade = null; /* {fromEl, toEl, oldItem, newItem, seq} — chờ thẻ mới phát */
+    var activeXfade = null; /* như trên — đang ramp */
+    var crossfadeActive = false, xfadeTimer = null;
+    var XFADE_STEP_MS = CROSSFADE_STEP_MS;
     var videoSrc = null, videoSrcEl = null, lastVideoEl = null;
     var hls = null, hlsLoading = null;
     /* --- trạng thái phát --- */
     var currentItem = null, currentEl = null, currentKind = null; /* "audio" | "video" */
     var currentCrossOrigin = null; /* "anonymous" | null — chế độ CORS của lần nạp hiện tại */
     var playing = false, volume = 1, eqOn = false;
+    /* Đợt 4: thẻ nào đang phát THẬT (theo sự kiện playing/pause/ended của
+       từng thẻ) — cờ `playing` toàn cục không đủ cho crossfade: lúc chờ
+       thẻ mới phát thì thẻ cũ vẫn phát, thẻ mới chưa phát; retry sau lỗi
+       phải biết thẻ nào đang phát để không nạp đè lên thẻ cũ. */
+    var playingEls = (typeof Set !== "undefined") ? new Set() : null;
+    function markElPlaying(el) { if (playingEls && el) { try { playingEls.add(el); } catch (e) { /* bỏ qua */ } } }
+    function markElPaused(el) { if (playingEls && el) { try { playingEls.delete(el); } catch (e) { /* bỏ qua */ } } }
+    function isElPlaying(el) { if (!el) return false; if (playingEls) { try { return playingEls.has(el); } catch (e) { return false; } } return playing; }
     var loadState = "idle"; /* idle | loading | playing | error */
     var loadSeq = 0, nativeTimer = null, recheckTimer = null;
     var retried = false, hlsTried = false, pendingSeek = null;
@@ -252,6 +273,21 @@
       if (kind === "video") return !!videoSrc && videoSrcEl === lastVideoEl;
       return !!audioSrc && audioSrcEl === audioEl;
     }
+    /* Đợt 4: source đã có cho 1 thẻ cụ thể (kể cả thẻ B của crossfade). */
+    function sourceExistsForEl(el) {
+      if (!el) return false;
+      if (el === lastVideoEl) return !!videoSrc && videoSrcEl === el;
+      if (el === audioEl) return !!audioSrc && audioSrcEl === audioEl;
+      if (el === audioElB) return !!audioSrcB && audioSrcElB === audioElB;
+      return false;
+    }
+    /* Âm lượng đích của 1 thẻ: qua chuỗi EQ thì el.volume=1 (master giữ
+       volume), native/bypass thì el.volume=volume. Ramp crossfade dùng
+       hàm này cho cả 2 thẻ. */
+    function elTargetVolume(el) {
+      var through = !!(graphBuilt && eqOn && el && sourceExistsForEl(el));
+      return through ? 1 : volume;
+    }
     /* Tạo MediaElementSource — MỖI THẺ 1 LẦN DUY NHẤT trong đời trang
        (gọi lần 2 trình duyệt ném lỗi; engine giữ cờ để không gọi lại).
        Chỉ gọi khi EQ đang BẬT và media đã nạp thành công (loadedmetadata)
@@ -277,6 +313,23 @@
       routeSource(videoSrc);
       applyVolume();
       return videoSrc;
+    }
+    /* Đợt 4: source cho 1 thẻ cụ thể — thẻ B của crossfade có source
+       riêng, cũng nối vào preamp (2 source cùng vào preamp được). */
+    function ensureSourceForEl(el) {
+      if (!graphBuilt || !ctx || !el) return null;
+      if (el === audioElB) {
+        if (audioSrcB && audioSrcElB === audioElB) return audioSrcB;
+        try { audioSrcB = ctx.createMediaElementSource(audioElB); }
+        catch (e) { return null; }
+        audioSrcElB = audioElB;
+        routeSource(audioSrcB);
+        applyVolume();
+        return audioSrcB;
+      }
+      if (el === lastVideoEl) return ensureSource("video");
+      if (el === audioEl) return ensureSource("audio");
+      return null;
     }
     function routeSource(src) {
       if (!src || !ctx) return;
@@ -361,6 +414,7 @@
     function applyRouting() {
       if (!graphBuilt || !ctx) return;
       if (audioSrc) routeSource(audioSrc);
+      if (audioSrcB) routeSource(audioSrcB); /* Đợt 4: source thẻ B */
       if (videoSrc) routeSource(videoSrc);
       applyVolume();
     }
@@ -378,9 +432,17 @@
     }
     /* Âm lượng: qua chuỗi EQ thì el.volume=1 + master gain = volume;
        native hoặc bypass (source -> destination, master không nằm trên
-       đường tiếng) thì el.volume = volume. */
+       đường tiếng) thì el.volume = volume.
+       Đợt 4: đang crossfade (ramp giữ volume từng thẻ / chờ thẻ mới phát)
+       thì KHÔNG chạm volume thẻ — chỉ đặt master gain. */
     function applyVolume() {
-      var throughChain = graphBuilt && eqOn && currentEl && sourceExistsFor(currentKind);
+      if (crossfadeActive || (pendingXfade && currentEl === pendingXfade.toEl)) {
+        if (graphBuilt && master) {
+          try { master.gain.value = volume; } catch (e) { /* stub */ }
+        }
+        return;
+      }
+      var throughChain = graphBuilt && eqOn && currentEl && sourceExistsForEl(currentEl);
       if (currentEl) {
         try { currentEl.volume = throughChain ? 1 : volume; } catch (e) { /* stub */ }
       }
@@ -428,6 +490,99 @@
       }
       return audioEl;
     }
+    /* Đợt 4: thẻ audio thứ hai cho crossfade (tạo lười, nối listener như
+       thẻ chính — sự kiện từ thẻ nào không phải currentEl thì engine bỏ
+       qua qua currentEventEl). */
+    function getAudioB() {
+      if (!audioElB) {
+        if (!doc) return null;
+        audioElB = wireMediaEl(doc.createElement("audio"));
+        try { audioElB.preload = "auto"; } catch (e) { /* stub */ }
+      }
+      return audioElB;
+    }
+    /* ---------- crossfade (đợt 4) ---------- */
+    function setCrossfade(ms) {
+      ms = +ms;
+      if (!isFinite(ms) || ms < 0) ms = 0;
+      if (ms > 10000) ms = 10000;
+      crossfadeMs = Math.round(ms);
+      return crossfadeMs;
+    }
+    function getCrossfade() { return crossfadeMs; }
+    function stopXfadeTimer() {
+      if (xfadeTimer) { clearTimeout(xfadeTimer); xfadeTimer = null; }
+    }
+    /* Hủy crossfade đang chờ/đang ramp. pauseFrom=true: dừng luôn thẻ cũ
+       (dùng khi chuyển bài mới / dừng / tạm dừng / đổi EQ). */
+    function cancelXfade(pauseFrom) {
+      stopXfadeTimer();
+      var had = pendingXfade || activeXfade;
+      pendingXfade = null;
+      if (activeXfade) {
+        var ax = activeXfade;
+        activeXfade = null;
+        crossfadeActive = false;
+        if (pauseFrom) { try { ax.fromEl.pause(); } catch (e) { /* bỏ qua */ } }
+        try { ax.fromEl.volume = elTargetVolume(ax.fromEl); } catch (e) { /* bỏ qua */ }
+        try { ax.toEl.volume = elTargetVolume(ax.toEl); } catch (e) { /* bỏ qua */ }
+      } else if (had && had.toEl) {
+        try { had.toEl.volume = elTargetVolume(had.toEl); } catch (e) { /* bỏ qua */ }
+      }
+      return !!had;
+    }
+    /* Thẻ mới nạp lỗi trong lúc chờ/chờ ramp: bỏ lần chuyển này, trả thẻ
+       cũ (vẫn đang phát) làm current — không thử lại, không báo lỗi (người
+       nghe không bị ngắt; bấm next lại để thử bài mới). */
+    function cancelXfadeRestoreOld() {
+      stopXfadeTimer();
+      var px = activeXfade || pendingXfade;
+      pendingXfade = null; activeXfade = null; crossfadeActive = false;
+      if (!px) return false;
+      try { px.toEl.pause(); } catch (e) { /* bỏ qua */ }
+      try { px.toEl.volume = elTargetVolume(px.toEl); } catch (e) { /* bỏ qua */ }
+      try { px.fromEl.volume = elTargetVolume(px.fromEl); } catch (e) { /* bỏ qua */ }
+      currentEl = px.fromEl; currentItem = px.oldItem; currentKind = "audio";
+      playing = true; loadState = "playing";
+      applyVolume();
+      if (onPlayingChange) { try { onPlayingChange(true); } catch (e) { /* bỏ qua */ } }
+      return true;
+    }
+    function startXfadeRamp() {
+      var px = pendingXfade;
+      pendingXfade = null;
+      if (!px) return false;
+      activeXfade = px;
+      crossfadeActive = true;
+      var fromEl = px.fromEl, toEl = px.toEl;
+      var dur = crossfadeMs;
+      var fromStart = 1, toTarget = 1;
+      try { fromStart = fromEl.volume; } catch (e) { fromStart = 1; }
+      toTarget = elTargetVolume(toEl);
+      try { toEl.volume = 0; } catch (e) { /* bỏ qua */ }
+      var t0 = Date.now();
+      var step = function () {
+        if (!crossfadeActive || !activeXfade) return;
+        var f = dur <= 0 ? 1 : Math.min(1, (Date.now() - t0) / dur);
+        try { fromEl.volume = fromStart * (1 - f); } catch (e) { /* bỏ qua */ }
+        try { toEl.volume = toTarget * f; } catch (e) { /* bỏ qua */ }
+        if (f >= 1) { finishXfade(); return; }
+        xfadeTimer = setTimeout(step, XFADE_STEP_MS);
+      };
+      xfadeTimer = setTimeout(step, XFADE_STEP_MS);
+      return true;
+    }
+    function finishXfade() {
+      stopXfadeTimer();
+      var ax = activeXfade;
+      activeXfade = null;
+      crossfadeActive = false;
+      if (ax) {
+        try { ax.fromEl.pause(); } catch (e) { /* bỏ qua */ }
+        try { ax.fromEl.volume = elTargetVolume(ax.fromEl); } catch (e) { /* bỏ qua */ }
+      }
+      applyVolume();
+    }
     function getVideo() {
       if (!getVideoEl) return null;
       var v = null;
@@ -444,6 +599,7 @@
     }
     function pauseEl(el) {
       if (!el) return;
+      markElPaused(el); /* Đợt 4: thẻ này không còn phát nữa */
       try { el.pause(); } catch (e) { /* stub */ }
     }
     function clearSrc(el) {
@@ -573,21 +729,50 @@
       if (opts2.userInitiated && recheckTimer) { clearTimeout(recheckTimer); recheckTimer = null; }
       clearTimers();
       detachHls();
-      /* Dừng thẻ đang phát (đổi audio <-> video thì thẻ kia phải im). */
+      /* Đợt 4: hủy crossfade cũ trước (dừng thẻ cũ của lần fade trước). */
+      cancelXfade(true);
+      /* Dừng thẻ đang phát — TRỪ khi crossfade: thẻ cũ phải phát tiếp
+         trong lúc bài mới tăng dần (đổi audio <-> video thì thẻ kia vẫn
+         phải im như cũ). */
       var prevEl = currentEl;
-      if (prevEl) pauseEl(prevEl);
+      var prevItem = currentItem;
+      /* Đợt 4: chỉ crossfade khi thẻ cũ phát THẬT (không phải cờ toàn cục
+         — lúc chờ thẻ mới thì cờ vẫn true nhưng thẻ mới chưa phát), và
+         chỉ khi chuyển sang mục KHÁC (bấm lại đúng kênh đang phát thì
+         nạp lại cứng như cũ — giữ nguyên đường thử lại/báo lỗi). */
+      var prevWasPlaying = isElPlaying(prevEl);
+      var video = isVideoItem(item);
+      var xfadeEl = null;
+      if (!video && crossfadeMs > 0 && prevWasPlaying && prevItem && item.url !== prevItem.url && (prevEl === audioEl || prevEl === audioElB)) {
+        /* Bài mới vào thẻ CÒN LẠI để 2 thẻ phát chồng nhau. */
+        xfadeEl = (prevEl === audioEl) ? getAudioB() : getAudio();
+        /* Không lấy được thẻ khác (stub/test trả cùng 1 thẻ, hoặc
+           document không tạo được thẻ mới) -> cắt cứng như cũ. */
+        if (!xfadeEl || xfadeEl === prevEl) xfadeEl = null;
+      }
+      if (!xfadeEl && prevEl) pauseEl(prevEl);
       pendingSeek = null;
       currentItem = item;
-      var video = isVideoItem(item);
       currentKind = video ? "video" : "audio";
-      var el = video ? getVideo() : getAudio();
+      var el = video ? getVideo() : (xfadeEl || getAudio());
       if (!el) { handleLoadFailure("no-element"); return { ok: false, reason: "no-element" }; }
-      /* EQ tắt + thẻ đã có source + URL cross-origin -> thẻ mới (xem đầu file). */
-      if (!eqOn && sourceExistsFor(currentKind) && isCrossOrigin(item.url)) {
+      /* EQ tắt + thẻ đã có source + URL cross-origin -> thẻ mới (xem đầu file).
+         Đường này không crossfade được (thẻ mới thay luôn thẻ đang dùng). */
+      if (!eqOn && sourceExistsForEl(el) && isCrossOrigin(item.url)) {
         el = freshElement(currentKind);
         if (!el) { handleLoadFailure("no-element"); return { ok: false, reason: "no-element" }; }
+        xfadeEl = null;
+        /* Thẻ mới thay luôn thẻ đang dùng: dừng thẻ cũ (trước đó chưa
+           pause vì tưởng sẽ crossfade). */
+        if (prevEl && prevEl !== el) pauseEl(prevEl);
       }
       currentEl = el;
+      if (xfadeEl) {
+        /* Bài mới bắt đầu ở âm lượng 0; ramp bắt đầu khi nó phát thật
+           (onPlayingEv/onTimeEv gọi startXfadeRamp). */
+        pendingXfade = { fromEl: prevEl, toEl: el, oldItem: prevItem, newItem: item, seq: seq };
+        try { el.volume = 0; } catch (e) { /* bỏ qua */ }
+      }
       /* Đợt L (9.8) — ĐỔI KÊNH XÓA KHUNG HÌNH CŨ NGAY (người dùng báo
          3/11: chọn kênh TV360 khác mà hình vẫn là Đà Nẵng — kênh TV360
          bị xếp nhầm audio nên thẻ video không được gán src mới, giữ
@@ -618,10 +803,17 @@
       return { ok: true };
     }
     /* Lỗi nạp: lần đầu thì thử lại 1 lần sau 3s (chống báo oan); lần 2
-       mới báo kênh lỗi qua onError. Ở yên kênh — không tự nhảy kênh dưới. */
+       mới báo kênh lỗi qua onError. Ở yên kênh — không tự nhảy kênh dưới.
+       Đợt 4: bài mới lỗi TRONG LÚC crossfade (đang chờ / đang ramp) thì
+       bỏ lần chuyển, trả bài cũ đang phát — không thử lại, không báo lỗi. */
     function handleLoadFailure(reason) {
       clearTimers();
       if (!currentItem) return;
+      if ((pendingXfade && currentItem === pendingXfade.newItem) ||
+          (activeXfade && currentItem === activeXfade.newItem)) {
+        cancelXfadeRestoreOld();
+        return;
+      }
       if (!retried) {
         retried = true;
         if (recheckTimer) clearTimeout(recheckTimer);
@@ -650,18 +842,25 @@
       if (!el) return;
       clearTimers();
       playing = true;
+      markElPlaying(el); /* Đợt 4 */
       loadState = "playing";
+      /* Đợt 4: thẻ mới bắt đầu phát -> ramp crossfade. */
+      if (pendingXfade && el === pendingXfade.toEl) startXfadeRamp();
       if (onPlayingChange) { try { onPlayingChange(true); } catch (e) { /* bỏ qua */ } }
     }
     function onTimeEv(ev) {
       var el = currentEventEl(ev);
       if (!el) return;
       clearTimers(); /* có timeupdate = đang phát thật */
+      markElPlaying(el); /* Đợt 4 */
       if (!playing) {
         playing = true;
         loadState = "playing";
         if (onPlayingChange) { try { onPlayingChange(true); } catch (e) { /* bỏ qua */ } }
       }
+      /* Đợt 4: timeupdate cũng là dấu hiệu thẻ mới đã phát (dự phòng khi
+         sự kiện 'playing' không tới). */
+      if (pendingXfade && el === pendingXfade.toEl) startXfadeRamp();
       if (onTimeUpdate) {
         var t = 0;
         try { t = el.currentTime || 0; } catch (e) { t = 0; }
@@ -672,6 +871,7 @@
       var el = currentEventEl(ev);
       if (!el) return;
       playing = false;
+      markElPaused(el); /* Đợt 4 */
       if (onPlayingChange) { try { onPlayingChange(false); } catch (e) { /* bỏ qua */ } }
       if (onEnded) { try { onEnded(); } catch (e) { /* bỏ qua */ } }
     }
@@ -679,6 +879,7 @@
       var el = currentEventEl(ev);
       if (!el) return;
       playing = false;
+      markElPaused(el); /* Đợt 4 */
       if (onPlayingChange) { try { onPlayingChange(false); } catch (e) { /* bỏ qua */ } }
     }
     function onMetaEv(ev) {
@@ -686,8 +887,9 @@
       if (!el) return;
       /* Media nạp thành công với crossOrigin=anonymous (EQ bật) -> giờ
          mới tạo MediaElementSource (1 lần duy nhất) + nối qua chuỗi EQ.
-         EQ tắt thì KHÔNG tạo source: media cứ phát native. */
-      if (eqOn) ensureSource(currentKind);
+         EQ tắt thì KHÔNG tạo source: media cứ phát native.
+         Đợt 4: tạo source cho đúng thẻ đang phát (kể cả thẻ B). */
+      if (eqOn) ensureSourceForEl(el);
       /* Khôi phục vị trí sau khi nạp lại do đổi EQ (chỉ tua được khi
          vùng seek chứa vị trí cũ; đài live tự chặn). */
       if (pendingSeek !== null && pendingSeek > 0) {
@@ -715,6 +917,8 @@
       return loadAndPlay(item, { userInitiated: true });
     }
     function pause() {
+      /* Đợt 4: tạm dừng thì hủy crossfade (dừng cả thẻ cũ đang fade). */
+      cancelXfade(true);
       if (!currentEl) return false;
       pauseEl(currentEl);
       return true;
@@ -741,6 +945,7 @@
       if (recheckTimer) { clearTimeout(recheckTimer); recheckTimer = null; }
       clearTimers();
       detachHls();
+      cancelXfade(true); /* Đợt 4: dừng thì dừng cả 2 thẻ crossfade */
       if (currentEl) {
         pauseEl(currentEl);
         /* Tua về 0 CHỈ khi 0 nằm trong vùng seek được (đài live không tua). */
@@ -805,10 +1010,13 @@
       on = !!on;
       if (on === eqOn) return { changed: false, reloaded: false };
       eqOn = on;
+      /* Đợt 4: đổi EQ giữa lúc crossfade thì hủy fade (thẻ cũ dừng ngay;
+         thẻ mới nạp lại theo đường EQ mới như cũ). */
+      cancelXfade(true);
       if (!graphBuilt) ensureGraph();
       if (!currentEl || !currentItem) { applyRouting(); return { changed: true, reloaded: false }; }
       if (!on) {
-        if (sourceExistsFor(currentKind)) { applyRouting(); return { changed: true, reloaded: false }; }
+        if (sourceExistsForEl(currentEl)) { applyRouting(); return { changed: true, reloaded: false }; }
         if (currentCrossOrigin === "anonymous") {
           var pos = getCurrentTime();
           var wasPlaying = playing;
@@ -825,7 +1033,7 @@
         return { changed: true, reloaded: false };
       }
       /* off -> on */
-      if (sourceExistsFor(currentKind)) { applyRouting(); return { changed: true, reloaded: false }; }
+      if (sourceExistsForEl(currentEl)) { applyRouting(); return { changed: true, reloaded: false }; }
       var pos2 = getCurrentTime();
       var wasPlaying2 = playing;
       var seq2 = ++loadSeq;
@@ -852,11 +1060,11 @@
     function analyserHasSignal() {
       /* Tín hiệu vis: chuỗi EQ đang nối (EQ bật + source của thẻ đang
          phát đã nối vào preamp). EQ tắt hoặc chưa có source -> không tín hiệu. */
-      return !!(graphBuilt && eqOn && currentEl && sourceExistsFor(currentKind) && playing);
+      return !!(graphBuilt && eqOn && currentEl && sourceExistsForEl(currentEl) && playing);
     }
     function getState() {
       var routing = "native";
-      if (currentEl && sourceExistsFor(currentKind)) routing = eqOn ? "eq" : "bypass";
+      if (currentEl && sourceExistsForEl(currentEl)) routing = eqOn ? "eq" : "bypass";
       return {
         version: AUDIO_VERSION, graphBuilt: graphBuilt, graphUnavailable: graphUnavailable,
         ctxState: ctx ? ctx.state : null,
@@ -869,10 +1077,14 @@
         sampleRate: ctx ? ctx.sampleRate : null, /* Đợt B (9.9): KHZ đo thật */
         measuredChannels: getMeasuredChannels(),
         pan: panValue, panSupported: !!panner, panApplied: !!(panner && eqOn), /* Đợt D (9.9): PAN */
-        eqValues: { preamp: eqValues.preamp, bands: eqValues.bands.slice() }
+        eqValues: { preamp: eqValues.preamp, bands: eqValues.bands.slice() },
+        crossfadeMs: crossfadeMs, crossfading: crossfadeActive || !!pendingXfade, /* Đợt 4: crossfade */
+        audioElB: !!audioElB, audioSrcB: !!audioSrcB
       };
     }
-    function getAudioEl() { return getAudio(); }
+    /* Đợt 4: thẻ audio ĐANG DÙNG (A hoặc B của crossfade) — test + debug
+       cần đúng thẻ đang phát, không phải lúc nào cũng thẻ A. */
+    function getAudioEl() { return (currentEl && currentKind === "audio") ? currentEl : getAudio(); }
     function getVideoElement() { return getVideo(); }
 
     return {
@@ -883,12 +1095,17 @@
       setVolume: setVolume, setPreamp: setPreamp, setEqBand: setEqBand,
       setEqOn: setEqOn, getState: getState, getSampleRate: getSampleRate,
       setPan: setPan, getPan: getPan, /* Đợt D (9.9): PAN */
+      setCrossfade: setCrossfade, getCrossfade: getCrossfade, /* Đợt 4: crossfade trộn bài */
       getAudioEl: getAudioEl, getVideoElement: getVideoElement,
       ensureGraph: ensureGraph,
       measureChannels: measureChannels, getMeasuredChannels: getMeasuredChannels,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
+      },
+      /* test/debug: trạng thái crossfade */
+      _crossfade: function () {
+        return { crossfadeMs: crossfadeMs, pending: !!pendingXfade, active: crossfadeActive, pendingTo: pendingXfade ? pendingXfade.toEl : null, activeFrom: activeXfade ? activeXfade.fromEl : null, activeTo: activeXfade ? activeXfade.toEl : null };
       }
     };
   }
@@ -902,6 +1119,8 @@
     HLS_CDN_URL: HLS_CDN_URL,
     NATIVE_TIMEOUT_MS: NATIVE_TIMEOUT_MS,
     ERROR_RECHECK_MS: ERROR_RECHECK_MS,
+    CROSSFADE_DEFAULT_MS: CROSSFADE_DEFAULT_MS, /* Đợt 4: crossfade mặc định 2s */
+    CROSSFADE_STEP_MS: CROSSFADE_STEP_MS,
     createAudioEngine: createAudioEngine
   };
 });

@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.0 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.1 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -87,41 +87,28 @@
     padding:12px 22px;font-size:14px;cursor:pointer;font-family:Verdana,Arial,sans-serif;
     box-shadow:0 8px 30px rgba(0,0,0,.6);}
   #btn-reopen:hover{background:#316AC5;color:#fff;}
-  /* Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ chọn skin:
-     chỉ hiện khi mở từ menu ⋯ ("Chọn skin từ kho…"), không thêm chrome
-     thường trực. Nền sáng #ECE9D8 như menu ⋯. Danh sách cuộn dọc,
-     mỗi hàng: ảnh thu nhỏ + tên file + loại (.wal/.wsz). */
-  #skin-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;
-    width:min(340px,calc(100vw - 20px));max-height:min(480px,calc(100vh - 20px));
-    background:#ECE9D8;border:1px solid #ACA899;border-radius:6px;
-    box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;color:#000;
-    display:flex;flex-direction:column;font-family:Verdana,Arial,sans-serif;}
-  .sb-head{display:flex;justify-content:space-between;align-items:center;
-    padding:8px 10px;font-size:13px;font-weight:bold;border-bottom:1px solid #ACA899;}
-  #sb-close{background:none;border:0;font-size:14px;cursor:pointer;color:#000;padding:2px 6px;border-radius:4px;}
-  #sb-close:hover{background:#316AC5;color:#fff;}
-  #sb-search{margin:8px 10px 4px;padding:7px 8px;font-size:13px;border:1px solid #ACA899;
-    border-radius:4px;background:#fff;color:#000;font-family:Verdana,Arial,sans-serif;}
-  .sb-kinds{display:flex;gap:4px;padding:4px 10px 6px;}
-  .sb-kinds button{flex:1;background:#fff;border:1px solid #ACA899;border-radius:4px;
-    padding:6px 2px;font-size:12px;cursor:pointer;color:#000;font-family:Verdana,Arial,sans-serif;}
-  .sb-kinds button.on{background:#316AC5;color:#fff;border-color:#316AC5;}
-  #sb-status{padding:2px 10px 6px;font-size:12px;color:#444;min-height:15px;line-height:1.4;}
-  #sb-list{overflow-y:auto;padding:0 10px 8px;display:flex;flex-direction:column;gap:6px;}
-  .sb-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
-    background:#fff;border:1px solid #ACA899;border-radius:4px;padding:6px;cursor:pointer;
-    font-family:Verdana,Arial,sans-serif;color:#000;}
-  .sb-item:hover{border-color:#316AC5;background:#e8f0fe;}
-  .sb-thumb{flex:0 0 96px;width:96px;height:60px;background:#ddd;color:#666;
-    display:flex;align-items:center;justify-content:center;font-size:11px;overflow:hidden;border-radius:2px;}
-  .sb-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
-  .sb-name{flex:1;font-size:12px;word-break:break-all;line-height:1.3;}
-  .sb-kind{flex:0 0 auto;font-size:11px;color:#666;white-space:nowrap;}
-  .sb-empty{font-size:12px;color:#666;padding:12px 4px;text-align:center;}
-  .sb-foot{padding:0 10px 10px;}
-  .sb-foot button{width:100%;background:#fff;border:1px solid #ACA899;border-radius:4px;
-    padding:8px;font-size:13px;cursor:pointer;color:#000;font-family:Verdana,Arial,sans-serif;}
-  .sb-foot button:hover{background:#316AC5;color:#fff;}
+  /* ĐỢT 5 (03/11): cửa sổ chọn skin từ kho Webamp (#skin-panel +
+     skin-browser.js) ĐÃ GỠ HẲN theo chốt của Hải — chạy trên mạng
+     không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên
+     nên cửa sổ đó vô dụng. Chỉ giữ "Nạp skin .wal/.zip…" chọn file
+     tay làm cách duy nhất để nạp skin. Quy tắc [hidden] còn lại cho
+     #menu-pop và #btn-reopen. */
+  #menu-pop[hidden],#btn-reopen[hidden],#maki-panel[hidden]{display:none;}
+  /* Đợt 7 (03/11): bảng xem MAKI — nền sáng như menu ⋯, giữa màn hình,
+     cuộn trong khi cần; quy tắc [hidden] ở trên (đặt SAU display) để
+     thuộc tính hidden thật sự ẩn panel (bài học panel chọn skin đợt 4). */
+  #maki-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:55;
+    background:#ECE9D8;border:1px solid #ACA899;border-radius:6px;width:min(340px,100vw-24px);
+    max-height:min(440px,100vh-120px);display:flex;flex-direction:column;
+    box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;color:#000;}
+  #maki-head{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;
+    font-size:13px;font-weight:bold;border-bottom:1px solid #ACA899;}
+  #maki-close{background:none;border:0;font-size:14px;cursor:pointer;color:#000;padding:2px 6px;}
+  #maki-body{overflow:auto;padding:8px 10px;font-size:12px;line-height:1.5;}
+  #maki-body table{border-collapse:collapse;width:100%;font-size:11px;}
+  #maki-body th,#maki-body td{border:1px solid #c9c4ae;padding:3px 5px;text-align:left;vertical-align:top;}
+  #maki-body details{margin:6px 0;}
+  #maki-body summary{cursor:pointer;font-weight:bold;}
 </style>
 </head>
 <body>
@@ -131,48 +118,69 @@
 <button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
   <button data-act="skin">Nạp skin .wal/.zip…</button>
-  <button data-act="skins">Chọn skin từ kho…</button>
   <button data-act="localfile">Thêm 1 bài nhạc…</button>
   <button data-act="localdir">Thêm thư mục nhạc…</button>
   <button data-act="zoom1">Zoom: Cỡ gốc 1x</button>
   <button data-act="zoomfit">Zoom: Vừa màn hình</button>
+  <button data-act="xfade">Crossfade: 2s</button>
+  <button data-act="milkdrop">Milkdrop: Tắt</button>
+  <button data-act="maki">Xem script MAKI…</button>
 </div>
-<!-- Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ chọn skin:
-     ẩn mặc định, chỉ mở từ menu ⋯. Nạp danh sách từ GraphQL
-     skins.webamp.org (Modern + Classic), tìm theo tên, bấm 1 skin thì
-     tải .wal/.wsz về rồi nạp qua bootSkin (skin lỗi thì giữ skin cũ).
-     Mạng lỗi thì hiện danh sách mẫu nhúng sẵn + nút chọn file tay. -->
-<div id="skin-panel" hidden>
-  <div class="sb-head"><span>Chọn skin từ kho Webamp</span><button id="sb-close" title="Đóng">✕</button></div>
-  <input id="sb-search" type="search" placeholder="Tìm theo tên skin…" aria-label="Tìm skin theo tên">
-  <div class="sb-kinds">
-    <button data-kind="all" class="on">Tất cả</button>
-    <button data-kind="modern">Modern (.wal)</button>
-    <button data-kind="classic">Classic (.wsz)</button>
-  </div>
-  <div id="sb-status"></div>
-  <div id="sb-list"></div>
-  <div class="sb-foot"><button id="sb-file">Chọn file tay…</button></div>
+<!-- Đợt 7 (03/11, giai đoạn a: chỉ ĐỌC/inspect MAKI, không chạy): bảng xem
+     script MAKI của skin đang nạp — liệt kê file .maki + method ẩn/hiện.
+     Chỉ hiện khi bấm mục "Xem script MAKI…" trong menu ⋯; không thêm
+     chrome thường trực (màn hình vẫn chỉ hiện skin khi đóng panel). -->
+<div id="maki-panel" hidden>
+  <div id="maki-head"><span>Script MAKI (chỉ xem — không chạy)</span><button id="maki-close" title="Đóng" aria-label="Đóng">✕</button></div>
+  <div id="maki-body">Chưa nạp.</div>
 </div>
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.0" là nguồn sự thật, đặt TRƯỚC
-   mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js đọc
-   window.AMP_VERSION lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html
-   kiểm lại ở checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file.
-   Đổi version thì đổi CHỖ NÀY + 4 hằng version trong 4 file JS + ?v= trên
-   4 thẻ script.
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.1" là nguồn sự thật, đặt TRƯỚC
+   mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js /
+   classic.js / milkdrop.js / metadata.js đọc window.AMP_VERSION lúc nạp để tự
+   kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và
+   DỪNG + báo "bản mix" nếu lệch 1 file.
+   Đổi version thì đổi CHỖ NÀY + 8 hằng version trong 8 file JS + ?v=
+   trên 8 thẻ script.
+   Đợt 4 (03/11): thêm milkdrop.js (Milkdrop/butterchurn, file thứ 7) —
+   Đợt 5 (03/11): thêm metadata.js (đọc tag nhạc local, file thứ 8) —
+   nạp TRƯỚC renderer.js để renderer tiêm qua opts.metadata /
+   window.AmpMetadata lúc tạo (như eqf.js); lib music-metadata chỉ
+   nạp lười qua dynamic import() khi thêm file nhạc lần đầu.
+   Đợt 5 (03/11, GỠ chọn skin từ kho): BỎ LUÔN skin-browser.js +
+   panel #skin-panel + mục menu "Chọn skin từ kho…" theo chốt của Hải
+   (chạy trên mạng không nạp trực tiếp skin từ kho vào được mà phải
+   tải về đưa lên nên cửa sổ đó vô dụng; lúc test danh sách trong
+   panel cũng đang trống). Chỉ giữ "Nạp skin .wal/.zip…" chọn file
+   tay làm cách duy nhất để nạp skin. Số file JS còn 8 (đúng số
+   hằng version ở trên).
+   Đợt 6 (03/11: Media Session API + hotkeys — lấy từ mediaSession.ts /
+   hotkeys.ts của fork, gỡ khỏi Redux, nối vào renderer.js): KHÔNG thêm
+   file JS mới, không đổi loader → GIỮ "10.1". Listener phím tắt cũ
+   (chỉ Space, đợt E) thay bằng delegate sang renderer.handleHotkey.
+   KHÔNG đổi loader nên GIỮ "10.1".
+   Đợt 7 (03/11, giai đoạn a: MAKI parser — chỉ ĐỌC/inspect, không chạy):
+   thêm maki.js (MAKI_VERSION 10.1, port parser.ts/MakiFile.ts/constants.ts
+   + bảng GUID/arity từ objectData của fork) + mục menu ⋯ "Xem script
+   MAKI…" + panel #maki-panel (chỉ xem, không chạy). KHÔNG đổi loader →
+   GIỮ "10.1". Số file JS nay là 8. Giai đoạn b (interpreter thật nối vào
+   renderer) để sau — xem README mục Đợt 7.
+   Đợt v10.1 (việc 3: Classic skin parser — CÓ đổi loader nên bump
+   10.0 → 10.1): loader parse thật skin Classic (.wsz) bằng classic.js
+   mới (chuyển từ parser của Webamp fork: viscolor/pledit/region/genex
+   + bảng tọa độ sprite + hình học cửa sổ chính 275×116); renderer vẽ
+   được cửa sổ chính Classic + shade 275×14, nút bấm được (transport/
+   seek/volume/balance/EQ/PL/shade/minimize/close/clutter/about).
    Đợt v10.0: 9.9 → 10.0 (tích hợp Webamp fork đợt 1: winamp-eqf; sửa
    display/beat theo XML; vis AVS kiểu Webamp; zoom/fit + cân dọc; thêm
    nhạc 1 bài/thư mục; viên KBPS/KHZ; kéo resize mượt + tay nắm thấy
    được; Fit tính lại khi mở/đóng/tách/gắn cửa sổ).
    Đợt v10.0 (việc 2: chọn skin từ kho Webamp — skin-browser.js):
-   giữ 10.0 (không đổi loader). Menu ⋯ thêm "Chọn skin từ kho…" mở
-   cửa sổ #skin-panel: danh sách từ GraphQL skins.webamp.org
-   (Modern .wal + Classic .wsz, md5 làm id, CDN r2.webampskins.org),
-   tìm theo tên, bấm skin thì tải về nạp qua bootSkin; mạng lỗi thì
-   danh sách mẫu nhúng sẵn + chọn file tay; cache localStorage 24h.
+   ĐÃ GỠ HẲN ở đợt 5 (03/11, xem ghi chú manifest trên) — không còn
+   panel #skin-panel, không còn menu "Chọn skin từ kho…", chỉ giữ
+   "Nạp skin .wal/.zip…" chọn file tay.
    Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
    Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
    Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
@@ -187,21 +195,24 @@
    isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
    + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
    thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "10.0";
+window.AMP_VERSION = "10.1";
 </script>
-<script src="skin-loader.js?v=10.0"></script>
-<script src="audio.js?v=10.0"></script>
-<script src="eqf.js?v=10.0"></script>
-<script src="skin-browser.js?v=10.0"></script>
-<script src="renderer.js?v=10.0"></script>
+<script src="classic.js?v=10.1"></script>
+<script src="skin-loader.js?v=10.1"></script>
+<script src="audio.js?v=10.1"></script>
+<script src="eqf.js?v=10.1"></script>
+<script src="milkdrop.js?v=10.1"></script>
+<script src="metadata.js?v=10.1"></script>
+<script src="maki.js?v=10.1"></script>
+<script src="renderer.js?v=10.1"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.0" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "10.1" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
-   ngay trước 3 file JS); mỗi file tự đối chiếu manifest lúc nạp
+   ngay trước 6 file JS); mỗi file tự đối chiếu manifest lúc nạp
    (MANIFEST_MISMATCH) để file cũ trên host tự tố mình.
    Đợt G (9.3): shade mode (layout main|shade 354×25), sửa lằn đen menubar
    (meta color-scheme: dark chống Chrome force-dark), tab ngăn kéo ẩn khi
@@ -213,9 +224,16 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.0";
+var VERSION = "10.1";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
+/* Đợt 4 (03/11): crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
+   crossfadeMs: 0 = tắt, mặc định 2000 (2s); milkdropOn: mặc định TẮT
+   (tốn GPU/pin — bật từ menu ⋯ khi cần). */
+var crossfadeMs = 2000;
+var milkdropOn = false, milkdropCtl = null;
+try { var _xf = parseInt(localStorage.getItem("amp9-xfade-ms") || "2000", 10); if (isFinite(_xf) && _xf >= 0 && _xf <= 10000) crossfadeMs = _xf; } catch (e) { /* bỏ qua */ }
+try { milkdropOn = localStorage.getItem("amp9-milkdrop-v1") === "1"; } catch (e) { milkdropOn = false; }
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
 var shadeMode = false; /* đợt G: shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
 var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
@@ -242,22 +260,28 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.1 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
-    + " · skin-browser v" + (window.AmpSkinBrowser ? window.AmpSkinBrowser.BROWSER_VERSION : "?")
+    + " · classic v" + (window.AmpClassic ? window.AmpClassic.CLASSIC_VERSION : "?")
+    + " · milkdrop v" + (window.AmpMilkdrop ? window.AmpMilkdrop.MILKDROP_VERSION : "?")
+    + " · metadata v" + (window.AmpMetadata ? window.AmpMetadata.METADATA_VERSION : "?")
+    + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.0 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.1 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
+  if (!window.AmpClassic || window.AmpClassic.CLASSIC_VERSION !== VERSION) bad.push("classic.js v" + (window.AmpClassic ? window.AmpClassic.CLASSIC_VERSION : "?"));
   if (!window.AmpSkinLoader || window.AmpSkinLoader.LOADER_VERSION !== VERSION) bad.push("skin-loader.js v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?"));
   if (!window.AmpAudio || window.AmpAudio.AUDIO_VERSION !== VERSION) bad.push("audio.js v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?"));
   if (!window.AmpRenderer || window.AmpRenderer.RENDERER_VERSION !== VERSION) bad.push("renderer.js v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?"));
   if (!window.AmpEqf || window.AmpEqf.EQF_VERSION !== VERSION) bad.push("eqf.js v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?"));
-  if (!window.AmpSkinBrowser || window.AmpSkinBrowser.BROWSER_VERSION !== VERSION) bad.push("skin-browser.js v" + (window.AmpSkinBrowser ? window.AmpSkinBrowser.BROWSER_VERSION : "?"));
+  if (!window.AmpMilkdrop || window.AmpMilkdrop.MILKDROP_VERSION !== VERSION) bad.push("milkdrop.js v" + (window.AmpMilkdrop ? window.AmpMilkdrop.MILKDROP_VERSION : "?"));
+  if (!window.AmpMetadata || window.AmpMetadata.METADATA_VERSION !== VERSION) bad.push("metadata.js v" + (window.AmpMetadata ? window.AmpMetadata.METADATA_VERSION : "?"));
+  if (!window.AmpMaki || window.AmpMaki.MAKI_VERSION !== VERSION) bad.push("maki.js v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?"));
   if (window.AmpSkinLoader && window.AmpSkinLoader.LOADER_VERSION !== window.AmpSkinLoader.EXPECTED_LOADER_VERSION) bad.push("loader lệch EXPECTED_LOADER_VERSION");
   /* Đợt F — mỗi file tự đối chiếu với manifest lúc nạp (MANIFEST_MISMATCH):
      file cũ trên host/cache sẽ tự tố mình dù hằng VERSION trong trang đã mới. */
@@ -265,7 +289,10 @@ function checkVersions() {
   if (window.AmpAudio && window.AmpAudio.MANIFEST_MISMATCH) bad.push("audio.js v" + window.AmpAudio.AUDIO_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpRenderer && window.AmpRenderer.MANIFEST_MISMATCH) bad.push("renderer.js v" + window.AmpRenderer.RENDERER_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpEqf && window.AmpEqf.MANIFEST_MISMATCH) bad.push("eqf.js v" + window.AmpEqf.EQF_VERSION + " (manifest v" + VERSION + ")");
-  if (window.AmpSkinBrowser && window.AmpSkinBrowser.MANIFEST_MISMATCH) bad.push("skin-browser.js v" + window.AmpSkinBrowser.BROWSER_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpClassic && window.AmpClassic.MANIFEST_MISMATCH) bad.push("classic.js v" + window.AmpClassic.CLASSIC_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpMilkdrop && window.AmpMilkdrop.MANIFEST_MISMATCH) bad.push("milkdrop.js v" + window.AmpMilkdrop.MILKDROP_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpMetadata && window.AmpMetadata.MANIFEST_MISMATCH) bad.push("metadata.js v" + window.AmpMetadata.METADATA_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpMaki && window.AmpMaki.MANIFEST_MISMATCH) bad.push("maki.js v" + window.AmpMaki.MAKI_VERSION + " (manifest v" + VERSION + ")");
   if (bad.length) {
     setStatus("BẢN MIX — version lệch, dừng lại: " + bad.join(" + ") + " (cần v" + VERSION + " ở mọi file)", true);
     return false;
@@ -350,6 +377,83 @@ function setZoom(mode) {
     if (z1) z1.classList.toggle("on", mode === "1");
     if (zf) zf.classList.toggle("on", mode === "fit");
   }
+  /* Đợt 4: nhãn crossfade/Milkdrop chỉ cập nhật khi MỞ menu (toggleMenu
+     gọi markMenuChecks) — không gọi ở đây để setZoom trích độc lập được
+     cho test (zoom-fit-test eval riêng hàm này). */
+}
+/* Đợt 4 (03/11) — mục Crossfade + Milkdrop trong menu ⋯. */
+function xfadeLabel(ms) { return ms <= 0 ? "Tắt" : (ms / 1000) + "s"; }
+function markMenuChecks() {
+  if (!menuPop) return;
+  var xf = menuPop.querySelector('[data-act="xfade"]');
+  if (xf) { xf.textContent = "Crossfade: " + xfadeLabel(crossfadeMs); xf.classList.toggle("on", crossfadeMs > 0); }
+  var md = menuPop.querySelector('[data-act="milkdrop"]');
+  if (md) { md.textContent = "Milkdrop: " + (milkdropOn ? "Bật" : "Tắt"); md.classList.toggle("on", milkdropOn); }
+}
+function cycleCrossfade() {
+  var steps = [0, 1000, 2000, 4000];
+  var i = steps.indexOf(crossfadeMs);
+  crossfadeMs = steps[(i + 1) % steps.length];
+  if (audioEngine && audioEngine.setCrossfade) audioEngine.setCrossfade(crossfadeMs);
+  try { localStorage.setItem("amp9-xfade-ms", String(crossfadeMs)); } catch (e) { /* bỏ qua */ }
+  markMenuChecks();
+  if (window.console && console.info) console.info("[Amp] Crossfade: " + xfadeLabel(crossfadeMs));
+}
+function ensureMilkdropCtl() {
+  if (milkdropCtl) return milkdropCtl;
+  if (!window.AmpMilkdrop) return null;
+  milkdropCtl = window.AmpMilkdrop.createMilkdrop({
+    document: document, window: window,
+    getAudioContext: function () { try { var g = audioEngine ? audioEngine._graph() : null; return g ? g.ctx : null; } catch (e) { return null; } },
+    getAnalyser: function () { try { var g = audioEngine ? audioEngine._graph() : null; return g ? g.analyser : null; } catch (e) { return null; } },
+    onStatus: function (msg) { if (window.console && console.info) console.info("[Amp] " + msg); }
+  });
+  return milkdropCtl;
+}
+/* Đồng bộ Milkdrop với trạng thái AVS sau mỗi lần render: chỉ chạy vòng
+   render khi AVS đang mở ở chế độ vis; cỡ canvas theo hộp AVS hiện tại. */
+function syncMilkdrop() {
+  if (!milkdropCtl || !milkdropOn || !renderer) return;
+  try {
+    var st = renderer.getAvsState ? renderer.getAvsState() : null;
+    milkdropCtl.setVisible(!!(st && st.open && st.mode === "vis"));
+    milkdropCtl.syncSizeFromWrap();
+    milkdropCtl.ensureReady();
+  } catch (e) { /* bỏ qua */ }
+}
+async function toggleMilkdrop() {
+  if (milkdropOn) {
+    milkdropOn = false;
+    try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e) { /* bỏ qua */ }
+    if (milkdropCtl) milkdropCtl.disable();
+    if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
+    markMenuChecks();
+    return false;
+  }
+  var ctl = ensureMilkdropCtl();
+  if (!ctl) { setStatus("Không nạp được milkdrop.js.", true); return false; }
+  if (audioEngine && audioEngine.ensureGraph) audioEngine.ensureGraph(); /* cần AudioContext trước */
+  var wrap = null;
+  try { wrap = renderer ? renderer.getAvsMedia().wrap : null; } catch (e) { wrap = null; }
+  if (!wrap) { setStatus("Chưa có cửa sổ AVS để gắn Milkdrop.", true); return false; }
+  var canvas = ctl.attachTo(wrap);
+  if (renderer && renderer.setMilkdropCanvas) renderer.setMilkdropCanvas(canvas);
+  try {
+    await ctl.enable();
+  } catch (e) {
+    milkdropOn = false;
+    try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e2) { /* bỏ qua */ }
+    if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
+    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vis AVS thường ở lại.", true);
+    markMenuChecks();
+    return false;
+  }
+  milkdropOn = true;
+  try { localStorage.setItem("amp9-milkdrop-v1", "1"); } catch (e) { /* bỏ qua */ }
+  if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(true);
+  syncMilkdrop();
+  markMenuChecks();
+  return true;
 }
 /* Đợt B (9.9) — "Animate Video/Vis Drawer" tắt thì AVS mở/đóng TỨC THÌ
    (không trượt theo transition height 250ms của .stage/#stage-wrap).
@@ -388,6 +492,7 @@ async function renderCurrent() {
   }
   setZoom(zoom);
   checkDrawer();
+  syncMilkdrop(); /* Đợt 4: Milkdrop theo trạng thái AVS sau mỗi render */
   } finally {
     prevAvsOpenAnim = avsNow; prevDrawerOpenAnim = drawerOpen;
     if (instantAvs) setTimeout(function () { stage.style.transition = ""; stageWrap.style.transition = ""; }, 60);
@@ -524,6 +629,12 @@ async function bootSkin(file, name) {
     var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
     SKIN = loaded.skin; RES = loaded.resolve;
     renderer = window.AmpRenderer.createRenderer(RES, document, {
+      /* Đợt v10.1 (Classic): truyền tường minh lib classic.js để renderer
+         vẽ cửa sổ chính .wsz (không dựa vào fallback globalThis). */
+      Classic: window.AmpClassic || null,
+      /* Đợt 5 (03/11: metadata nhạc): truyền tường minh lib metadata.js
+         để renderer đọc tag file local (không dựa vào fallback global). */
+      metadata: window.AmpMetadata || null,
       /* Đợt G — onRerender TRẢ VỀ promise của renderCurrent để
          toggleDrawerAnimated chờ vẽ xong mới bắt đầu trượt. */
       onRerender: function () { return renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
@@ -560,6 +671,9 @@ async function bootSkin(file, name) {
       /* Đợt D (9.9) — Preferences "Zoom": 1x / Vừa màn hình (giống
          menu ⋯; chỉ 2 chế độ này, theo chốt 3/11). */
       onZoom: function (mode) { setZoom(mode); },
+      /* Đợt v10.1 — nút D trên clutter bar Classic cần biết zoom hiện
+         tại để đổi 1x/fit + sáng đèn khi đang fit. */
+      isZoomFit: function () { return zoom === "fit"; },
       /* Đợt D (9.9) — Preferences / menu Options "Thu gọn (Shade)":
          đọc trạng thái shade hiện tại để đánh dấu ✓ và đảo trạng thái. */
       isShadeMode: function () { return shadeMode; },
@@ -614,10 +728,12 @@ async function bootSkin(file, name) {
         onTimeUpdate: function (t, dur, seekable) { renderer.onAudioTimeUpdate(t, dur, seekable); },
         onEnded: function () { renderer.onAudioEnded(); },
         onError: function (info) { renderer.onAudioError(info); },
-        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* đợt F: phát/dừng thì chạy lại self-check tiếng */ },
+        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* đợt F: phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } },
         onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
       });
       renderer.setAudioEngine(audioEngine);
+      /* Đợt 4: áp thời gian crossfade đã lưu (mặc định 2s). */
+      if (audioEngine.setCrossfade) audioEngine.setCrossfade(crossfadeMs);
     }
     /* Đợt D — restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
     try {
@@ -691,10 +807,15 @@ async function bootSkin(file, name) {
     if (window.console && console.info) console.info("[Amp]\n" + lines.join("\n"));
     logVersion("skin: " + (SKIN.name || name));
     setZoom(zoom);
+    /* Đợt 4: khôi phục Milkdrop đã bật ở lần trước (nạp lib lazy). */
+    if (milkdropOn) { toggleMilkdrop(); }
     if (RES.kind === "classic") {
-      setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — skin Classic không có vùng AVS nhúng và cửa sổ chính chưa vẽ được ở v9; mở Video / Hiệu ứng (Vis) từ menu View trong skin để mở cửa sổ rời (đợt E đã phát tiếng qua chuỗi EQ).");
+      var cs = renderer.getClassicMainState ? renderer.getClassicMainState() : null;
+      setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — cửa sổ chính Classic "
+        + (cs ? cs.w + "×" + cs.h + " (" + cs.sheets.length + " sheet BMP)" : "đã vẽ")
+        + "; nút EQ mở/đóng ngăn kéo, nút PL đổi trạng thái playlist (cửa sổ Playlist/EQ Classic riêng chưa vẽ — đợt sau). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT.");
     } else {
-      setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
+      setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause; thêm phím tắt ở menu Help → Hướng dẫn nhanh). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
     }
   } catch (e) {
     /* Đợt C — khôi phục skin cũ đang chạy (nếu có). Chưa từng nạp skin nào
@@ -725,7 +846,7 @@ function wireMenu() {
   function toggleMenu() {
     if (!menuPop) return;
     menuPop.hidden = !menuPop.hidden;
-    if (!menuPop.hidden) setZoom(zoom); /* cập nhật dấu ✓ zoom hiện tại */
+    if (!menuPop.hidden) { setZoom(zoom); markMenuChecks(); /* cập nhật dấu ✓ + nhãn crossfade/Milkdrop */ }
   }
   if (btnMenu) btnMenu.addEventListener("click", function (e) {
     if (e.stopPropagation) e.stopPropagation();
@@ -749,7 +870,6 @@ function wireMenu() {
     if (!t) return;
     var act = t.getAttribute("data-act");
     if (act === "skin") { fileInput.click(); }
-    else if (act === "skins") { openSkinBrowser(); }
     else if (act === "localfile") {
       if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
       renderer.openLocalFilePicker();
@@ -760,16 +880,37 @@ function wireMenu() {
     }
     else if (act === "zoom1") { setZoom("1"); }
     else if (act === "zoomfit") { setZoom("fit"); }
+    else if (act === "xfade") { cycleCrossfade(); }
+    else if (act === "milkdrop") { toggleMilkdrop(); }
+    else if (act === "maki") { openMakiPanel(); }
     closeMenu();
   });
-  /* Đợt E — phím Space: Play/Pause khi focus không nằm trong ô nhập. */
+  /* Đợt 7 (03/11) — đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.
+     Bỏ qua cú chạm mở panel trong 250ms (cú chạm mở nổi bọt lên document
+     SAU khi open() chạy — bài học panel chọn skin đợt 4). */
+  var makiCloseBtn = document.getElementById("maki-close");
+  if (makiCloseBtn) makiCloseBtn.addEventListener("click", function (e) {
+    if (e.stopPropagation) e.stopPropagation();
+    closeMakiPanel();
+  });
+  document.addEventListener("click", function (e) {
+    if (!makiPanel || makiPanel.hidden) return;
+    if (Date.now() - makiOpenedAt < 250) return;
+    if (makiPanel.contains && makiPanel.contains(e.target)) return;
+    if (e.target === btnMenu || (menuPop && menuPop.contains && menuPop.contains(e.target))) return;
+    closeMakiPanel();
+  });
   document.addEventListener("keydown", function (e) {
-    if (!renderer) return;
-    if (e.code !== "Space" && e.key !== " ") return;
-    var tag = (e.target && e.target.tagName) || "";
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if (e.preventDefault) e.preventDefault();
-    renderer.togglePlay();
+    if (e.key === "Escape") closeMakiPanel();
+  });
+  /* Đợt 6 (03/11) — phím tắt: renderer.handleHotkey nhận mọi phím
+     (Space, mũi tên, N/P, M, L, S, X/C/V…), tự bỏ qua khi focus trong
+     ô nhập hoặc bấm kèm Ctrl/Alt/Meta, tự preventDefault khi đã xử lý.
+     Đăng ký 1 lần ở đây (như phím Space đợt E) để đổi skin không đăng
+     ký trùng — handler đọc biến renderer hiện tại. */
+  document.addEventListener("keydown", function (e) {
+    if (!renderer || !renderer.handleHotkey) return;
+    try { renderer.handleHotkey(e); } catch (err) { /* phím tắt lỗi thì thôi, không vỡ trang */ }
   });
   fileInput.addEventListener("change", function () {
     if (fileInput.files.length) bootSkin(fileInput.files[0], fileInput.files[0].name);
@@ -785,30 +926,97 @@ function wireMenu() {
   });
 }
 wireMenu();
-/* Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ #skin-panel:
-   mở từ menu ⋯ ("Chọn skin từ kho…"). wireSkinPanel gắn 1 lần rồi giữ
-   controller; bấm 1 skin thì tải .wal/.wsz về (fetchSkinFile) rồi nạp
-   qua bootSkin đã có (skin lỗi thì bootSkin giữ skin cũ + báo đỏ).
-   Không có module skin-browser (file thiếu) thì về chọn file tay. */
-var skinBrowser = null;
-function openSkinBrowser() {
-  if (!window.AmpSkinBrowser) { fileInput.click(); return; }
-  if (!skinBrowser) {
-    skinBrowser = window.AmpSkinBrowser.wireSkinPanel(document, {
-      fetchImpl: function (u, o) { return fetch(u, o); },
-      storage: window.localStorage,
-      onSelectSkin: function (skin) {
-        return window.AmpSkinBrowser.fetchSkinFile(skin).then(function (buf) {
-          return bootSkin(buf, skin.filename);
-        });
-      },
-      onPickFile: function () { fileInput.click(); },
-      onError: function (msg) { setStatus(msg, true); }
-    });
-  }
-  if (skinBrowser) skinBrowser.open();
-  else fileInput.click();
+/* Đợt 7 (03/11, giai đoạn a) — bảng "Xem script MAKI…": CHỈ XEM, không
+   chạy code MAKI. Đọc file .maki của skin đang nạp từ zip (RES.zip do
+   loader giữ), parse + inspect bằng window.AmpMaki rồi vẽ bảng tóm tắt:
+   mỗi file 1 dòng (lệnh/call/binding/ẩn-hiện/gán text) + <details> mở
+   rộng xem binding, method gọi nhiều, 20 sự kiện ẩn/hiện đầu. Skin
+   Classic (.wsz) thường không có .maki thì báo rõ "không có file .maki".
+   Panel đóng bằng nút ✕ / chạm ngoài / Esc (quy tắc [hidden] đã sửa
+   theo bài học panel chọn skin đợt 4 — CSS #maki-panel[hidden] đặt sau
+   display nên hidden thật sự ẩn panel). */
+var makiPanel = null, makiBody = null, makiOpenedAt = 0;
+function makiPanelEls() {
+  if (!makiPanel) makiPanel = document.getElementById("maki-panel");
+  if (!makiBody) makiBody = document.getElementById("maki-body");
+  return !!(makiPanel && makiBody);
 }
+function closeMakiPanel() { if (makiPanel) makiPanel.hidden = true; }
+function makiTextEl(tag, text) {
+  var el = document.createElement(tag);
+  el.textContent = text;
+  return el;
+}
+async function openMakiPanel() {
+  if (!makiPanelEls()) { setStatus("Không tìm thấy bảng MAKI.", true); return; }
+  makiPanel.hidden = false;
+  makiOpenedAt = Date.now();
+  makiBody.textContent = "Đang đọc script MAKI…";
+  if (!window.AmpMaki) { makiBody.textContent = "Không nạp được maki.js."; return; }
+  var zip = (RES && RES.zip) ? RES.zip : null;
+  if (!zip) { makiBody.textContent = "Skin đang nạp không giữ file zip (không đọc được .maki)."; return; }
+  var names = Object.keys(zip.files || {}).filter(function (n) { return /\.maki$/i.test(n) && !(zip.files[n] && zip.files[n].dir); }).sort();
+  if (!names.length) { makiBody.textContent = "Skin này không có file .maki (skin Classic .wsz thường không có script MAKI)."; return; }
+  try {
+    var files = [];
+    for (var i = 0; i < names.length; i++) {
+      var data = await zip.files[names[i]].async("uint8array");
+      files.push({ name: names[i].split("/").pop(), data: data });
+    }
+    var skin = window.AmpMaki.inspectSkinFiles(files);
+    while (makiBody.firstChild) makiBody.removeChild(makiBody.firstChild);
+    var t = skin.totals;
+    makiBody.appendChild(makiTextEl("div", "Skin " + (SKIN && SKIN.name ? SKIN.name : "") + ": " + t.files + " file .maki · "
+      + t.commands + " lệnh · " + t.calls + " call · " + t.bindings + " binding · "
+      + t.visibility + " ẩn/hiện · " + t.textSets + " gán text"
+      + (t.errors ? " · LỖI " + t.errors + " file" : "")
+      + (t.unknownArity ? " · " + t.unknownArity + " call không rõ số đối số" : "")));
+    makiBody.appendChild(makiTextEl("div", "Chỉ xem — không chạy code MAKI. Báo cáo đầy đủ: maki-566-report.md (skin 566)."));
+    var table = document.createElement("table");
+    var head = document.createElement("tr");
+    ["File", "Call", "Binding", "Ẩn/hiện", "Gán text"].forEach(function (h) { head.appendChild(makiTextEl("th", h)); });
+    table.appendChild(head);
+    skin.results.forEach(function (r) {
+      var tr = document.createElement("tr");
+      if (r.error) {
+        tr.appendChild(makiTextEl("td", r.name + " — LỖI: " + r.error));
+        ["", "", "", ""].forEach(function () { tr.appendChild(makiTextEl("td", "")); });
+      } else {
+        var s = r.inspect.stats;
+        tr.appendChild(makiTextEl("td", r.name));
+        tr.appendChild(makiTextEl("td", String(s.calls)));
+        tr.appendChild(makiTextEl("td", String(s.bindings)));
+        tr.appendChild(makiTextEl("td", String(r.inspect.visibility.length)));
+        tr.appendChild(makiTextEl("td", String(r.inspect.textSets.length)));
+      }
+      table.appendChild(tr);
+    });
+    makiBody.appendChild(table);
+    skin.results.forEach(function (r) {
+      if (r.error || !r.inspect) return;
+      var det = document.createElement("details");
+      det.appendChild(makiTextEl("summary", r.name + " — chi tiết"));
+      det.appendChild(makiTextEl("div", "Binding: " + r.inspect.bindings.map(function (b) {
+        return b.method + (b.variableDesc ? " trên " + b.variableDesc : " (var#" + b.variableOffset + ")");
+      }).join(", ")));
+      var top = Object.keys(r.inspect.callsByMethod).map(function (k) { return [k, r.inspect.callsByMethod[k]]; })
+        .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8);
+      det.appendChild(makiTextEl("div", "Method gọi nhiều: " + top.map(function (kv) { return kv[0] + "×" + kv[1]; }).join(", ")));
+      r.inspect.visibility.slice(0, 20).forEach(function (e) {
+        det.appendChild(makiTextEl("div", e.className + "." + e.method + " → " + e.target + (e.args.length ? " (" + e.args.join(", ") + ")" : "")));
+      });
+      if (r.inspect.visibility.length > 20) det.appendChild(makiTextEl("div", "…còn " + (r.inspect.visibility.length - 20) + " sự kiện ẩn/hiện nữa (xem báo cáo .md)."));
+      makiBody.appendChild(det);
+    });
+  } catch (e) {
+    makiBody.textContent = "Không đọc được script MAKI: " + (e && e.message ? e.message : e);
+  }
+}
+/* Đợt 5 (03/11): openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
+   ghi chú manifest trên) — nạp skin chỉ còn file tay (menu ⋯
+   "Nạp skin .wal/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
+   Panel MAKI ở trên (#maki-panel) là panel XEM script, không phải panel
+   chọn skin — đừng nhầm 2 panel này. */
 if (checkVersions()) {
   logVersion("");
   (async function () {
