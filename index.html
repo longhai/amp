@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.5 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.6 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -156,7 +156,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.5" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.6" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -165,24 +165,26 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.5";
+window.AMP_VERSION = "10.6";
 </script>
-<script src="classic.js?v=10.5"></script>
-<script src="skin-loader.js?v=10.5"></script>
-<script src="audio.js?v=10.5"></script>
-<script src="eqf.js?v=10.5"></script>
-<!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn KHÔNG có
-     thẻ <script src> ở đây: loader nạp ĐỘNG từ CDN jsDelivr khi bật
-     Milkdrop lần đầu (lazy) — xem 3 link ở ĐẦU milkdrop.js
-     (BUTTERCHURN_CDN / PRESETS_CDN / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.5"></script>
-<script src="metadata.js?v=10.5"></script>
-<script src="maki.js?v=10.5"></script>
-<script src="renderer.js?v=10.5"></script>
+<script src="classic.js?v=10.6"></script>
+<script src="skin-loader.js?v=10.6"></script>
+<script src="audio.js?v=10.6"></script>
+<script src="eqf.js?v=10.6"></script>
+<!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
+     GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
+     cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
+     (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
+     milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
+     / PRESETS_* / DEFAULT_PRESET_URL). -->
+<script src="milkdrop.js?v=10.6"></script>
+<script src="metadata.js?v=10.6"></script>
+<script src="maki.js?v=10.6"></script>
+<script src="renderer.js?v=10.6"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.5" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.6" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -194,7 +196,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.5";
+var VERSION = "10.6";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
@@ -230,7 +232,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.5 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.6 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -240,7 +242,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.5 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.6 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];

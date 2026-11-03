@@ -33,8 +33,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MILKDROP_VERSION = "10.5";
-  var EXPECTED_MILKDROP_VERSION = "10.5";
+  var MILKDROP_VERSION = "10.6";
+  var EXPECTED_MILKDROP_VERSION = "10.6";
   if (MILKDROP_VERSION !== EXPECTED_MILKDROP_VERSION) {
     throw new Error("milkdrop.js: MILKDROP_VERSION (" + MILKDROP_VERSION + ") khac EXPECTED_MILKDROP_VERSION (" + EXPECTED_MILKDROP_VERSION + ") — ban mix, dung lai");
   }
@@ -50,17 +50,47 @@
   })();
   var MANIFEST_MISMATCH = MANIFEST_VERSION !== null && MANIFEST_VERSION !== MILKDROP_VERSION;
 
-  /* ===== LINK THƯ VIỆN MILKDROP (CDN jsDelivr) — nạp động lúc chạy =====
-     Không có thẻ <script src> trong index.html: loader tạo thẻ script
-     động (defaultLoadScript) khi bật Milkdrop lần đầu (lazy, xem
-     ensureLibs). Lib KHÔNG đóng gói vào zip. Đã kiểm sống 03/11 (HTTP 200,
-     UMD thật: window.butterchurn / window.butterchurnPresets).
-     Preset mặc định: URL trước, lỗi thì tra kho preset đã nạp, lỗi nữa thì
-     preset nhúng sẵn FALLBACK_PRESET (đúng file JSON ở URL dưới, 3824 byte
-     minified). CHỈ fallback preset, KHÔNG fallback lib: CDN lib chết thì
-     Milkdrop không chạy được, vis AVS thường ở lại. */
+  /* ===== LINK THƯ VIỆN MILKDROP — BUNDLE LOCAL TRƯỚC, CDN DỰ PHÒNG (v10.6) =====
+     Thư viện ĐÓNG GÓI VÀO ZIP, cùng thư mục với index.html (không có thẻ
+     <script src> trong index.html: loader tạo thẻ script động khi bật
+     Milkdrop lần đầu — lazy, xem ensureLibs):
+       butterchurn.min.js         192.520 byte (butterchurn@2.6.7, UMD)
+       butterchurnPresets.min.js  653.572 byte (butterchurn-presets@2.4.7, UMD, 100 preset)
+     Tổng +846.092 byte (gzip ~163 KB); zip v10.5 938.139 byte -> ước
+     ~1,1–1,8 MB (tùy nén), dưới ngưỡng ~3 MB nên đóng gói CẢ HAI file
+     nguyên vẹn (không cần bản presets gọn). Tải + kiểm sống 04/11
+     (jsDelivr 200, đủ byte).
+     Thứ tự nạp mỗi lib: LOCAL -> jsDelivr -> unpkg (cả 2 CDN đã curl
+     kiểm sống 04/11, cùng kích thước file local). cdnjs KHÔNG có trong
+     chuỗi: https://cdnjs.cloudflare.com/ajax/libs/butterchurn/2.6.7/
+     butterchurn.min.js trả 404 (kiểm 04/11). statically.io cũng KHÔNG
+     dùng (stall 30s). Mỗi lần thử có TIMEOUT 15s
+     (LOAD_SCRIPT_TIMEOUT_MS): script treo không onload/onerror thì coi
+     như lỗi, thử nguồn tiếp theo; lỗi cuối cùng liệt kê đủ các nguồn
+     đã thử thay vì 1 câu chung chung.
+     BẪY UMD (phát hiện 04/11, kiểm bằng vm trên đúng file sẽ giao):
+     nạp <script> thường thì window.butterchurn = {default: Butterchurn}
+     — createVisualizer là static method của CLASS trong .default, còn
+     window.butterchurn.createVisualizer thì undefined. Bundler (Webamp)
+     tự unwrap .default qua interop nên gọi thẳng được, còn nạp script
+     thường thì KHÔNG — phải unwrap tay (xem resolveButterchurn). Đây
+     mới là nguyên nhân thật của lỗi "chua nap duoc thu vien butterchurn
+     (CDN)" trên máy thật: lib có thể đã nạp xong nhưng ensureVisualizer
+     kiểm bc.createVisualizer nên vẫn báo thiếu lib.
+     window.butterchurnPresets thì KHÔNG bị bẫy này (nó là function
+     có sẵn .getPresets).
+     Preset mặc định: tra KHO PRESET ĐÃ NẠP (local) trước, lỗi thì fetch
+     DEFAULT_PRESET_URL (CDN), lỗi nữa thì preset nhúng sẵn FALLBACK_PRESET
+     (đúng file JSON ở URL dưới, 3824 byte minified). */
+  var BUTTERCHURN_LOCAL = "butterchurn.min.js";
+  var PRESETS_LOCAL = "butterchurnPresets.min.js";
   var BUTTERCHURN_CDN = "https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js";
   var PRESETS_CDN = "https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js";
+  var BUTTERCHURN_UNPKG = "https://unpkg.com/butterchurn@2.6.7/lib/butterchurn.min.js";
+  var PRESETS_UNPKG = "https://unpkg.com/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js";
+  var BUTTERCHURN_SOURCES = [BUTTERCHURN_LOCAL, BUTTERCHURN_CDN, BUTTERCHURN_UNPKG];
+  var PRESETS_SOURCES = [PRESETS_LOCAL, PRESETS_CDN, PRESETS_UNPKG];
+  var LOAD_SCRIPT_TIMEOUT_MS = 15000;
   var DEFAULT_PRESET_NAME = "Zylot - Star Ornament";
   var DEFAULT_PRESET_URL = "https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/presets/converted/Zylot%20-%20Star%20Ornament.json";
   /* Preset mặc định nhúng sẵn (đúng file JSON ở URL trên). Dùng khi fetch
@@ -112,12 +142,24 @@
       return new Promise(function (resolve, reject) {
         if (!doc || !doc.createElement) { reject(new Error("milkdrop: khong co document de nap script")); return; }
         var s = doc.createElement("script");
+        var done = false, timer = null;
+        function cleanup() { if (timer) { try { clearTimeout(timer); } catch (e) { /* bỏ qua */ } timer = null; } }
+        function fail(err) {
+          if (done) return; done = true; cleanup();
+          try { if (s.parentNode) s.parentNode.removeChild(s); } catch (e) { /* bỏ qua */ }
+          reject(err);
+        }
         s.src = src;
-        s.onload = function () { resolve(); };
-        s.onerror = function () { reject(new Error("milkdrop: khong tai duoc " + src + " (can mang)")); };
+        s.onload = function () { if (done) return; done = true; cleanup(); resolve(); };
+        s.onerror = function () { fail(new Error("milkdrop: khong tai duoc " + src + " (can mang)")); };
+        /* v10.6 — TIMEOUT: script treo (khong onload/onerror) thi coi nhu
+           loi sau 15s, go the de the tai sau (nguon fallback) khong bi
+           the cu chan; loadWithTimeout cung race them 1 lop nua cho
+           loadScriptImpl test inject. */
+        timer = setTimeout(function () { fail(new Error("milkdrop: het thoi gian " + (LOAD_SCRIPT_TIMEOUT_MS / 1000) + "s khi tai " + src + " (treo, khong onload/onerror)")); }, LOAD_SCRIPT_TIMEOUT_MS);
         var parent = null;
         try { parent = doc.head || (doc.getElementsByTagName && doc.getElementsByTagName("head")[0]) || doc.documentElement; } catch (e) { parent = null; }
-        if (!parent || !parent.appendChild) { reject(new Error("milkdrop: khong co head de gan script")); return; }
+        if (!parent || !parent.appendChild) { fail(new Error("milkdrop: khong co head de gan script")); return; }
         parent.appendChild(s);
       });
     }
@@ -174,23 +216,79 @@
       sampleAnalyser = sa;
       return sa;
     }
-    /* Nạp 2 lib UMD qua thẻ <script> lúc chạy (lazy — chỉ khi bật). */
+    /* v10.6 — BÓC .default CỦA UMD butterchurn (xem ghi chú LINK ở đầu
+       file): nạp <script> thường thì window.butterchurn = {default: class},
+       còn bundler thì bóc sẵn. Helper này chấp nhận cả 2 dạng: có
+       .default.createVisualizer thì trả .default, không thì trả global
+       như cũ (mock test / lib doi dang van chay). */
+    function resolveButterchurn() {
+      var bc = win && win.butterchurn;
+      if (bc && bc.default && typeof bc.default.createVisualizer === "function") return bc.default;
+      return bc || null;
+    }
+    /* Lib đã sẵn sàng THẬT chưa (không chỉ global truthy): butterchurn
+       phải có createVisualizer (sau khi bóc .default), presets phải có
+       getPresets. Kiểm này bắt được cả trường hợp script nạp xong nhưng
+       global rỗng/sai dạng — lỗi cũ chỉ kiểm truthy nên lọt. */
+    function libReady(which) {
+      if (which === "butterchurn") {
+        var bc = resolveButterchurn();
+        return !!(bc && bc.createVisualizer);
+      }
+      var ps = win && win.butterchurnPresets;
+      return !!(ps && ps.getPresets);
+    }
+    /* Nạp 1 script với TIMEOUT: treo không onload/onerror thì coi như lỗi
+       (áp cho cả defaultLoadScript lẫn loadScriptImpl test inject). */
+    function loadWithTimeout(src) {
+      var loader = loadScriptImpl || defaultLoadScript;
+      var p = null;
+      try { p = loader(src); } catch (e) { return Promise.reject(e); }
+      if (!p || typeof p.then !== "function") p = Promise.resolve(p);
+      return Promise.race([p, new Promise(function (_, reject) {
+        setTimeout(function () { reject(new Error("milkdrop: het thoi gian " + (LOAD_SCRIPT_TIMEOUT_MS / 1000) + "s khi tai " + src)); }, LOAD_SCRIPT_TIMEOUT_MS);
+      })]);
+    }
+    /* Thử lần lượt từng nguồn trong danh sách cho tới khi lib sẵn sàng
+       thật (nạp xong + đúng API). Hết danh sách thì lỗi liệt kê đủ các
+       nguồn đã thử. Dùng .then(ok, err) 2 đối số — KHÔNG dùng
+       .then().catch(): catch sẽ bắt cả lỗi reject từ attempt(i+1) đệ
+       quy rồi chạy lại attempt(i+1) lần nữa, thành thử trùng nguồn
+       (vd .default rỗng: unpkg bị thử 4 lần, lỗi liệt kê trùng). */
+    function loadFirstAvailable(sources, label, which) {
+      var tried = [];
+      function attempt(i) {
+        if (i >= sources.length) {
+          return Promise.reject(new Error("milkdrop: khong nap duoc " + label + " — da thu " + tried.join(" + ") + ", deu loi (kiem tra mang / file local)"));
+        }
+        var src = sources[i];
+        tried.push(src);
+        return loadWithTimeout(src).then(function () {
+          if (libReady(which)) return src;
+          return attempt(i + 1);
+        }, function () { return attempt(i + 1); });
+      }
+      return attempt(0);
+    }
+    /* Nạp 2 lib UMD qua thẻ <script> lúc chạy (lazy — chỉ khi bật).
+       v10.6: LOCAL trước (bundle trong zip, không cần mạng), lỗi thì
+       fallback CDN jsDelivr -> unpkg (xem BUTTERCHURN_SOURCES /
+       PRESETS_SOURCES). */
     function ensureLibs() {
       if (state.libsLoaded) return Promise.resolve(true);
       if (libPromise) return libPromise;
-      if (win && win.butterchurn && win.butterchurnPresets) {
+      if (libReady("butterchurn") && libReady("presets")) {
         state.libsLoaded = true;
         return Promise.resolve(true);
       }
-      var load = loadScriptImpl || defaultLoadScript;
-      libPromise = load(BUTTERCHURN_CDN).then(function () {
-        return load(PRESETS_CDN);
+      libPromise = loadFirstAvailable(BUTTERCHURN_SOURCES, "butterchurn", "butterchurn").then(function () {
+        return loadFirstAvailable(PRESETS_SOURCES, "butterchurnPresets", "presets");
       }).then(function () {
-        if (win && win.butterchurn && win.butterchurnPresets) {
+        if (libReady("butterchurn") && libReady("presets")) {
           state.libsLoaded = true;
           return true;
         }
-        throw new Error("milkdrop: nap xong nhung khong co window.butterchurn");
+        throw new Error("milkdrop: nap xong nhung khong co window.butterchurn/window.butterchurnPresets (dung API)");
       }).catch(function (e) {
         state.libsFailed = true;
         state.error = e && e.message ? e.message : String(e);
@@ -225,9 +323,9 @@
         state.error = "milkdrop: chua co AudioContext (engine chua khoi tao xong — thu tat roi bat lai Milkdrop)";
         return null;
       }
-      var bc = win && win.butterchurn;
+      var bc = resolveButterchurn(); /* v10.6: boc .default (xem LINK o dau file) */
       if (!bc || !bc.createVisualizer) {
-        state.error = "milkdrop: chua nap duoc thu vien butterchurn (CDN) — kiem tra mang roi tat/bat lai Milkdrop";
+        state.error = "milkdrop: chua nap duoc thu vien butterchurn (da thu local + jsDelivr + unpkg) — kiem tra mang roi tat/bat lai Milkdrop";
         return null;
       }
       var w = canvas.width || 342, h = canvas.height || 150;
@@ -295,14 +393,15 @@
       }
       return Promise.reject(new Error("milkdrop: preset khong hop le"));
     }
-    /* Preset mặc định: URL trước (link trực tiếp trên mạng), lỗi thì tra
-       kho preset đã nạp, lỗi nữa thì preset object nhúng sẵn. */
+    /* Preset mặc định (v10.6 — đổi thứ tự so với trước): tra KHO PRESET
+       ĐÃ NẠP (local, 100 preset trong butterchurnPresets.min.js — không
+       cần mạng) trước, lỗi thì fetch URL, lỗi nữa thì preset nhúng sẵn. */
     function loadDefaultPreset() {
-      return resolvePreset({ butterchurnPresetUrl: DEFAULT_PRESET_URL }).then(function (p) {
-        state.presetSource = "url"; state.presetName = DEFAULT_PRESET_NAME; return p;
+      return resolvePreset({ name: DEFAULT_PRESET_NAME }).then(function (p) {
+        state.presetSource = "library"; state.presetName = DEFAULT_PRESET_NAME; return p;
       }).catch(function () {
-        return resolvePreset({ name: DEFAULT_PRESET_NAME }).then(function (p) {
-          state.presetSource = "library"; state.presetName = DEFAULT_PRESET_NAME; return p;
+        return resolvePreset({ butterchurnPresetUrl: DEFAULT_PRESET_URL }).then(function (p) {
+          state.presetSource = "url"; state.presetName = DEFAULT_PRESET_NAME; return p;
         });
       }).catch(function () {
         state.presetSource = "fallback"; state.presetName = DEFAULT_PRESET_NAME + " (fallback nhung san)";
@@ -549,8 +648,15 @@
     MILKDROP_VERSION: MILKDROP_VERSION,
     EXPECTED_MILKDROP_VERSION: EXPECTED_MILKDROP_VERSION,
     MANIFEST_MISMATCH: MANIFEST_MISMATCH,
+    BUTTERCHURN_LOCAL: BUTTERCHURN_LOCAL,
+    PRESETS_LOCAL: PRESETS_LOCAL,
     BUTTERCHURN_CDN: BUTTERCHURN_CDN,
     PRESETS_CDN: PRESETS_CDN,
+    BUTTERCHURN_UNPKG: BUTTERCHURN_UNPKG,
+    PRESETS_UNPKG: PRESETS_UNPKG,
+    BUTTERCHURN_SOURCES: BUTTERCHURN_SOURCES,
+    PRESETS_SOURCES: PRESETS_SOURCES,
+    LOAD_SCRIPT_TIMEOUT_MS: LOAD_SCRIPT_TIMEOUT_MS,
     DEFAULT_PRESET_NAME: DEFAULT_PRESET_NAME,
     DEFAULT_PRESET_URL: DEFAULT_PRESET_URL,
     FALLBACK_PRESET: FALLBACK_PRESET,
