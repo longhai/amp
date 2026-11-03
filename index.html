@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.2 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.3 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -63,7 +63,7 @@
   #status{display:none;margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:16px;text-align:left;line-height:1.5;}
   #status.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
   /* Nút menu tối thiểu (⋯) ở góc dưới-phải: điểm chạm duy nhất ngoài
-     skin — nạp skin .wal/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
+     skin — nạp skin .wal/.wsz/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
      mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
   #btn-menu{position:fixed;right:10px;bottom:10px;z-index:50;width:36px;height:36px;
     border-radius:50%;background:rgba(236,233,216,.92);color:#000;border:1px solid #ACA899;
@@ -90,7 +90,7 @@
   /* ĐỢT 5 (03/11): cửa sổ chọn skin từ kho Webamp (#skin-panel +
      skin-browser.js) ĐÃ GỠ HẲN theo chốt của Hải — chạy trên mạng
      không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên
-     nên cửa sổ đó vô dụng. Chỉ giữ "Nạp skin .wal/.zip…" chọn file
+     nên cửa sổ đó vô dụng. Chỉ giữ "Nạp skin .wal/.wsz/.zip…" chọn file
      tay làm cách duy nhất để nạp skin. Quy tắc [hidden] còn lại cho
      #menu-pop và #btn-reopen. */
   #menu-pop[hidden],#btn-reopen[hidden],#maki-panel[hidden]{display:none;}
@@ -109,6 +109,9 @@
   #maki-body th,#maki-body td{border:1px solid #c9c4ae;padding:3px 5px;text-align:left;vertical-align:top;}
   #maki-body details{margin:6px 0;}
   #maki-body summary{cursor:pointer;font-weight:bold;}
+  /* v10.3 — nhấp nháy đồng hồ Classic khi tạm dừng (fork main-window.css:
+     .pause #time { animation: blink 2s step-start 1s infinite }). */
+  @keyframes blink{0%{opacity:1;}50%{opacity:0;}100%{opacity:1;}}
 </style>
 </head>
 <body>
@@ -117,7 +120,7 @@
 <button id="btn-reopen" hidden>Mở lại Amp</button>
 <button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
-  <button data-act="skin">Nạp skin .wal/.zip…</button>
+  <button data-act="skin">Nạp skin .wal/.wsz/.zip…</button>
   <button data-act="localfile">Thêm 1 bài nhạc…</button>
   <button data-act="localdir">Thêm thư mục nhạc…</button>
   <button data-act="zoom1">Zoom: Cỡ gốc 1x</button>
@@ -134,10 +137,10 @@
   <div id="maki-head"><span>Script MAKI (chỉ xem — không chạy)</span><button id="maki-close" title="Đóng" aria-label="Đóng">✕</button></div>
   <div id="maki-body">Chưa nạp.</div>
 </div>
-<input type="file" id="skinpick" accept=".wal,.zip" hidden>
+<input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.2" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.3" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js /
    classic.js / milkdrop.js / metadata.js đọc window.AMP_VERSION lúc nạp để tự
    kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và
@@ -153,7 +156,7 @@
    panel #skin-panel + mục menu "Chọn skin từ kho…" theo chốt của Hải
    (chạy trên mạng không nạp trực tiếp skin từ kho vào được mà phải
    tải về đưa lên nên cửa sổ đó vô dụng; lúc test danh sách trong
-   panel cũng đang trống). Chỉ giữ "Nạp skin .wal/.zip…" chọn file
+   panel cũng đang trống). Chỉ giữ "Nạp skin .wal/.wsz/.zip…" chọn file
    tay làm cách duy nhất để nạp skin. Số file JS còn 8 (đúng số
    hằng version ở trên).
    Đợt 6 (03/11: Media Session API + hotkeys — lấy từ mediaSession.ts /
@@ -180,7 +183,7 @@
    Đợt v10.0 (việc 2: chọn skin từ kho Webamp — skin-browser.js):
    ĐÃ GỠ HẲN ở đợt 5 (03/11, xem ghi chú manifest trên) — không còn
    panel #skin-panel, không còn menu "Chọn skin từ kho…", chỉ giữ
-   "Nạp skin .wal/.zip…" chọn file tay.
+   "Nạp skin .wal/.wsz/.zip…" chọn file tay.
    Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
    Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
    Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
@@ -195,20 +198,20 @@
    isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
    + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
    thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "10.2";
+window.AMP_VERSION = "10.3";
 </script>
-<script src="classic.js?v=10.2"></script>
-<script src="skin-loader.js?v=10.2"></script>
-<script src="audio.js?v=10.2"></script>
-<script src="eqf.js?v=10.2"></script>
-<script src="milkdrop.js?v=10.2"></script>
-<script src="metadata.js?v=10.2"></script>
-<script src="maki.js?v=10.2"></script>
-<script src="renderer.js?v=10.2"></script>
+<script src="classic.js?v=10.3"></script>
+<script src="skin-loader.js?v=10.3"></script>
+<script src="audio.js?v=10.3"></script>
+<script src="eqf.js?v=10.3"></script>
+<script src="milkdrop.js?v=10.3"></script>
+<script src="metadata.js?v=10.3"></script>
+<script src="maki.js?v=10.3"></script>
+<script src="renderer.js?v=10.3"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.2" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "10.3" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -224,7 +227,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.2";
+var VERSION = "10.3";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* Đợt 4 (03/11): crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
@@ -260,7 +263,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.1 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.3 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -270,7 +273,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.2 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.3 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -444,7 +447,7 @@ async function toggleMilkdrop() {
     milkdropOn = false;
     try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e2) { /* bỏ qua */ }
     if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
-    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vis AVS thường ở lại.", true);
+    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vùng AVS để đen (v10.3).", true);
     markMenuChecks();
     return false;
   }
@@ -570,6 +573,14 @@ function checkDrawer() {
    vẽ lại + báo rõ. Không có toggleDrawerAnimated (renderer cũ) thì về
    đường cũ: setDrawerOpen + render + fallback 50ms. */
 function toggleDrawer(open) {
+  /* v10.3 — skin Classic: không có ngăn kéo Modern (không vẽ), nên
+     "Ngăn kéo" mở CỬA SỔ EQ Classic (setClassicEqOpen tự vẽ lại) thay vì
+     drawerOpen; renderCurrent vẽ lại qua renderClassicStage. */
+  if (renderer && renderer.isClassicSkin && renderer.isClassicSkin()) {
+    var want = open === undefined ? !renderer.isClassicEqOpen() : !!open;
+    renderer.setClassicEqOpen(want);
+    return;
+  }
   drawerOpen = !!open;
   if (renderer && renderer.toggleDrawerAnimated) {
     renderer.toggleDrawerAnimated(drawerOpen).then(function () {
@@ -635,6 +646,15 @@ async function bootSkin(file, name) {
       /* Đợt 5 (03/11: metadata nhạc): truyền tường minh lib metadata.js
          để renderer đọc tag file local (không dựa vào fallback global). */
       metadata: window.AmpMetadata || null,
+      /* v10.3 — tien trinh doc tag thu muc local: chi ghi console (man
+         hinh chi hien skin — khong them UI tien trinh); tien do NHIN
+         THAY o chinh list ML/playlist: Nghe si/Album/thoi luong dien
+         dan theo tung dot. */
+      onLocalLoadProgress: function (st) {
+        if (!st || !st.total) return;
+        setStatus(st.running ? ("Đang đọc tag " + st.done + "/" + st.total + " bài…")
+          : ("Đã đọc tag xong: " + st.done + "/" + st.total + " bài."));
+      },
       /* Đợt G — onRerender TRẢ VỀ promise của renderCurrent để
          toggleDrawerAnimated chờ vẽ xong mới bắt đầu trượt. */
       onRerender: function () { return renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
@@ -855,11 +875,11 @@ async function bootSkin(file, name) {
   }
 }
 /* Đợt G — menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
-   Chứa những thứ skin không làm được: nạp skin .wal/.zip (chọn file),
+   Chứa những thứ skin không làm được: nạp skin .wal/.wsz/.zip (chọn file),
    thêm nhạc local, đổi zoom 1x/fit. Mọi chức năng khác (ngăn kéo,
    playlist, Video/Vis) dùng qua chính skin: nút trong skin + menu View
    (File/Play/Options/View/Help) — xem viewMenuItems trong renderer.js.
-   Kéo-thả file .wal/.zip vào trang vẫn giữ (không cần chữ hướng dẫn). */
+   Kéo-thả file .wal/.wsz/.zip vào trang vẫn giữ (không cần chữ hướng dẫn). */
 function wireMenu() {
   function closeMenu() { if (menuPop) menuPop.hidden = true; }
   function toggleMenu() {
@@ -935,7 +955,7 @@ function wireMenu() {
     if (fileInput.files.length) bootSkin(fileInput.files[0], fileInput.files[0].name);
   });
   window.addEventListener("resize", function () { if (zoom === "fit") setZoom("fit"); });
-  /* Kéo-thả file .wal/.zip vào trang (giữ nguyên, không chữ hướng dẫn). */
+  /* Kéo-thả file .wal/.wsz/.zip vào trang (giữ nguyên, không chữ hướng dẫn). */
   ["dragover", "dragenter", "dragleave", "drop"].forEach(function (ev) {
     document.addEventListener(ev, function (e) { e.preventDefault(); });
   });
@@ -1033,7 +1053,7 @@ async function openMakiPanel() {
 }
 /* Đợt 5 (03/11): openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
    ghi chú manifest trên) — nạp skin chỉ còn file tay (menu ⋯
-   "Nạp skin .wal/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
+   "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
    Panel MAKI ở trên (#maki-panel) là panel XEM script, không phải panel
    chọn skin — đừng nhầm 2 panel này. */
 if (checkVersions()) {
@@ -1047,7 +1067,7 @@ if (checkVersions()) {
         return;
       }
     } catch (e) { /* không có file cùng thư mục -> chờ kéo thả */ }
-    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.zip vào trang, hoặc bấm ⋯ (góc dưới-phải) → “Nạp skin .wal/.zip…”.", true);
+    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.wsz/.zip vào trang, hoặc bấm ⋯ (góc dưới-phải) → “Nạp skin .wal/.wsz/.zip…”.", true);
   })();
 } else {
   setStatus("Version lệch — dừng lại, xem banner đỏ ở trên.", true);

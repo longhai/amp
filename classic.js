@@ -46,8 +46,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var CLASSIC_VERSION = "10.2";
-  var EXPECTED_CLASSIC_VERSION = "10.2";
+  var CLASSIC_VERSION = "10.3";
+  var EXPECTED_CLASSIC_VERSION = "10.3";
   /* Manifest duy nhất window.AMP_VERSION (đặt ở index.html TRƯỚC khi nạp
      file này) — lệch thì MANIFEST_MISMATCH = true để trang báo "bản mix".
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -677,14 +677,31 @@
       if (opts.findPath) return opts.findPath(p);
       return lowerMap[String(p).toLowerCase()] || null;
     }
+    /* v10.3 — file .txt trong THƯ MỤC CON (skin 3DNow của Webamp để
+       hết trong "3DNow/viscolor.txt", "3DNow/PLEDIT.TXT"...): findPath
+       của loader chỉ tra đúng đường dẫn nên trả null, parser rơi về
+       màu/pledit MẶC ĐỊNH (vis xám, playlist xanh lá) dù skin có file
+       thật. Tra cứu theo basename (file sau thắng, giống sheet): chỉ
+       dùng khi findPath không thấy — tránh đụng 2 file cùng tên ở 2
+       thư mục khác nhau của skin Modern (ở đây chỉ dùng cho .wsz,
+       nơi mỗi tên txt chỉ có 1 bản). */
+    function findByBasename(p) {
+      var base = String(p).toLowerCase().split("/").pop();
+      var hits = names.filter(function (n) {
+        return n.toLowerCase().split("/").pop() === base;
+      });
+      return hits.length ? hits[hits.length - 1] : null;
+    }
+    var textFiles = {};
     async function readText(p) {
-      var real = findPath(p);
+      var real = findPath(p) || findByBasename(p);
+      textFiles[String(p).toLowerCase()] = real;
       if (!real) return null;
       try { return await zip.file(real).async("string"); }
       catch (e) { return null; }
     }
     async function readBytes(p) {
-      var real = findPath(p);
+      var real = findPath(p) || findByBasename(p);
       if (!real) return null;
       try { return await zip.file(real).async("arraybuffer"); }
       catch (e) { return null; }
@@ -754,6 +771,9 @@
       sheets: sheets,
       hasNumsEx: !!sheets.NUMS_EX,
       genexFile: genexFile,
+      /* v10.3: đường dẫn .txt thật đã đọc (để test/debug biết file có
+         nằm trong thư mục con không — vd "3DNow/viscolor.txt"). */
+      textFiles: textFiles,
       files: names.slice().sort(),
       cursors: cursors
     };

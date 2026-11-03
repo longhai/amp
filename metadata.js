@@ -64,8 +64,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var METADATA_VERSION = "10.2";
-  var EXPECTED_METADATA_VERSION = "10.2";
+  var METADATA_VERSION = "10.3";
+  var EXPECTED_METADATA_VERSION = "10.3";
   if (METADATA_VERSION !== EXPECTED_METADATA_VERSION) {
     throw new Error("metadata.js: METADATA_VERSION (" + METADATA_VERSION + ") khac EXPECTED_METADATA_VERSION (" + EXPECTED_METADATA_VERSION + ") — ban mix, dung lai");
   }
@@ -367,6 +367,67 @@
      lib thiếu hoặc khi lib không nạp được; 3) không tag nào thì trả
      hasTags=false, caller giữ tên file + duration đã probe bằng thẻ
      audio. KHÔNG throw — lỗi nào cũng trả meta rỗng source "none". */
+  /* v10.3 — DOC TAG NHANH (chi hieu nang, KHONG doi parser ID3/FLAC):
+     Cu: probeFile CHO lib CDN (dynamic import music-metadata) xong moi
+     chay parser noi bo — mang cham (dien thoai 8KB/s) thi import treo
+     hang chuc giay, tag ve muon, ML thay "Khong ro" lau; lai doc TOAN
+     BO file bang arrayBuffer cho parser noi bo du lib da du tag (105
+     file x vai MB = hang tram MB doc thua) — 1 trong cac nguyen nhan
+     may lag khi nap thu muc.
+     Nay: chay SONG SONG — parser noi bo chi doc lat cat dau file
+     (256KB, du cho ID3v2/FLAC) + 128 byte cuoi (ID3v1); lib CDN chi de
+     lap cho thieu (M4A/OGG/WMA ma parser noi bo khong ho tro) + lay
+     duration; lib qua han (opts.libTimeoutMs, mac dinh 10s) thi tra
+     ngay ket qua noi bo, khong cho import. Ket qua gop giong cu (lib
+     thang, noi bo lap cho trong). */
+  var TAG_HEAD_BYTES = 262144;
+  var LIB_TIMEOUT_MS_DEFAULT = 10000;
+  function readLocalTags(file, opts) {
+    opts = opts || {};
+    function parseHeadTail(headAb, tailAb) {
+      var out = { title: null, artist: null, album: null, source: "none" };
+      if (headAb) {
+        var h = parseId3Buffer(headAb);
+        if (h.title) out.title = h.title;
+        if (h.artist) out.artist = h.artist;
+        if (h.album) out.album = h.album;
+        if (h.source && h.source !== "none") out.source = h.source;
+      }
+      if (tailAb) {
+        var t = parseId3v1(toUint8(tailAb));
+        if (!out.title && t.title) out.title = t.title;
+        if (!out.artist && t.artist) out.artist = t.artist;
+        if (!out.album && t.album) out.album = t.album;
+        if (out.source === "none" && t.source && t.source !== "none") out.source = t.source;
+      }
+      return out;
+    }
+    if (file && typeof file.slice === "function") {
+      var size = file.size || 0;
+      var headP = null;
+      try {
+        var headBlob = file.slice(0, TAG_HEAD_BYTES);
+        headP = (headBlob && typeof headBlob.arrayBuffer === "function")
+          ? headBlob.arrayBuffer() : readBlobAsArrayBuffer(headBlob, opts);
+      } catch (e) { headP = Promise.reject(e); }
+      var tailP = Promise.resolve(null);
+      if (size > TAG_HEAD_BYTES + 128) {
+        try {
+          var tailBlob = file.slice(size - 128, size);
+          tailP = (tailBlob && typeof tailBlob.arrayBuffer === "function")
+            ? tailBlob.arrayBuffer() : readBlobAsArrayBuffer(tailBlob, opts);
+        } catch (e) { tailP = Promise.resolve(null); }
+      }
+      return Promise.all([
+        Promise.resolve(headP).catch(function () { return null; }),
+        Promise.resolve(tailP).catch(function () { return null; })
+      ]).then(function (parts) { return parseHeadTail(parts[0], parts[1]); });
+    }
+    /* File gia / khong co slice (test): doc day du nhu cu. */
+    return readBlobAsArrayBuffer(file, opts).then(function (ab) {
+      return parseId3Buffer(ab);
+    }).catch(function () { return null; });
+  }
   function probeFile(file, opts) {
     opts = opts || {};
     if (!file) {
@@ -375,22 +436,24 @@
       return Promise.resolve(empty);
     }
     var fallback = opts.fallback || {};
-    var libMeta = null, libUsed = false;
+    var libTimeoutMs = (opts.libTimeoutMs !== undefined) ? opts.libTimeoutMs : LIB_TIMEOUT_MS_DEFAULT;
+    /* Parser noi bo chay ngay tren lat cat (khong cho lib). */
+    var localP = readLocalTags(file, opts).catch(function () { return null; });
+    /* Lib CDN chay song song, co han gio — qua han thi bo, dung noi bo. */
     var libP;
     try { libP = loadLib(opts); } catch (e) { libP = Promise.reject(e); }
-    return Promise.resolve(libP).then(function (lib) {
-      libUsed = true;
-      return lib.parseBlob(file, { duration: true, skipPostHeaders: true });
-    }).then(function (raw) {
-      if (raw) libMeta = normalizeMetadata(raw, fallback);
-      return null;
-    }).catch(function () {
-      libMeta = null; /* lib lỗi → parser nội bộ lo */
-    }).then(function () {
-      return readBlobAsArrayBuffer(file, opts).then(function (ab) {
-        return parseId3Buffer(ab);
+    var libTimedP = Promise.race([
+      Promise.resolve(libP).then(function (lib) { return lib; }).catch(function () { return null; }),
+      new Promise(function (res) { setTimeout(function () { res(null); }, libTimeoutMs); })
+    ]);
+    var libMetaP = libTimedP.then(function (lib) {
+      if (!lib) return null;
+      return Promise.resolve(lib.parseBlob(file, { duration: true, skipPostHeaders: true })).then(function (raw) {
+        return raw ? normalizeMetadata(raw, fallback) : null;
       }).catch(function () { return null; });
-    }).then(function (local) {
+    });
+    return Promise.all([localP, libMetaP]).then(function (parts) {
+      var local = parts[0], libMeta = parts[1];
       var meta;
       if (libMeta) {
         meta = libMeta;
@@ -400,7 +463,7 @@
           if (!meta.album && local.album) meta.album = local.album;
         }
         meta.hasTags = !!(meta.title || meta.artist || meta.album);
-        meta.source = libUsed ? "lib" : "none";
+        meta.source = "lib";
         meta.libUsed = true;
       } else if (local && (local.title || local.artist || local.album)) {
         meta = normalizeMetadata({ title: local.title, artist: local.artist, album: local.album }, fallback);
@@ -480,6 +543,7 @@
     MUSIC_METADATA_ESM_URL: MUSIC_METADATA_ESM_URL,
     MUSIC_METADATA_ESM_FALLBACK_URL: MUSIC_METADATA_ESM_FALLBACK_URL,
     normalizeMetadata: normalizeMetadata,
+    readLocalTags: readLocalTags, TAG_HEAD_BYTES: TAG_HEAD_BYTES,
     parseId3Buffer: parseId3Buffer,
     parseId3v2: parseId3v2,
     parseId3v1: parseId3v1,

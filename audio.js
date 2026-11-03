@@ -55,8 +55,11 @@
    Chỉ khi native báo lỗi HOẶC 6s chưa phát (không 'playing'/'timeupdate')
    mới rơi về HLS.js (chỉ với URL .m3u8 — HLS.js không phát được mp3).
    HLS.js nạp ĐỘNG từ CDN cdnjs 1.5.13 (không đóng gói file), chỉ khi cần.
-   Lỗi lần đầu -> thử lại 1 lần sau 3s (chống báo oan); lỗi lần 2 mới báo
-   kênh lỗi qua onError, ở yên kênh (không tự nhảy kênh dưới).
+   Lỗi nạp -> thử lại TỐI ĐA 2 lần, mỗi lần cách 3s (chống báo oan —
+   người dùng báo 20:35: TV360 bên Webamp bấm load lại 1–2 lần là xem
+   được, Amp trước đây chỉ thử lại 1 lần nên báo lỗi oan); hết 2 lần thử
+   lại (+ fallback CORS native nếu EQ bật) mới báo kênh lỗi qua onError,
+   ở yên kênh (không tự nhảy kênh dưới).
    ---------------------------------------------------------------------------
    File này KHÔNG biết gì về skin/playlist (renderer gọi qua API, nhận
    callback). Test được bằng jsdom + stub AudioContext/HLS (audio-test.js).
@@ -69,8 +72,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.2";
-  var EXPECTED_AUDIO_VERSION = "10.2";
+  var AUDIO_VERSION = "10.3";
+  var EXPECTED_AUDIO_VERSION = "10.3";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -87,7 +90,8 @@
   var EQ_Q = 1;
   var HLS_CDN_URL = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
   var NATIVE_TIMEOUT_MS = 6000;   /* native 6s chưa phát -> rơi về HLS */
-  var ERROR_RECHECK_MS = 3000;    /* lỗi lần đầu: thử lại sau 3s chống báo oan */
+  var ERROR_RECHECK_MS = 3000;    /* lỗi nạp: thử lại sau 3s chống báo oan */
+  var MAX_LOAD_RETRIES = 2;       /* v10.3 — thử lại tối đa 2 lần (tổng 3 lần nạp) trước khi báo lỗi: TV360 lần đầu lỗi nhưng load lại 1–2 lần là xem được (người dùng báo 20:35) */
   var CROSSFADE_DEFAULT_MS = 2000; /* Đợt 4: crossfade mặc định 2s (0 = tắt) */
   var CROSSFADE_STEP_MS = 100; /* Đợt 4: bước ramp gain 100ms */
   var ANALYSER_FFT_SIZE = 1024; /* Đợt v10.2 — như Webamp (fftSize 1024):
@@ -202,7 +206,7 @@
     function isElPlaying(el) { if (!el) return false; if (playingEls) { try { return playingEls.has(el); } catch (e) { return false; } } return playing; }
     var loadState = "idle"; /* idle | loading | playing | error */
     var loadSeq = 0, nativeTimer = null, recheckTimer = null;
-    var retried = false, hlsTried = false, pendingSeek = null;
+    var retryCount = 0, hlsTried = false, pendingSeek = null;
     var eqValues = { preamp: 0.5, bands: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] };
     var destroyed = false;
     var limiter = null; /* Đợt v10.2 — DynamicsCompressor chống clip (xem hằng LIMITER_*). */
@@ -888,10 +892,10 @@
       /* Đợt K (9.7): bài/kênh mới -> kết quả đo kênh cũ hết hiệu lực (thẻ
          audio dùng lại cho bài mới nên không thể dựa vào measuredForEl). */
       measuredChannels = null; measuredForEl = null;
-      /* Thử lại (sau lỗi 3s) phải GIỮ retried=true để lỗi lần 2 là lỗi
-         cuối (không thử lại vô hạn). Chỉ lần nạp do người dùng bấm mới
-         reset retried. */
-      if (!opts2.keepRetried) { retried = false; eqFallbackTried = false; /* Đợt v10.2 — lần bấm mới được thử fallback CORS lại */ }
+      /* Thử lại (sau lỗi 3s) phải GIỮ retryCount để lỗi sau 2 lần thử
+         lại là lỗi cuối (không thử lại vô hạn). Chỉ lần nạp do người
+         dùng bấm mới reset retryCount. */
+      if (!opts2.keepRetried) { retryCount = 0; eqFallbackTried = false; /* Đợt v10.2 — lần bấm mới được thử fallback CORS lại */ }
       hlsTried = false;
       loadState = "loading";
       setCrossOrigin(el, eqOn);
@@ -899,8 +903,10 @@
       applyVolume();
       return { ok: true };
     }
-    /* Lỗi nạp: lần đầu thì thử lại 1 lần sau 3s (chống báo oan); lần 2
-       mới báo kênh lỗi qua onError. Ở yên kênh — không tự nhảy kênh dưới.
+    /* Lỗi nạp: thử lại TỐI ĐA 2 lần, mỗi lần cách 3s (chống báo oan —
+       TV360 lần đầu lỗi nhưng load lại 1–2 lần là xem được); hết 2 lần
+       mới xét fallback CORS rồi báo kênh lỗi qua onError. Ở yên kênh —
+       không tự nhảy kênh dưới.
        Đợt 4: bài mới lỗi TRONG LÚC crossfade (đang chờ / đang ramp) thì
        bỏ lần chuyển, trả bài cũ đang phát — không thử lại, không báo lỗi. */
     function handleLoadFailure(reason) {
@@ -911,13 +917,13 @@
         cancelXfadeRestoreOld();
         return;
       }
-      if (!retried) {
-        retried = true;
+      if (retryCount < MAX_LOAD_RETRIES) {
+        retryCount++;
         if (recheckTimer) clearTimeout(recheckTimer);
         recheckTimer = setTimeout(function () {
           recheckTimer = null;
           if (destroyed || !currentItem) return;
-          /* Thử lại từ native (không giữ HLS cũ), giữ retried=true. */
+          /* Thử lại từ native (không giữ HLS cũ), giữ retryCount. */
           hlsTried = false;
           loadAndPlay(currentItem, { userInitiated: false, keepRetried: true });
         }, errorRecheckMs);
@@ -1080,7 +1086,7 @@
             if (onError) { try { onError({ item: currentItem, reason: "watchdog-stall" }); } catch (e) { /* bỏ qua */ } }
             return;
           }
-          /* Nối lại src (giữ retried để lỗi lần nữa là lỗi cuối). */
+          /* Nối lại src (giữ retryCount: đã thử lại thì lỗi nữa là lỗi cuối). */
           loadAndPlay(currentItem, { userInitiated: false, keepRetried: true });
           wdLastTime = -1;
         }
@@ -1282,7 +1288,7 @@
           var seq = ++loadSeq;
           clearTimers(); detachHls();
           cancelXfade(true);
-          retried = false; hlsTried = false; loadState = "loading";
+          retryCount = 0; hlsTried = false; loadState = "loading";
           pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
           measuredChannels = null; measuredForEl = null;
           currentEl = freshElement(currentKind, currentEl);
@@ -1309,7 +1315,7 @@
           var wasPlaying = playing;
           var seq = ++loadSeq;
           clearTimers(); detachHls();
-          retried = false; hlsTried = false; loadState = "loading";
+          retryCount = 0; hlsTried = false; loadState = "loading";
           pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
           setCrossOrigin(currentEl, false);
           setSrcAndPlay(currentEl, currentItem.url, seq);
@@ -1325,7 +1331,7 @@
       var wasPlaying2 = playing;
       var seq2 = ++loadSeq;
       clearTimers(); detachHls();
-      retried = false; hlsTried = false; eqFallbackTried = false; /* Đợt v10.2 — lần bật EQ mới được thử fallback CORS lại */
+      retryCount = 0; hlsTried = false; eqFallbackTried = false; /* Đợt v10.2 — lần bật EQ mới được thử fallback CORS lại */
       loadState = "loading";
       pendingSeek = pos2 > 0 ? pos2 : null; /* khôi phục ở loadedmetadata */
       setCrossOrigin(currentEl, true);
@@ -1360,7 +1366,7 @@
         audioSourced: !!audioSrc, videoSourced: !!videoSrc,
         currentKind: currentKind, currentName: currentItem ? currentItem.name : "",
         playing: playing, loadState: loadState, volume: volume,
-        hlsActive: !!hls, hlsTried: hlsTried, retried: retried,
+        hlsActive: !!hls, hlsTried: hlsTried, retried: retryCount > 0, retryCount: retryCount, maxLoadRetries: MAX_LOAD_RETRIES,
         analyserConnected: !!analyser, analyserSignal: analyserHasSignal(),
         sampleRate: ctx ? ctx.sampleRate : null, /* Đợt B (9.9): KHZ đo thật */
         measuredChannels: getMeasuredChannels(),
@@ -1411,6 +1417,7 @@
     HLS_CDN_URL: HLS_CDN_URL,
     NATIVE_TIMEOUT_MS: NATIVE_TIMEOUT_MS,
     ERROR_RECHECK_MS: ERROR_RECHECK_MS,
+    MAX_LOAD_RETRIES: MAX_LOAD_RETRIES, /* v10.3 — thử lại tối đa 2 lần trước khi báo lỗi */
     CROSSFADE_DEFAULT_MS: CROSSFADE_DEFAULT_MS, /* Đợt 4: crossfade mặc định 2s */
     CROSSFADE_STEP_MS: CROSSFADE_STEP_MS,
     createAudioEngine: createAudioEngine

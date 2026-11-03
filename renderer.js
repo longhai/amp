@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.2";
-  var EXPECTED_RENDERER_VERSION = "10.2";
+  var RENDERER_VERSION = "10.3";
+  var EXPECTED_RENDERER_VERSION = "10.3";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -382,7 +382,7 @@
     var onWinSizeChange = opts.onWinSizeChange || null; /* Đợt A (9.9, việc 6): kéo đổi kích thước cửa sổ xong → index.html lưu localStorage */
     var onPlayerClose = opts.onPlayerClose || null; /* v9.6 (Điểm 2): nút X cửa sổ chính — web không "thoát app" như Winamp thật nên index.html ẩn giao diện + hiện nút mở lại */
     var onMinimize = opts.onMinimize || null; /* Đợt D (9.9): nút MINIMIZE (chính + shade) — web không có cửa sổ hệ thống/taskbar nên index.html ẩn giao diện + hiện nút mở lại, giữ nguyên tiếng đang phát (chung đường với onPlayerClose) */
-    var onOpenSkinPicker = opts.onOpenSkinPicker || null; /* Đợt D: menu File → "Nạp skin .wal/.zip…" / Preferences — mở hộp chọn file của trang */
+    var onOpenSkinPicker = opts.onOpenSkinPicker || null; /* Đợt D: menu File → "Nạp skin .wal/.wsz/.zip…" / Preferences — mở hộp chọn file của trang */
     var onZoom = opts.onZoom || null; /* Đợt D: Preferences → Zoom 1x / Vừa màn hình */
     var isZoomFit = opts.isZoomFit || null; /* Đợt v10.1: nút D clutter Classic cần biết zoom hiện tại */
     var isShadeMode = opts.isShadeMode || null; /* Đợt D: nút shade (shadeeq/shadect) cần biết đang ở shade để về normal trước khi mở ngăn kéo */
@@ -1033,6 +1033,7 @@
        videoWidth > 0, false = đã có metadata mà videoWidth == 0 (luồng
        chỉ có tiếng / kênh chết hình). Dùng cho applyAvsMediaVisibility. */
     var avsVideoHasPic = null;
+    var avsVideoEverHadPic = false; /* v10.3 — luồng đã từng báo videoWidth > 0 (có hình thật); loadstart về "chưa biết" nhưng vẫn coi là có hình, khỏi nhá tên lúc video đang nạp lại */
     var avsAnalyser = null; /* ĐIỂM NỐI ĐỢT E: AnalyserNode của chuỗi EQ (audio.js
        đăng ký qua setAvsAnalyser ngay khi tạo graph). Đợt B (9.9): drawVisStatic
        vẽ theo tần số thật KHI EQ BẬT + analyser có tín hiệu; EQ tắt (tiếng đi
@@ -1338,7 +1339,7 @@
     }
     function getAvsMedia() {
       var m = ensureAvsMedia();
-      return { wrap: m.wrap, video: m.video, canvas: m.canvas };
+      return { wrap: m.wrap, video: m.video, canvas: m.canvas, nameEl: m.nameEl };
     }
     /* Thẻ <video> MỚI (đợt E — fresh element): engine nhờ reset khi EQ tắt
        mà thẻ cũ đã có MediaElementSource + URL cross-origin (thẻ cũ nạp
@@ -1351,6 +1352,7 @@
       try { avsMedia.video.removeAttribute("src"); avsMedia.video.load(); } catch (e) { /* bỏ qua */ }
       avsMedia = null;
       avsVideoHasPic = null; /* Đợt v10.2 — the moi thi chua biet co hinh khong */
+      avsVideoEverHadPic = false; /* v10.3 — thẻ mới thì quên luôn "đã từng có hình" */
       return true;
     }
 
@@ -1477,6 +1479,7 @@
     function startPlaybackForCurrent() {
       var it = playlistState.items[playlistState.current];
       if (!it) return { ok: false, reason: "empty" };
+      if (!it.url) ensureLocalUrl(it); /* v10.3: muc local mat url -> tao lai tu File goc */
       if (!it.url) {
         showTickerError("muc nay chua co link nhac");
         return { ok: false, reason: "no-url" };
@@ -1516,7 +1519,9 @@
     function togglePlay() {
       if (audioEngine) {
         var r = audioEngine.togglePlay();
-        if (r && r.ok) return true;
+        /* v10.3 (H2): resume() cua engine chi doi trang thai phat, khong
+           dong bo ticker — goi lai setTickerText ngay sau khi resume. */
+        if (r && r.ok) { for (var ti4 = 0; ti4 < tickerEls.length; ti4++) setTickerText(tickerEls[ti4]); return true; }
         if (r && r.reason === "nothing") return playCurrentItem();
         return true;
       }
@@ -1793,7 +1798,7 @@
     function onAudioError(info) {
       var it = (info && info.item) || playlistState.items[playlistState.current];
       var name = it ? it.name : "";
-      /* Kênh lỗi hẳn (đã thử lại sau 3s trong engine): báo chữ đỏ không
+      /* Kênh lỗi hẳn (đã thử lại 2 lần sau 3s trong engine, v10.3): báo chữ đỏ không
          dấu trên dòng chữ chạy, Ở YÊN kênh — không tự nhảy kênh dưới. */
       showTickerError("Khong phat duoc kenh " + stripDiacritics(name));
       demo.playing = false; playlistState.playing = false;
@@ -1829,6 +1834,11 @@
       /* Đợt B (9.9): phát/dừng thì đồng bộ vòng cuộn ticker (chữ dài cuộn
          khi phát, về đầu khi dừng). Vòng vis đồng bộ qua updateStatusEls. */
       syncTickerAnim();
+      /* v10.3 (H2): duong resume / doi trang thai phat khong bao gio dong
+         bo lai ticker (truoc day chi clearTickerError + syncTickerAnim)
+         -> goi lai setTickerText cho dung muc dang phat. */
+      for (var ti3 = 0; ti3 < tickerEls.length; ti3++) setTickerText(tickerEls[ti3]);
+      syncAvsName();
     }
     /* Đợt K (9.7, điểm 7a) — chỉ báo kênh mono/stereo/surround.
        XML: layer "channels" (songinfo (0,10), ảnh mặc định player.songinfo.none
@@ -1941,6 +1951,144 @@
     /* Nhạc local: chọn thư mục (file picker webkitdirectory) — trình
        duyệt không nhớ file local nên mỗi lần chọn lại thư mục (quy ước
        đã chốt). Chỉ nhận file audio, không parse metadata ở đợt E. */
+    /* v10.3 — NAP NHAC LOCAL LUOI (hieu nang; "cho load ma may lag luon"):
+       NGUYEN NHAN CU: addLocalFiles goi probeLocalDuration + probeFile
+       NGAY cho moi file, dong loat 105 file: 105 the <audio> preload cung
+       luc + 105 lan parseBlob doc TOAN BO file (metadata.js) + moi tag ve
+       la refreshPlaylistRows/refreshMlRows ve lai TOAN BO list (146 hang
+       x 105 lan) — tat ca tren luong UI, khong nhuong luong lan nao nen
+       may giat/do trong luc cho load, cot Nghe si lau moi hien.
+       SUALAI:
+       - List hien NGAY: addLocalFiles chi them muc (ten file + "Khong
+         ro" tam) + requestRerender 1 lan, roi tra ngay; tag/duration
+         chay SAU, theo hang doi.
+       - Hang doi: toi da 2 file cung luc (LOCAL_PROBE_CONCURRENCY), moi
+         file xong thi NHUONG LUONG bang setTimeout(0) truoc khi lam file
+         tiep — tuyet doi khong co vong dong bo dai doc 105 file mot mach;
+         1 luot worker chi lam toi da 1 file roi nhuong, UI (cuon ML, bam
+         nut, ticker) luon chen vao duoc giua cac dot.
+       - Duration: the <audio> tam chi tao (khong gan src); src chi gan
+         khi worker toi luot (toi da 2 the cung luc), co timeout
+         (LOCAL_PROBE_TIMEOUT_MS) — khong mo 105 the cung luc nua.
+       - Gom ve lai list: tag/duration ve chi dat lich ve lai (120ms,
+         scheduleListRefresh), khong ve lai ngay tung file.
+       - Cache: ket qua tag/duration cua 1 file (khoa ten|size|duong dan)
+         luu trong phien — nap lai cung thu muc / mo lai ML thi dung cache,
+         khong doc lai file; mo ML khong kich probe moi (chi ve lai tu
+         model da co). */
+    var LOCAL_PROBE_CONCURRENCY = (opts.localProbeConcurrency !== undefined) ? opts.localProbeConcurrency : 2;
+    var LOCAL_PROBE_TIMEOUT_MS = (opts.localProbeTimeoutMs !== undefined) ? opts.localProbeTimeoutMs : 4000;
+    var LOCAL_LIST_REFRESH_MS = 120;
+    var localLoadQueue = [];
+    var localLoadRunning = false;
+    var localLoadWaiters = [];
+    var localLoadState = { total: 0, done: 0, failed: 0, skipped: 0 };
+    var localMetaCache = new Map();
+    var onLocalLoadProgress = opts.onLocalLoadProgress || null;
+    function localMetaCacheKey(f) {
+      return String((f && f.name) || "") + "|" + String((f && f.size) || "") + "|" + String((f && f.webkitRelativePath) || "");
+    }
+    function snapshotLocalMeta(item) {
+      return { tagTitle: item.tagTitle || null, artist: item.artist || null, album: item.album || null, len: (item.len === null || item.len === undefined) ? null : item.len, metaSource: item.metaSource || null, metaStatus: item.metaStatus || null };
+    }
+    function applyCachedLocalMeta(item, c) {
+      if (!item || !c) return false;
+      var changed = false;
+      if (c.tagTitle && item.tagTitle !== c.tagTitle) { item.tagTitle = c.tagTitle; changed = true; }
+      if (c.artist && item.artist !== c.artist) { item.artist = c.artist; changed = true; }
+      if (c.album && item.album !== c.album) { item.album = c.album; changed = true; }
+      if (c.len !== null && c.len !== undefined && (item.len === null || item.len === undefined)) { item.len = c.len; changed = true; }
+      if (c.metaSource && item.metaSource !== c.metaSource) { item.metaSource = c.metaSource; changed = true; }
+      if (c.metaStatus && item.metaStatus !== c.metaStatus) { item.metaStatus = c.metaStatus; changed = true; }
+      return changed;
+    }
+    function getLocalLoadState() {
+      return { total: localLoadState.total, done: localLoadState.done, pending: localLoadQueue.length, failed: localLoadState.failed, running: localLoadRunning, skipped: localLoadState.skipped };
+    }
+    function notifyLocalLoadProgress() {
+      if (!onLocalLoadProgress) return;
+      try { onLocalLoadProgress(getLocalLoadState()); } catch (e) { /* bo qua */ }
+    }
+    function waitLocalLoadIdle() {
+      if (!localLoadRunning && !localLoadQueue.length) return Promise.resolve(getLocalLoadState());
+      return new Promise(function (res) { localLoadWaiters.push(function () { res(getLocalLoadState()); }); });
+    }
+    /* Gom ve lai list: tag/duration ve dot chi hen ve lai 1 lan moi
+       120ms (thay vi ve lai toan bo list ngay tung file). */
+    var listRefreshTimer = null;
+    function scheduleListRefresh() {
+      if (listRefreshTimer) return;
+      listRefreshTimer = setTimeout(function () {
+        listRefreshTimer = null;
+        refreshPlaylistRows();
+      }, LOCAL_LIST_REFRESH_MS);
+    }
+    function flushListRefresh() {
+      if (listRefreshTimer) { try { clearTimeout(listRefreshTimer); } catch (e) { /* bo qua */ } listRefreshTimer = null; }
+      refreshPlaylistRows();
+    }
+    function localLoadQueueKick() {
+      if (localLoadRunning) return;
+      if (!localLoadQueue.length) return;
+      localLoadRunning = true;
+      notifyLocalLoadProgress();
+      var workers = [];
+      for (var w = 0; w < LOCAL_PROBE_CONCURRENCY; w++) workers.push(localLoadWorker());
+      Promise.all(workers).then(function () {
+        localLoadRunning = false;
+        flushListRefresh();
+        notifyLocalLoadProgress();
+        var ws = localLoadWaiters; localLoadWaiters = [];
+        for (var i = 0; i < ws.length; i++) { try { ws[i](); } catch (e) { /* bo qua */ } }
+      });
+    }
+    async function localLoadWorker() {
+      for (;;) {
+        var entry = localLoadQueue.shift();
+        if (!entry) return;
+        await localLoadOne(entry);
+        /* NHUONG LUONG: moi file xong la setTimeout(0) — UI chen vao
+           giua cac dot, khong bao gio doc lien 105 file tren 1 tick. */
+        await new Promise(function (res) { setTimeout(res, 0); });
+      }
+    }
+    async function localLoadOne(entry) {
+      var item = entry.item, file = entry.file;
+      try {
+        var key = localMetaCacheKey(file);
+        var cached = localMetaCache.get(key);
+        if (cached) {
+          if (applyCachedLocalMeta(item, cached)) scheduleListRefresh();
+        } else {
+          try { await probeLocalMetadata(item, file); } catch (e) { /* probe loi -> muc van o lai, van phat duoc */ }
+          localMetaCache.set(key, snapshotLocalMeta(item));
+        }
+        if ((item.len === null || item.len === undefined) && entry.durRec) {
+          try { await startDurationProbe(entry.durRec); } catch (e) { /* bo qua */ }
+          localMetaCache.set(key, snapshotLocalMeta(item));
+        }
+      } catch (e) { localLoadState.failed++; }
+      localLoadState.done++;
+      scheduleListRefresh();
+      notifyLocalLoadProgress();
+    }
+    /* v10.3 — tao lai blob URL cho muc local neu url da mat (du phong:
+       hien tai khong cho nao thu hoi URL — grep khong thay
+       revokeObjectURL — nhung neu tuong lai co cho thu hoi som hoac
+       url rong thi phat van duoc nho File goc giu o item._file). */
+    function ensureLocalUrl(item) {
+      if (!item || !item.local || item.url) return !!item.url;
+      var f = null;
+      try { f = item._file || null; } catch (e) { f = null; }
+      if (!f) return false;
+      try {
+        if (typeof URL !== "undefined" && URL.createObjectURL) {
+          item.url = URL.createObjectURL(f);
+          return !!item.url;
+        }
+      } catch (e) { /* bo qua */ }
+      return false;
+    }
     /* Đợt L (9.8) — đọc thời lượng file local khi thêm (không phát):
        thẻ <audio preload="metadata"> tạm, chỉ đọc header rồi bỏ; khi
        loadedmetadata có duration thật thì ghi vào item.len + vẽ lại
@@ -1948,28 +2096,52 @@
        từng file. Đài live (kind radio) không probe — duration của live
        là Infinity/NaN, không có nghĩa. */
     function probeLocalDuration(item) {
-      if (!item || item.kind !== "track" || item.len != null) return;
-      if (!document || !document.createElement) return;
+      /* v10.3: chi TAO the tam + gan listener, KHONG gan src o day (src
+         chi gan khi worker toi luot qua startDurationProbe) — de khong
+         mo 105 the <audio> cung luc. Tra ve rec {el, promise, finish}
+         de worker dieu khien; goi truc tiep (khong qua worker) thi the
+         khong bao gio nap — do la chu y, khong phai loi: addLocalFiles
+         luon dua rec vao hang doi. */
+      if (!item || item.kind !== "track" || item.len != null) return null;
+      if (!document || !document.createElement) return null;
       var tmp = null;
-      try { tmp = document.createElement("audio"); } catch (e) { return; }
-      if (!tmp) return;
-      var done = false;
+      try { tmp = document.createElement("audio"); } catch (e) { return null; }
+      if (!tmp) return null;
+      var rec = { item: item, el: tmp, done: false, promise: null, finish: null, armTimeout: null };
+      var timer = null;
       function finish() {
-        if (done) return; done = true;
+        if (rec.done) return; rec.done = true;
+        if (timer) { try { clearTimeout(timer); } catch (e) { /* bo qua */ } timer = null; }
         var d = NaN;
         try { d = tmp.duration; } catch (e) { d = NaN; }
         try { tmp.removeAttribute("src"); tmp.load(); } catch (e) { /* bỏ qua */ }
         if (d && isFinite(d) && d > 0) {
           item.len = Math.round(d);
-          refreshPlaylistRows(); updateInfoEls();
+          scheduleListRefresh(); updateInfoEls();
         }
       }
-      try {
-        tmp.addEventListener("loadedmetadata", finish);
-        tmp.addEventListener("error", finish);
-        try { tmp.preload = "metadata"; } catch (e) { /* bỏ qua */ }
-        tmp.src = item.url;
-      } catch (e) { finish(); }
+      rec.finish = finish;
+      rec.armTimeout = function () {
+        if (rec.done || timer) return;
+        timer = setTimeout(function () { finish(); }, LOCAL_PROBE_TIMEOUT_MS);
+      };
+      rec.promise = new Promise(function (resolve) {
+        var done0 = finish;
+        finish = function () { done0(); resolve(rec.item.len != null); };
+        rec.finish = finish;
+        try {
+          tmp.addEventListener("loadedmetadata", finish);
+          tmp.addEventListener("error", finish);
+          try { tmp.preload = "metadata"; } catch (e) { /* bỏ qua */ }
+        } catch (e) { finish(); }
+      });
+      return rec;
+    }
+    function startDurationProbe(rec) {
+      if (!rec || rec.done) return rec ? rec.promise : Promise.resolve(false);
+      try { rec.el.src = rec.item.url; } catch (e) { rec.finish(); return rec.promise; }
+      try { rec.armTimeout(); } catch (e) { /* bo qua */ }
+      return rec.promise;
     }
     /* Đợt 5 (03/11: metadata nhạc) — đọc tag file local lúc nạp, đúng
        thứ tự của fork (fileUtils.ts genMediaTags + actionCreators/
@@ -1997,7 +2169,7 @@
         if (meta.source) item.metaSource = meta.source;
         if (meta.status) item.metaStatus = meta.status;
       }
-      if (changed) { refreshPlaylistRows(); refreshMlRows(); updateInfoEls(); }
+      if (changed) { scheduleListRefresh(); /* v10.3: gom ve lai list (xem tren) */ updateInfoEls(); }
       /* Đợt 6: tag về muộn (probe async sau khi đã phát) mà là bài đang
          phát thì màn hình khóa đổi theo tên/nghệ sĩ thật. */
       if (changed && playlistState.items[playlistState.current] === item) updateMediaSession();
@@ -2065,16 +2237,17 @@
         var pb = (b && b.webkitRelativePath) || (b && b.name) || "";
         return pa < pb ? -1 : (pa > pb ? 1 : 0);
       });
+      var skipped = 0;
       for (var i = 0; i < sorted.length; i++) {
         var f = sorted[i];
-        if (!f || !/\.(mp3|wav|ogg|oga|m4a|flac|aac|opus)$/i.test(f.name || "")) continue;
+        if (!f || !/\.(mp3|wav|ogg|oga|m4a|flac|aac|opus)$/i.test(f.name || "")) { skipped++; continue; }
         var url = "";
         try {
           if (typeof URL !== "undefined" && URL.createObjectURL) url = URL.createObjectURL(f);
         } catch (e) { url = ""; }
-        if (!url) continue;
+        if (!url) { skipped++; continue; }
         var pp = localPathParts(f);
-        playlistState.items.push({
+        var item = {
           name: String(f.name).replace(/\.[^.]+$/, ""),
           url: url, len: null, group: pp.group, kind: "track", local: true,
           /* Đợt B (9.9): giữ kích thước file để tính KBPS trung bình thật
@@ -2083,18 +2256,27 @@
           /* Đợt v10.0 (việc 5): đường dẫn tương đối + nghệ sĩ/album suy
              từ cấu trúc thư mục (chờ tag ID3 ở đợt metadata). */
           relPath: pp.relPath, album: pp.album, artist: pp.artist
-        });
-        probeLocalDuration(playlistState.items[playlistState.items.length - 1]);
-        /* Đợt 5: đọc tag (nghệ sĩ/title/album/thời lượng) — bất đồng
-           bộ, về sau tự vẽ lại hàng playlist/ML (xem applyMetadataToItem);
-           file không tag thì không đổi gì. */
-        probeLocalMetadata(playlistState.items[playlistState.items.length - 1], f);
+        };
+        /* v10.3: giu File goc (khong enumerable — khong lot vao
+           JSON/stringify) de tao lai blob URL khi can (ensureLocalUrl)
+           va de worker doc tag theo dung file nay. */
+        try { Object.defineProperty(item, "_file", { value: f, enumerable: false, writable: true, configurable: true }); } catch (e) { item._file = f; }
+        playlistState.items.push(item);
+        /* v10.3: LIST HIEN NGAY — chi tao the probe tam (chua gan src)
+           + dua vao hang doi; tag/duration dien DAN theo worker, khong
+           probe dong loat o day nua (xem localLoadOne). */
+        var durRec = probeLocalDuration(item);
+        localLoadQueue.push({ item: item, file: f, durRec: durRec });
+        localLoadState.total++;
         added++;
       }
+      localLoadState.skipped += skipped;
       if (added) {
         playlistState.original = playlistState.items.slice();
         updateInfoEls();
         requestRerender();
+        localLoadQueueKick();
+        notifyLocalLoadProgress();
       }
       return added;
     }
@@ -2276,8 +2458,14 @@
       playlistState.original = items.slice();
       playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
+      avsVideoEverHadPic = false; /* v10.3 — playlist moi: muc hien tai la luong moi, chua tung co hinh */
       playlistState.source = sourceName || "radio.m3u";
       requestRerender();
+      /* v10.3 (H2): goi thang setTickerText — truoc day chi requestRerender
+         nen ticker khong duoc dong bo khi du lieu ve (render lai bat ky
+         luc nao cung reset tickerEls). */
+      for (var ti = 0; ti < tickerEls.length; ti++) setTickerText(tickerEls[ti]);
+      syncAvsName();
       return items.length;
     }
     function setPlaylistItems(items, sourceName) {
@@ -2285,8 +2473,11 @@
       playlistState.original = items.slice();
       playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
+      avsVideoEverHadPic = false; /* v10.3 — nhu setPlaylistData */
       playlistState.source = sourceName || "";
       requestRerender();
+      for (var ti2 = 0; ti2 < tickerEls.length; ti2++) setTickerText(tickerEls[ti2]);
+      syncAvsName();
       return playlistState.items.length;
     }
     /* Đợt L (9.8): danh sách rỗng thì trả -1 (không chọn gì) thay vì 0 —
@@ -2329,6 +2520,7 @@
       playlistState.current = idx;
       playlistState.selected = idx;
       playlistState.playing = true;
+      avsVideoEverHadPic = false; /* v10.3 — bai moi: luong moi, chua tung co hinh */
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; demo.playing = true;
       /* Đợt A (9.9, việc 4): đổi bài thì quên thời lượng bài cũ — đếm
          ngược dùng len của bài MỚI cho tới khi engine báo thời lượng
@@ -2341,6 +2533,7 @@
       }
       refreshPlaylistRows();
       updateStatusEls(); updateTimerEls(); updateInfoEls(); /* việc 3: phát mục khác = chọn mục khác → PLTime đổi theo */
+      syncAvsName(); /* v10.3: doi bai thi ten tren nen den AVS doi theo */
       for (var i = 0; i < tickerEls.length; i++) setTickerText(tickerEls[i]);
       updateInfoEls();
       /* Đợt D — đường (a) loadChannel autoplay (v8): kênh video thì tự mở
@@ -2376,6 +2569,21 @@
       updateInfoEls();
       requestRerender();
       return playlistState.items.length - 1;
+    }
+    /* v10.3 — THÊM HÀNG LOẠT (sửa chậm khi load .m3u): addPlaylistItem
+       gọi requestRerender() MỖI LẦN — nạp danh sách .m3u 41 kênh qua
+       addUrl() cũ thì vẽ lại TOÀN BỘ giao diện 41 lần nối tiếp (mỗi lần
+       vẽ lại cả cửa sổ chính + playlist + ML), trên điện thoại chậm hơn
+       hẳn Webamp (fork chỉ set state 1 lần sau khi parse xong).
+       addPlaylistItems: đẩy hết mục vào rồi CHỈ vẽ lại 1 lần; list
+       hiện ngay sau parse, không đợi xử lý phụ (radio không probe
+       duration/metadata — len=null hiện "Trực tiếp" ngay). */
+    function addPlaylistItems(items) {
+      if (!items || !items.length) return 0;
+      for (var i = 0; i < items.length; i++) playlistState.items.push(items[i]);
+      updateInfoEls();
+      requestRerender();
+      return items.length;
     }
     function sortPlaylistByName() {
       playlistState.items.sort(function (a, b) {
@@ -2437,8 +2645,10 @@
       return text;
     }
     function scrollPlaylistTo(idx) {
-      if (!plListDiv) return;
-      try { plListDiv.scrollTop = Math.max(0, idx * 13 - 26); } catch (e) { /* jsdom */ }
+      /* v10.3: skin Classic cuộn list playlist Classic. */
+      var target = plListDiv || classicPlListDiv;
+      if (!target) return;
+      try { target.scrollTop = Math.max(0, idx * 13 - 26); } catch (e) { /* jsdom */ }
     }
 
     /* Bật/tắt một cfgattrib (nút checkbox/radio trong tab Options, LED EQ,
@@ -3420,12 +3630,18 @@
       if (!cx) { glyphCache.set(key, null); return null; }
       cx.drawImage(font.img, sx, sy, cw, chh, 0, 0, cw, chh);
       /* Đợt K (9.7): không lật alpha nữa (xem loadFont) — glyph vẽ nguyên bản. */
+      /* v10.3 (H1 ticker trang): Winamp/WACUP ve bitmapfont bang cach dung
+         anh glyph lam mat na roi TO DAC bang mau font — ke ca mau trang.
+         Truoc day cho nay bo qua buoc to khi col la trang nen glyph chi
+         con alpha goc cua anh (~10% — do tren Songtickerfont.png: mean
+         alpha 26,1/255) -> chu ticker trang gan nhu trong suot. Nay LUON
+         to dac voi colorOf(color) cho moi mau. Cac cho khac dung bitmap
+         font (dong ho, KBPS/KHZ) di chung qua glyphURL nen duoc sua luon;
+         khong co cho nao khac loai tru trang (da soat: chi co cho nay). */
       var col = colorOf(color);
-      if (col !== "#fff" && col !== "rgb(255,255,255)") {
-        cx.globalCompositeOperation = "source-in";
-        cx.fillStyle = col;
-        cx.fillRect(0, 0, cw, chh);
-      }
+      cx.globalCompositeOperation = "source-in";
+      cx.fillStyle = col;
+      cx.fillRect(0, 0, cw, chh);
       var url = "";
       try { url = c.toDataURL("image/png"); } catch (e) { url = ""; }
       glyphCache.set(key, url || null);
@@ -4320,6 +4536,70 @@
        dài), nhãn flex:none nên luôn sát mép phải.
        Số thứ tự N = vị trí trong FULL list (không đổi khi lọc) để số hàng
        ổn định khi tìm kiếm. */
+    /* v10.3 — LECH COT ML (anh 8:07): header va hang du lieu dung 2
+       dinh nghia cot khac nhau nen khong thang hang:
+       (a) nhan thoi luong o header la "Thoi luong" (rong ~70px) con o
+           hang chi la "5:06" (~30px) — cot len de flex "0 0 auto" (rong
+           theo noi dung) nen cot ten (flex 1 1 auto) o header hep hon o
+           hang ~40px, keo cot Nghe si/Album cua header lech trai so voi
+           du lieu.
+       (b) so thu tu "N. " nam TRONG o ten nen chu ten bat dau lech phai
+           theo do rong cua so (1. hep hon 20.) — ten cac hang khong
+           thang nhau, ten cung khong thang voi header "Ten bai".
+       SUALAI: 1 dinh nghia cot DUY NHAT (ML_COL_DEFS / PL_COL_DEFS) dung
+       chung cho header ML, hang ML va hang playlist, qua helper
+       listColSpan — cot so rieng co dinh 30px can phai, cot thoi luong
+       co dinh 48px can phai (du cho "1:23:45"), cac cot con lai giu
+       nguyen do rong cu. Header co o so trong (cung rong 30px) de cac
+       cot sau thang nhau. */
+    var ML_COL_DEFS = [
+      { key: "num", cls: "pl-num", label: "", flex: "0 0 30px", align: "right" },
+      { key: "name", cls: "pl-name", label: "Tên bài", flex: "1 1 auto", align: "" },
+      { key: "artist", cls: "ml-artist", label: "Nghệ sĩ", flex: "0 0 110px", align: "" },
+      { key: "album", cls: "ml-album", label: "Album", flex: "0 0 120px", align: "" },
+      { key: "len", cls: "pl-len", label: "Thời lượng", flex: "0 0 48px", align: "right" }
+    ];
+    var PL_COL_DEFS = [
+      { key: "num", cls: "pl-num", label: "", flex: "0 0 30px", align: "right" },
+      { key: "name", cls: "pl-name", label: "", flex: "1 1 auto", align: "" },
+      { key: "len", cls: "pl-len", label: "", flex: "0 0 48px", align: "right" }
+    ];
+    /* v10.3 — ML GỌN TRÊN ĐIỆN THOẠI: khung ML theo XML rộng 790px; trên
+       điện thoại 360px, thu nhỏ nguyên khung thì các cột/mục bị khuất
+       (ảnh 20:12: list cuộn ngang, mất cột Tên bài, cây trái bị cắt).
+       Khi viewport hẹp (< 560px): cửa sổ ML kẹp về bằng màn hình, ruột
+       xếp dọc (cây thành dải ngang trên đầu, cuộn riêng), chỉ hiện cột
+       Số + Tên bài + Thời lượng (Nghệ sĩ/Album vẫn trong model, xem được
+       qua trackinfo khi phát). Đây là LỰA CHỌN layout cho điện thoại —
+       XML 790px là cho desktop (ghi README). viewportWidth ưu tiên
+       opts.viewportWidth (cho test jsdom — jsdom mặc định innerWidth
+       1024), rồi mới đọc live innerWidth. */
+    function viewportWidth() {
+      if (opts && opts.viewportWidth) return opts.viewportWidth;
+      try {
+        if (typeof window !== "undefined" && window.innerWidth) return window.innerWidth;
+        if (typeof document !== "undefined" && document.documentElement && document.documentElement.clientWidth) return document.documentElement.clientWidth;
+      } catch (e) { /* bỏ qua */ }
+      return 1024;
+    }
+    function isMlCompact() { return viewportWidth() < 560; }
+    function mlColDefs() {
+      if (!isMlCompact()) return ML_COL_DEFS;
+      return [ML_COL_DEFS[0], ML_COL_DEFS[1], ML_COL_DEFS[4]];
+    }
+    function listColSpan(def, text, isFirst) {
+      var sp = document.createElement("span");
+      sp.className = def.cls;
+      sp.style.flex = def.flex;
+      sp.style.minWidth = "0";
+      sp.style.overflow = "hidden";
+      sp.style.textOverflow = "ellipsis";
+      sp.style.whiteSpace = "nowrap";
+      if (!isFirst) sp.style.marginLeft = "6px";
+      if (def.align) sp.style.textAlign = def.align;
+      sp.textContent = text;
+      return sp;
+    }
     function playlistRowText(it, n) {
       return n + ". " + it.name;
     }
@@ -4354,21 +4634,12 @@
             row.style.fontWeight = "bold";
           }
           row.style.display = "flex";
-          var nameSpan = document.createElement("span");
-          nameSpan.className = "pl-name";
-          nameSpan.style.flex = "1 1 auto";
-          nameSpan.style.minWidth = "0";
-          nameSpan.style.overflow = "hidden";
-          nameSpan.style.textOverflow = "ellipsis";
-          nameSpan.style.whiteSpace = "nowrap";
-          nameSpan.textContent = playlistRowText(rec.item, rec.idx + 1);
-          row.appendChild(nameSpan);
-          var lenSpan = document.createElement("span");
-          lenSpan.className = "pl-len";
-          lenSpan.style.flex = "0 0 auto";
-          lenSpan.style.marginLeft = "6px";
-          lenSpan.textContent = playlistRowLabel(rec.item);
-          row.appendChild(lenSpan);
+          /* v10.3: so thu tu o rieng (co dinh 30px, can phai) — ten bat
+             dau cung 1 vi tri o moi hang; nhan thoi luong co dinh 48px
+             can phai de cot ten khong doi rong khi nhan ve ("…" -> "3:07"). */
+          row.appendChild(listColSpan(PL_COL_DEFS[0], (rec.idx + 1) + ".", true));
+          row.appendChild(listColSpan(PL_COL_DEFS[1], rec.item.name, false));
+          row.appendChild(listColSpan(PL_COL_DEFS[2], playlistRowLabel(rec.item), false));
           row.dataset.idx = String(rec.idx);
           /* Click 1 lần = chỉ chọn (không phát); click đúp = phát. */
           row.onclick = function () { selectPlaylistItem(rec.idx); };
@@ -4395,6 +4666,10 @@
       }
     }
     function refreshPlaylistRows() {
+      /* v10.3 — skin Classic không có plListDiv Modern nên đường cũ return
+         ngay; vẫn phải vẽ lại hàng playlist Classic tại chỗ (chọn/phát/
+         xóa mục đều gọi hàm này). */
+      refreshClassicPlRows();
       if (!plListDiv) return;
       /* Đợt A (9.9, việc 2): giữ vị trí cuộn — buildPlaylistRows xóa
          hết hàng rồi vẽ lại, lúc trống tức thì scrollTop bị kẹp về 0
@@ -4508,43 +4783,54 @@
       if (!listDiv || !document || !document.createElement) return null;
       var old = null;
       try { old = listDiv.querySelector(".ml-header"); } catch (e) { old = null; }
-      if (old) return old;
+      var compact = isMlCompact();
+      /* v10.3: header vẽ lại khi đổi chế độ gọn/rộng (số cột khác nhau)
+         — không giữ header cũ lệch cột với hàng mới. */
+      if (old) {
+        if (old._mlCompact === compact) return old;
+        if (old.parentElement) old.parentElement.removeChild(old);
+      }
       var head = document.createElement("div");
       head.className = "ml-header";
       head.style.display = "flex";
       head.style.fontWeight = "bold";
       head.style.borderBottom = "1px solid #6788c9";
       head.style.padding = "2px 0";
-      var defs = [
-        { cls: "ml-name", text: "Tên bài", flex: "1 1 auto" },
-        { cls: "ml-artist", text: "Nghệ sĩ", flex: "0 0 110px" },
-        { cls: "ml-album", text: "Album", flex: "0 0 120px" },
-        { cls: "ml-len", text: "Thời lượng", flex: "0 0 auto" }
-      ];
+      head._mlCompact = compact;
+      /* v10.3: header dung CHUNG mlColDefs() voi hang du lieu (ke ca o
+         so trong dau tien) — header va hang thang cot nhau, ca che do
+         gon (chi So/Ten/Thoi luong). */
+      var defs = mlColDefs();
       for (var i = 0; i < defs.length; i++) {
-        var s = document.createElement("span");
-        s.className = defs[i].cls;
-        s.style.flex = defs[i].flex;
-        s.style.minWidth = "0";
-        s.style.overflow = "hidden";
-        s.style.textOverflow = "ellipsis";
-        s.style.whiteSpace = "nowrap";
-        if (i > 0) s.style.marginLeft = "6px";
-        s.textContent = defs[i].text;
-        head.appendChild(s);
+        head.appendChild(listColSpan(defs[i], defs[i].label, i === 0));
       }
       /* Chèn lên đầu danh sách (trước các hàng .row). */
       if (listDiv.firstChild) listDiv.insertBefore(head, listDiv.firstChild);
       else listDiv.appendChild(head);
       return head;
     }
-    function buildMlRows(listDiv) {
-      var olds = listDiv.querySelectorAll(".row");
-      for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
-      ensureMlHeader(listDiv);
-      var sel = playlistSelColors();
-      var rows = mlFilteredItems();
-      for (var r = 0; r < rows.length; r++) {
+    /* v10.3 — ML VE TUNG DOT (khong lag khi mo ML 105-146 muc):
+       Cu: buildMlRows ve 1 mach TOAN BO hang (146 hang x 5 phan tu) tren
+       luong UI, lai goi lai moi lan tag ve (105 lan) — mo ML dung luc
+       probe dang chay thi may giat/do. Nay: ve ngay dot dau (60 hang —
+       du phu man hinh dien thoai) de list HIEN NGAY, cac dot sau (60
+       hang/dot) noi them bang setTimeout(0) khi trinh duyet ranh; cuon
+       xuong gan het dot da ve thi ve them ngay (onscroll o renderMlContent).
+       Moi lan ve lai (doi filter/tag ve) thi huy lich dot cu (mlRenderGen)
+       roi ve lai tu dot dau. flushMlRows() ve not dong bo — test + luc
+       queue doc tag xong goi de dam bao du hang. */
+    var ML_CHUNK_ROWS = 60;
+    var ML_ROW_H_PX = 13;
+    var mlRenderGen = 0;
+    var mlRowsCache = [];
+    var mlRowsRendered = 0;
+    var mlChunkTimer = null;
+    function mlAppendChunk(listDiv, sel, gen) {
+      if (gen !== mlRenderGen) return 0;
+      var rows = mlRowsCache;
+      var start = mlRowsRendered;
+      var end = Math.min(rows.length, start + ML_CHUNK_ROWS);
+      for (var r = start; r < end; r++) {
         (function (rec) {
           var row = document.createElement("div");
           row.className = "row" + (rec.idx === mlSelected ? " sel" : "") + (rec.idx === playlistState.current ? " cur" : "");
@@ -4557,53 +4843,77 @@
             row.style.fontWeight = "bold";
           }
           row.style.display = "flex";
-          var nameSpan = document.createElement("span");
-          nameSpan.className = "pl-name";
-          nameSpan.style.flex = "1 1 auto";
-          nameSpan.style.minWidth = "0";
-          nameSpan.style.overflow = "hidden";
-          nameSpan.style.textOverflow = "ellipsis";
-          nameSpan.style.whiteSpace = "nowrap";
-          /* Đợt 5: ML hiện tên bài từ tag title (nếu có) — playlist +
-             ticker vẫn dùng tên file như cũ. */
-          nameSpan.textContent = (rec.idx + 1) + ". " + metadataDisplayName(rec.item);
-          row.appendChild(nameSpan);
-          /* Đợt 5: cột Nghệ sĩ / Album từ tag (đợt A v9.9 ghi rõ ML chưa
-             có 2 cột này vì model không đọc metadata). File không tag:
-             nghệ sĩ/album suy từ thư mục nếu có, không thì "Không rõ"
-             (quy ước gom nhóm của Webamp fork). Radio cũng "Không rõ". */
-          var artSpan = document.createElement("span");
-          artSpan.className = "ml-artist";
-          artSpan.style.flex = "0 0 110px";
-          artSpan.style.minWidth = "0";
-          artSpan.style.overflow = "hidden";
-          artSpan.style.textOverflow = "ellipsis";
-          artSpan.style.whiteSpace = "nowrap";
-          artSpan.style.marginLeft = "6px";
-          artSpan.textContent = metadataDisplayArtist(rec.item);
-          row.appendChild(artSpan);
-          var albSpan = document.createElement("span");
-          albSpan.className = "ml-album";
-          albSpan.style.flex = "0 0 120px";
-          albSpan.style.minWidth = "0";
-          albSpan.style.overflow = "hidden";
-          albSpan.style.textOverflow = "ellipsis";
-          albSpan.style.whiteSpace = "nowrap";
-          albSpan.style.marginLeft = "6px";
-          albSpan.textContent = metadataDisplayAlbum(rec.item);
-          row.appendChild(albSpan);
-          var lenSpan = document.createElement("span");
-          lenSpan.className = "pl-len";
-          lenSpan.style.flex = "0 0 auto";
-          lenSpan.style.marginLeft = "6px";
-          lenSpan.textContent = playlistRowLabel(rec.item);
-          row.appendChild(lenSpan);
+          /* v10.3: hang ML dung CHUNG mlColDefs() voi header — so rieng,
+             ten tu tag title (playlist + ticker van dung ten file), Nghe
+             si/Album tu tag (khong tag thi "Khong ro" theo quy uoc fork),
+             thoi luong co dinh 48px can phai. Che do gon chi ve So/Ten/
+             Thoi luong (Nghe si/Album an — du lieu van trong model). */
+          var defs = mlColDefs();
+          row.appendChild(listColSpan(defs[0], (rec.idx + 1) + ".", true));
+          row.appendChild(listColSpan(defs[1], metadataDisplayName(rec.item), false));
+          if (defs.length > 3) {
+            row.appendChild(listColSpan(defs[2], metadataDisplayArtist(rec.item), false));
+            row.appendChild(listColSpan(defs[3], metadataDisplayAlbum(rec.item), false));
+          }
+          row.appendChild(listColSpan(defs[defs.length - 1], playlistRowLabel(rec.item), false));
           row.dataset.idx = String(rec.idx);
           row.onclick = function () { mlSelected = rec.idx; refreshMlRows(); };
           row.ondblclick = function () { playPlaylistItem(rec.idx); };
           listDiv.appendChild(row);
         })(rows[r]);
       }
+      mlRowsRendered = end;
+      return end - start;
+    }
+    function mlScheduleChunk(listDiv, sel, gen) {
+      if (mlRowsRendered >= mlRowsCache.length) return;
+      if (mlChunkTimer) return;
+      mlChunkTimer = setTimeout(function () {
+        mlChunkTimer = null;
+        if (gen !== mlRenderGen) return;
+        mlAppendChunk(listDiv, sel, gen);
+        mlScheduleChunk(listDiv, sel, gen);
+      }, 0);
+    }
+    function buildMlRows(listDiv) {
+      var olds = listDiv.querySelectorAll(".row");
+      for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
+      ensureMlHeader(listDiv);
+      var sel = playlistSelColors();
+      mlRowsCache = mlFilteredItems();
+      mlRowsRendered = 0;
+      var gen = ++mlRenderGen;
+      if (mlChunkTimer) { try { clearTimeout(mlChunkTimer); } catch (e) { /* bo qua */ } mlChunkTimer = null; }
+      mlAppendChunk(listDiv, sel, gen);
+      mlScheduleChunk(listDiv, sel, gen);
+    }
+    /* Ve not so hang ML con lai ngay lap tuc (khong cho setTimeout) —
+       dung khi queue doc tag xong, hoac test can dem du hang. */
+    function flushMlRows() {
+      if (!mlListDiv) return false;
+      if (mlChunkTimer) { try { clearTimeout(mlChunkTimer); } catch (e) { /* bo qua */ } mlChunkTimer = null; }
+      var sel = playlistSelColors();
+      var gen = mlRenderGen;
+      while (mlRowsRendered < mlRowsCache.length) {
+        if (mlAppendChunk(mlListDiv, sel, gen) <= 0) break;
+      }
+      return true;
+    }
+    function getMlRenderState() {
+      return { rendered: mlRowsRendered, total: mlRowsCache.length, chunk: ML_CHUNK_ROWS };
+    }
+    /* Cuon toi gan het dot da ve thi ve them dot tiep ngay (khong cho
+       lich setTimeout) — nguoi dung cuon nhanh van thay hang lien tuc. */
+    function mlEnsureRowsForScroll() {
+      if (!mlListDiv || mlRowsRendered >= mlRowsCache.length) return false;
+      var top = 0, vh = 0;
+      try { top = mlListDiv.scrollTop || 0; vh = mlListDiv.clientHeight || 0; } catch (e) { return false; }
+      if (top + vh < mlRowsRendered * ML_ROW_H_PX - 26) return false;
+      if (mlChunkTimer) { try { clearTimeout(mlChunkTimer); } catch (e) { /* bo qua */ } mlChunkTimer = null; }
+      var sel = playlistSelColors();
+      var n = mlAppendChunk(mlListDiv, sel, mlRenderGen);
+      mlScheduleChunk(mlListDiv, sel, mlRenderGen);
+      return n > 0;
     }
     function refreshMlRows() {
       if (!mlListDiv) return;
@@ -4628,6 +4938,9 @@
           row.style.overflow = "hidden";
           row.style.textOverflow = "ellipsis";
           row.style.cursor = "default";
+          /* v10.3: che do gon — cay thanh dai ngang, moi nut la 1 muc
+             flex co dinh (khong co gian, khong xuong dong). */
+          if (isMlCompact()) { row.style.flex = "0 0 auto"; row.style.alignSelf = "center"; }
           if (node.header) {
             row.style.fontWeight = "bold";
             row.style.paddingTop = "4px";
@@ -4659,7 +4972,9 @@
         filter: mlFilter, selected: mlSelected,
         hasWindow: !!mlListDiv, count: mlFilteredItems().length,
         total: playlistState.items.length,
-        columns: ML_COLUMNS.slice()
+        columns: ML_COLUMNS.slice(),
+        compact: isMlCompact(),
+        visibleColumns: mlColDefs().map(function (d) { return d.key; })
       };
     }
     function hasMediaLibrary() {
@@ -4668,15 +4983,19 @@
     /* Vẽ ruột ML vào đúng hộp <component> trong dummy group (x=6,y=5,
        w=-12 relatw=1, h=-50 relath=1 theo XML — 778×299 với skin 566,
        tính từ model lúc chạy, không gán cứng): cây trái 170px + danh
-       sách phải co giãn. */
+       sách phải co giãn. v10.3 — che do gon (viewport < 560px): xep doc
+       (cay thanh dai ngang 18px tren dau, cuon ngang rieng; list day
+       du rong ben duoi), chi hien cot So/Ten/Thoi luong. */
     function renderMlContent(el, parentEl, parentW, parentH, x, y) {
       var w = relSize(el, "w", parentW), h = relSize(el, "h", parentH);
+      var compact = isMlCompact();
       var div = document.createElement("div");
       div.className = "ml-content";
       div.dataset.mlContent = "1";
       div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = w + "px"; div.style.height = h + "px";
       div.style.display = "flex";
+      if (compact) div.style.flexDirection = "column";
       div.style.background = colorOf("wasabi.list.background");
       div.style.color = colorOf("wasabi.list.text");
       div.style.fontSize = "11px";
@@ -4685,11 +5004,20 @@
       var treeW = Math.min(170, Math.max(120, Math.floor(w * 0.22)));
       var tree = document.createElement("div");
       tree.className = "ml-tree";
-      tree.style.flex = "0 0 " + treeW + "px";
-      tree.style.height = "100%";
-      tree.style.overflowY = "auto";
-      tree.style.overflowX = "hidden";
-      tree.style.borderRight = "1px solid #6788c9";
+      if (compact) {
+        tree.style.flex = "0 0 auto";
+        tree.style.height = "18px";
+        tree.style.display = "flex";
+        tree.style.overflowX = "auto";
+        tree.style.overflowY = "hidden";
+        tree.style.borderBottom = "1px solid #6788c9";
+      } else {
+        tree.style.flex = "0 0 " + treeW + "px";
+        tree.style.height = "100%";
+        tree.style.overflowY = "auto";
+        tree.style.overflowX = "hidden";
+        tree.style.borderRight = "1px solid #6788c9";
+      }
       tree.style.boxSizing = "border-box";
       div.appendChild(tree);
       var list = document.createElement("div");
@@ -4697,9 +5025,13 @@
       list.dataset.mlList = "1";
       list.style.flex = "1 1 auto";
       list.style.minWidth = "0";
-      list.style.height = "100%";
+      list.style.height = compact ? "auto" : "100%";
       list.style.overflowY = "auto";
       list.style.overflowX = "hidden";
+      /* v10.3: cuon gan het dot hang da ve thi ve them dot tiep ngay. */
+      try {
+        list.addEventListener("scroll", function () { mlEnsureRowsForScroll(); });
+      } catch (e) { /* jsdom cu */ }
       div.appendChild(list);
       mlTreeDiv = tree; mlListDiv = list;
       buildMlTree(tree);
@@ -5382,7 +5714,10 @@
           return it.url && !/[<>\s]/.test(it.url);
         });
         if (!items.length) throw new Error("empty");
-        for (var i = 0; i < items.length; i++) addPlaylistItem(items[i]);
+        /* v10.3: thêm CẢ danh sách 1 lần (addPlaylistItems) thay vì
+           addPlaylistItem từng kênh (mỗi kênh 1 lần vẽ lại toàn bộ) —
+           list hiện ngay sau parse. */
+        addPlaylistItems(items);
         return { ok: true, added: items.length, reason: "" };
       }).catch(function (e) {
         showTickerError("khong nap duoc danh sach .m3u");
@@ -5446,7 +5781,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.2 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.3 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -5511,7 +5846,7 @@
       return [
         { label: "Phát file nhạc…", action: function () { openLocalFilePicker(); } },
         { label: "Phát URL…", action: function () { showAddUrlForm(anchorDiv); } },
-        { label: "Nạp skin .wal/.zip…", action: function () { if (onOpenSkinPicker) onOpenSkinPicker(); } },
+        { label: "Nạp skin .wal/.wsz/.zip…", action: function () { if (onOpenSkinPicker) onOpenSkinPicker(); } },
         { label: "Đóng Amp", action: function () { if (onPlayerClose) onPlayerClose(); } }
       ];
     }
@@ -5769,7 +6104,7 @@
       rows.push(toggleRow("zoom1", function () { return "Zoom: Cỡ gốc 1x"; }, null, function () { if (onZoom) onZoom("1"); }));
       rows.push(toggleRow("zoomfit", function () { return "Zoom: Vừa màn hình"; }, null, function () { if (onZoom) onZoom("fit"); }));
       rows.push({ section: "Skin" });
-      rows.push(toggleRow("skin", function () { return "Nạp skin .wal/.zip…"; }, null, function () { if (onOpenSkinPicker) onOpenSkinPicker(); }));
+      rows.push(toggleRow("skin", function () { return "Nạp skin .wal/.wsz/.zip…"; }, null, function () { if (onOpenSkinPicker) onOpenSkinPicker(); }));
       rows.push({ section: "Chưa nối (cần MAKI hoặc tính năng native)" });
       rows.push({ note: "Kiểu file / CD rip — ngoài phạm vi web" });
       rows.push({ note: "Crossfade thật — cần engine 2 thẻ audio (xem README đợt B)" });
@@ -5863,8 +6198,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.2 — Winamp Modern",
-        "Phiên bản Amp: 10.2 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.3 — Winamp Modern",
+        "Phiên bản Amp: 10.3 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -6038,6 +6373,12 @@
          Gọi vào đây (playPlaylistItem/showTickerError/clearTickerError)
          thì chỉ refresh, KHÔNG ghi đè holder bằng chữ Arial. */
       if (rec && rec.classic) { refreshClassicMain(); return; }
+      /* v10.3 (H2 ticker trang): seq-guard THEO REC (giong timerElsSeq /
+         infoElsSeq nhung theo tung rec vi setTickerText goi rieng cho
+         tung rec: main + shade co 2 rec khac nhau, dung 1 seq chung se
+         huy lan nhau). Lan goi cu resolve muon (sau await makeBitmapText)
+         thay seq da doi thi bo, khong ghi de chu moi. */
+      var myTickerSeq = (rec._tickerSeq || 0) + 1; rec._tickerSeq = myTickerSeq;
       /* Đợt E — ticker hiện mục ĐANG HÁT (tên kênh/bài, BỎ DẤU vì font
          marquee chỉ có ASCII), kèm "(M:SS)" khi mục có thời lượng.
          Chưa phát gì thì giữ bài Demo như đợt A. Lỗi phát (kênh lỗi /
@@ -6058,6 +6399,7 @@
         if (rec.showlen && cur0 && cur0.len != null) text += " (" + fmtTime(cur0.len) + ")";
       }
       var tdiv = await makeBitmapText(rec.fontId, text, rec.boxW, "left", color);
+      if (rec._tickerSeq !== myTickerSeq) return; /* lan goi moi hon da thang */
       rec.holder.innerHTML = "";
       rec.holder.appendChild(tdiv);
       rec.textW = tdiv._textW || 0;
@@ -6547,10 +6889,31 @@
            gradient hàng); canvas display giữ nguyên 16 cột trực tiếp
            bên dưới (người dùng xác nhận 15:14 đã giống Webamp). */
         if (v.fillBg === true) {
-          /* Đợt 4 (Milkdrop): Milkdrop bật thì khỏi vẽ vis thường lên
-             canvas đang ẩn (tiết kiệm CPU/pin). */
-          if (milkdropActive) continue;
-          drawAvsVis(ctx2, v.cv.width || 0, v.cv.height || 0, visMode, freq, maxBin, useXmlCol, col, visTypeAvs, td);
+          /* v10.3 — VUNG AVS/VIDEO KHONG VE SPECTRUM NUA. Webamp/Winamp
+             that: cua so Video thuc chat la cua so Milkdrop (co hinh thi
+             hien <video>, chi co tieng thi ve Milkdrop); cot spectrum 75
+             cot CHI thuoc display cua so chinh (76x16 px) — Amp cu ve
+             spectrum vao AVS la SAI VI TRI (mau trang thi dung theo XML
+             566 vi ColorBand1..16 deu trang). Nay:
+             - Milkdrop BAT: canvas Milkdrop de len, khoi ve gi vao canvas
+               spectrum (continue) — drawAvsVis GIU LAI de doi chieu, khong
+               con goi tu day.
+             - Milkdrop TAT: to den canvas (#000, trung nen wrap) — vung
+               AVS den/trong, khong cot nao. Spectrum + song OSC chi con
+               o display cua so chinh (nhanh ben duoi) va day playlist
+               khi main dong. */
+          if (milkdropActive) {
+            lastAvsFrame = { mode: "milkdrop", maxBin: maxBin, heights: [], peaks: [], visType: visTypeAvs };
+            continue;
+          }
+          if (ctx2) {
+            try {
+              ctx2.clearRect(0, 0, v.cv.width || 0, v.cv.height || 0);
+              ctx2.fillStyle = "#000";
+              ctx2.fillRect(0, 0, v.cv.width || 0, v.cv.height || 0);
+            } catch (e) { /* stub canvas */ }
+          }
+          lastAvsFrame = { mode: "black", maxBin: maxBin, heights: [], peaks: [], visType: visTypeAvs };
           continue;
         }
         /* Đợt 4 — kiểu vis của vùng display (bar/osc/none), áp cho cả
@@ -6883,6 +7246,7 @@
            việc gán src + phát (native/HLS/crossOrigin/EQ) là đợt E. */
         v.addEventListener("loadedmetadata", function () {
           avsVideoHasPic = (v.videoWidth || 0) > 0; /* Đợt v10.2 — fallback vis */
+          if (avsVideoHasPic) avsVideoEverHadPic = true; /* v10.3 — đã từng có hình thật */
           setVideoInfo(v.videoWidth || 0, v.videoHeight || 0);
           applyAvsMediaVisibility();
         });
@@ -6893,14 +7257,28 @@
       var cv = document.createElement("canvas");
       cv.className = "vis";
       cv.dataset.avsCanvas = "1";
-      /* Đợt 4: bấm vào vis AVS để đổi kiểu riêng (BAR → sóng → tắt). */
+      /* v10.3: canvas spectrum AVS luon an (khong ve spectrum vao day
+         nua) — giu lai trong DOM de drawVisStatic to den + giu tuong
+         thich (test cu truy cap m.canvas). Handler cu giu nguyen, khong
+         con bam duoc vi canvas an. */
       cv.style.pointerEvents = "auto"; cv.style.cursor = "pointer";
       cv.title = "Bấm để đổi kiểu vis";
       cv.onclick = function () { cycleVisType("avs"); };
       cv.style.position = "absolute"; cv.style.left = "0px"; cv.style.top = "0px";
+      /* v10.3: nhan ten kenh/bai tren nen den khi chi co tieng. */
+      var nameEl = document.createElement("div");
+      nameEl.dataset.avsName = "1";
+      nameEl.style.position = "absolute"; nameEl.style.left = "0px"; nameEl.style.top = "50%";
+      nameEl.style.width = "100%"; nameEl.style.textAlign = "center";
+      nameEl.style.transform = "translateY(-50%)";
+      nameEl.style.color = "#fff"; nameEl.style.font = "11px Arial, sans-serif";
+      nameEl.style.whiteSpace = "nowrap"; nameEl.style.overflow = "hidden";
+      nameEl.style.textOverflow = "ellipsis"; nameEl.style.pointerEvents = "none";
+      nameEl.style.display = "none";
       wrap.appendChild(v);
       wrap.appendChild(cv);
-      avsMedia = { wrap: wrap, video: v, canvas: cv };
+      wrap.appendChild(nameEl);
+      avsMedia = { wrap: wrap, video: v, canvas: cv, nameEl: nameEl };
       parkAvsMedia(); /* Đợt 4: thẻ video có trong document từ lúc tạo */
       return avsMedia;
     }
@@ -6914,12 +7292,47 @@
        sang "vis" khi videoWidth == 0 với item phân loại video + AVS đang
        mở — fallback này bao thêm trường hợp mode vẫn "video" (vd kênh
        radio mở ở cửa sổ video). Milkdrop bật thì vis thường ẩn như cũ. */
+    /* v10.3 — ten kenh/bai hien tren nen den cua vung AVS khi chi co
+       tieng (khong co hinh + Milkdrop tat), nhu fork Webamp lam o cua so
+       Video roi. An khi video dang hien hoac Milkdrop dang chay. */
+    function syncAvsName() {
+      if (!avsMedia || !avsMedia.nameEl) return false;
+      var cur = playlistState.items[playlistState.current];
+      var name = cur ? stripDiacritics(cur.name || "") : "";
+      try { avsMedia.nameEl.textContent = name; } catch (e) { /* bo qua */ }
+      var videoShown = false;
+      try { videoShown = avsVideoActuallyShowing(); } catch (e) { videoShown = false; }
+      var mdShown = false;
+      try { mdShown = !!(milkdropActive && milkdropCanvas && milkdropCanvas.style.display !== "none"); } catch (e) { mdShown = false; }
+      var show = !!(avsState.open && !videoShown && !mdShown && name);
+      try { avsMedia.nameEl.style.display = show ? "" : "none"; } catch (e) { /* bo qua */ }
+      return show;
+    }
+    /* v10.3 — CO HINH THAT dang hien (hoac sap hien lai): mode video +
+       (da biet co hinh || da tung co hinh — loadstart ve "chua biet"
+       nhung luong nay da tung bao videoWidth > 0 nen hinh sap ve, ten /
+       Milkdrop phai an). Khac voi the <video> co display hay khong: the
+       video van hien khi chua biet (den, trong) nhung ten/Milkdrop nam
+       TREN no trong DOM (nameEl, canvas Milkdrop append sau) nen nguoi
+       dung van thay ten/Milkdrop; chi khi co hinh that thi ten/Milkdrop
+       moi phai an. Kênh audio (vd Đà Nẵng qua medatech) chua tung co hinh
+       → khong co hinh that → ten/Milkdrop hien. */
+    function avsVideoActuallyShowing() {
+      if (avsState.mode !== "video") return false;
+      return avsVideoHasPic === true || avsVideoEverHadPic;
+    }
     function applyAvsMediaVisibility() {
       if (!avsMedia) return false;
-      var showVis = avsState.mode === "video" && avsVideoHasPic === false && !milkdropActive;
-      avsMedia.video.style.display = (avsState.mode === "video" && !showVis) ? "" : "none";
-      avsMedia.canvas.style.display = ((avsState.mode === "vis" || showVis) && !milkdropActive) ? "" : "none";
-      return showVis;
+      /* v10.3: the <video> hien khi mode video + chua biet chac la khong
+         co hinh (chua biet thi hien — den, trong; ten/Milkdrop nam tren
+         nen van thay; chi khi biet chac khong co hinh moi an). Canvas
+         spectrum LUON an. Ten kenh do syncAvsName quyet (an chi khi co
+         hinh that). */
+      var hasPic = avsState.mode === "video" && avsVideoHasPic !== false;
+      avsMedia.video.style.display = hasPic ? "" : "none";
+      avsMedia.canvas.style.display = "none";
+      syncAvsName();
+      return false;
     }
     function attachAvsMedia(parentEl, rect) {
       var m = ensureAvsMedia();
@@ -6949,12 +7362,17 @@
        như cũ. Gọi sau mỗi lần gắn wrap + khi bật/tắt Milkdrop. */
     var milkdropActive = false, milkdropCanvas = null;
     function applyMilkdropVisibility() {
-      var showMd = !!(milkdropActive && milkdropCanvas && avsState.mode === "vis" && avsState.open);
+      /* v10.3: Milkdrop hien khi bat + co canvas + AVS mo + KHONG co video
+         that dang hien (ke ca che do video: kenh audio chua tung co hinh
+         thi video an nen Milkdrop duoc hien, nhu Winamp/Webamp; kenh co
+         hinh that thi video giu man hinh). */
+      var showMd = !!(milkdropActive && milkdropCanvas && avsState.open && !avsVideoActuallyShowing());
       try {
         if (milkdropCanvas) milkdropCanvas.style.display = showMd ? "" : "none";
         /* Đợt v10.2 — canvas vis hiện khi mode "vis" HOẶC fallback video-mode
            (mode "video" + đã biết chắc không có hình), trừ khi Milkdrop hiện. */
-        if (avsMedia) avsMedia.canvas.style.display = ((avsState.mode === "vis" || (avsState.mode === "video" && avsVideoHasPic === false)) && !showMd) ? "" : "none";
+        if (avsMedia) avsMedia.canvas.style.display = "none"; /* v10.3: canvas spectrum AVS luon an (chi Milkdrop / video / den) */
+        syncAvsName();
       } catch (e) { /* bỏ qua */ }
       return showMd;
     }
@@ -7263,6 +7681,9 @@
       div.style.width = geo.w + "px"; div.style.height = geo.h + "px";
       div.style.cursor = "pointer";
       div.style.pointerEvents = "auto";
+      /* v10.3: touch-action manipulation — tắt double-tap zoom trên nút
+         để tap phản hồi ngay (không chờ 300ms). */
+      div.style.touchAction = "manipulation";
       if (o.title) div.title = o.title;
       setAbs(div, parent, geo.x, geo.y);
       parent.appendChild(div);
@@ -7276,22 +7697,62 @@
         }
       }
       var rec = { div: div, inner: inner, geo: geo, sheet: sheet, o: o, pressed: false };
+      /* v10.3 — huy hiệu nhỏ trên nút (fork: #repeat.repeat-one::after
+         hiện số "1" ở góc trên-phải để phân biệt lặp 1 bài với lặp tất
+         cả). o.badge() trả chuỗi cần hiện hoặc null. */
+      var badgeEl = null;
+      if (o.badge) {
+        badgeEl = document.createElement("span");
+        badgeEl.style.position = "absolute";
+        badgeEl.style.top = "0px"; badgeEl.style.right = "1px";
+        badgeEl.style.font = "bold 8px Arial, sans-serif";
+        badgeEl.style.lineHeight = "8px";
+        badgeEl.style.color = "#fff"; badgeEl.style.background = "#000";
+        badgeEl.style.padding = "0 1px";
+        badgeEl.style.pointerEvents = "none";
+        badgeEl.style.display = "none";
+        div.appendChild(badgeEl);
+      }
       rec.refresh = function () {
-        if (!inner) return;
-        var sel = false;
-        try { sel = !!(o.isSelected && o.isSelected()); } catch (e) { sel = false; }
-        var name = o.sprite;
-        if (rec.pressed) name = (sel && o.activeSelectedSprite) ? o.activeSelectedSprite : (o.activeSprite || o.sprite);
-        else if (sel && o.selectedSprite) name = o.selectedSprite;
-        classicSetSprite(inner, sheet, name);
+        if (inner) {
+          var sel = false;
+          try { sel = !!(o.isSelected && o.isSelected()); } catch (e) { sel = false; }
+          var name = o.sprite;
+          if (rec.pressed) name = (sel && o.activeSelectedSprite) ? o.activeSelectedSprite : (o.activeSprite || o.sprite);
+          else if (sel && o.selectedSprite) name = o.selectedSprite;
+          classicSetSprite(inner, sheet, name);
+        }
+        if (badgeEl) {
+          var bt = null;
+          try { bt = o.badge ? o.badge() : null; } catch (e) { bt = null; }
+          badgeEl.textContent = bt || "";
+          badgeEl.style.display = bt ? "" : "none";
+        }
       };
-      var pressOn = function (e) { rec.pressed = true; rec.refresh(); if (e && e.preventDefault) e.preventDefault(); };
+      /* v10.3 — SỬA GỐC "bấm chỉ thấy nút lên/xuống mà không làm gì":
+         trước đây pressOn gọi preventDefault() cho MỌI sự kiện, kể cả
+         touchstart. Trên điện thoại, preventDefault ở touchstart làm
+         trình duyệt KHÔNG sinh các sự kiện chuột tương thích (mousedown/
+         mouseup/click) — nên chỉ có touchstart/touchend chạy (đổi sprite
+         pressed → thấy nút lên/xuống) còn div.onclick (hành động thật:
+         play/EQ/PL/...) KHÔNG BAO GIỜ CHẠY. jsdom không tái hiện được
+         vì test dispatch click trực tiếp, bỏ qua đường touch.
+         Sửa: touchstart CHỈ đổi sprite, KHÔNG preventDefault (để click
+         tương thích vẫn sinh ra sau touchend); mousedown vẫn
+         preventDefault như cũ (chống bôi đen/kéo ảnh, không chặn click).
+         Thêm touchcancel → nhả nút khi hệ thống hủy chạm (cuộc gọi đến,
+         trượt khỏi nút). */
+      var pressOn = function (e) {
+        rec.pressed = true; rec.refresh();
+        if (e && e.type !== "touchstart" && e.preventDefault) e.preventDefault();
+      };
       var pressOff = function () { if (!rec.pressed) return; rec.pressed = false; rec.refresh(); };
       div.addEventListener("mousedown", pressOn);
       div.addEventListener("touchstart", pressOn);
       div.addEventListener("mouseup", pressOff);
       div.addEventListener("mouseleave", pressOff);
       div.addEventListener("touchend", pressOff);
+      div.addEventListener("touchcancel", pressOff);
       div.onclick = function () { if (o.onClick) o.onClick(div); };
       return rec;
     }
@@ -7320,7 +7781,10 @@
       track.style.left = "0px"; track.style.top = "0px";
       track.style.width = geo.w + "px"; track.style.height = geo.h + "px";
       var sheetUrl = classicSheetUrl(sheet);
-      if (sheetUrl) track.style.backgroundImage = 'url("' + sheetUrl + '")';
+      /* v10.3 — noTrackBg: rãnh đã vẽ sẵn trong nền (shade EQ: rãnh
+         volume/balance nằm trong EQ_SHADE_BACKGROUND) thì track trong
+         suốt, không đè cả sheet lên. */
+      if (!cfg.noTrackBg && sheetUrl) track.style.backgroundImage = 'url("' + sheetUrl + '")';
       var sz = classicSheetSize(sheet);
       if (sz) track.style.backgroundSize = sz.w + "px " + sz.h + "px";
       track.style.backgroundRepeat = "no-repeat";
@@ -7337,12 +7801,28 @@
       var rec = {
         div: div, track: track, thumb: thumb, w: geo.w, h: geo.h,
         tw: cfg.thumbW, th: cfg.thumbH, action: cfg.action, frac: cfg.frac0 || 0,
+        sliderId: cfg.id, /* v10.3: applyEqPreset tìm slider EQ qua rec.sliderId — phải là id dải ("preamp","eq1",...) */
         dragging: false, cfg: cfg
       };
+      /* v10.3 — travelW: quãng trượt của thumb. Mặc định = geo.w - thumbW
+         (hết dải). Fork: input volume rộng 65px (kém nền 68px 3px, xem
+         main-window.css "#volume input { width: 65px }" + ghi chú tweet)
+         nên thumb volume chỉ trượt 65-14 = 51px — đặt travelW: 51 ở chỗ
+         tạo slider volume để khớp fork (nền fill cũng chỉ tới 65px).
+         Balance: fork không đặt rộng input nên giữ hết dải (24px).
+         vertical: true = trượt dọc (dải EQ Classic: thumb đi từ dưới
+         lên, frac 1 = trên cùng = +12dB). */
+      var travelW = (cfg.travelW != null) ? cfg.travelW : (geo.w - cfg.thumbW);
+      var travelH = (cfg.travelH != null) ? cfg.travelH : (geo.h - cfg.thumbH);
+      var vertical = !!cfg.vertical;
       rec.place = function () {
-        if (thumb) thumb.style.left = Math.round(rec.frac * (geo.w - cfg.thumbW)) + "px";
+        if (thumb) {
+          if (vertical) thumb.style.top = Math.round((1 - rec.frac) * travelH) + "px";
+          else thumb.style.left = Math.round(rec.frac * travelW) + "px";
+        }
         var off = cfg.trackOffset ? cfg.trackOffset(rec.frac) : 0;
-        track.style.backgroundPosition = "0px " + (-off) + "px";
+        if (cfg.trackPosition) track.style.backgroundPosition = cfg.trackPosition(rec.frac);
+        else track.style.backgroundPosition = "0px " + (-off) + "px";
         if (thumb && typeof cfg.thumbSprite === "function") {
           classicSetSprite(thumb, sheet, cfg.thumbSprite(rec.frac));
         }
@@ -7357,12 +7837,20 @@
         try { rect = div.getBoundingClientRect(); } catch (err) { rect = null; }
         if (!rect || (rect.width === 0 && rect.height === 0)) return null;
         var cx = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+        var cy = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
         /* Đợt v10.2 — như slider Modern: rect là px màn hình (stage
            scale bằng transform), geo.w là px skin — đổi về px skin rồi
-           mới tính frac, không thì kéo hết cỡ ở Fit cũng chỉ ~0.45. */
+           mới tính frac, không thì kéo hết cỡ ở Fit cũng chỉ ~0.45.
+           v10.3: dùng travelW/travelH (volume fork chỉ 51) + chiều dọc
+           cho dải EQ Classic. */
         var sc = 1;
-        try { if (rect.width > 0 && geo.w > 0) sc = rect.width / geo.w; if (!isFinite(sc) || sc <= 0) sc = 1; } catch (err) { sc = 1; }
-        return ((cx - rect.left) / sc - cfg.thumbW / 2) / Math.max(1, geo.w - cfg.thumbW);
+        try {
+          if (vertical) { if (rect.height > 0 && geo.h > 0) sc = rect.height / geo.h; }
+          else if (rect.width > 0 && geo.w > 0) sc = rect.width / geo.w;
+          if (!isFinite(sc) || sc <= 0) sc = 1;
+        } catch (err) { sc = 1; }
+        if (vertical) return 1 - (((cy - rect.top) / sc - cfg.thumbH / 2) / Math.max(1, travelH));
+        return ((cx - rect.left) / sc - cfg.thumbW / 2) / Math.max(1, travelW);
       };
       var onDown = function (e) {
         var f = fracFromEvent(e);
@@ -7432,8 +7920,10 @@
       }
       if (rec.timeDiv) {
         /* Fork ẩn hẳn đồng hồ khi dừng (.stop #time { display:none });
-           tạm dừng thì vẫn hiện (fork nháy bằng CSS, Amp không nháy). */
+           tạm dừng thì vẫn hiện + NHÁY (fork: animation blink 2s
+           step-start 1s infinite — keyframes blink trong index.html). */
         rec.timeDiv.style.display = state === "stop" ? "none" : "";
+        rec.timeDiv.style.animation = state === "pause" ? "blink 2s step-start 1s infinite" : "";
         var tp = classicTimeParts();
         var sheet = lib.digitSheetName(C);
         for (var d = 0; d < 4; d++) {
@@ -7492,11 +7982,38 @@
       }
       if (rec.volumeRec) { rec.volumeRec.frac = demo.volume; rec.volumeRec.place(); }
       if (rec.balanceRec) { rec.balanceRec.frac = drawerState.balance; rec.balanceRec.place(); }
+      /* Fork: .stop #position thumb { visibility:hidden } — dừng thì ẩn
+         thumb thanh tua (cả main lẫn shade); phát/tạm dừng thì hiện. */
+      if (rec.seekRec && rec.seekRec.thumb) {
+        rec.seekRec.thumb.style.visibility = state === "stop" ? "hidden" : "";
+      }
       if (rec.buttons) {
         var keys = Object.keys(rec.buttons);
         for (var bi = 0; bi < keys.length; bi++) {
           try { rec.buttons[keys[bi]].refresh(); } catch (e) { /* bỏ qua */ }
         }
+      }
+      /* v10.3 — đồng bộ cửa sổ EQ Classic (nút ON + thumb 11 dải + đồ thị)
+         theo state hiện tại; chạy theo từng timeupdate nên đồ thị có
+         guard sig, thumb chỉ đặt lại khi giá trị đổi. */
+      if (classicEqRec) {
+        if (classicEqRec.buttons) {
+          var ek = Object.keys(classicEqRec.buttons);
+          for (var ei = 0; ei < ek.length; ei++) {
+            try { classicEqRec.buttons[ek[ei]].refresh(); } catch (e) { /* bỏ qua */ }
+          }
+        }
+        if (classicEqRec.bandRecs) {
+          for (var bq = 0; bq < classicEqRec.bandRecs.length; bq++) {
+            var brq = classicEqRec.bandRecs[bq];
+            if (brq && brq.cfg) {
+              var bv = drawerState.eqBands[brq.cfg.id];
+              if (bv == null) bv = 0.5;
+              if (brq.frac !== bv) { brq.frac = bv; brq.place(); }
+            }
+          }
+        }
+        drawClassicEqGraph();
       }
     }
     function getClassicMainState() {
@@ -7511,23 +8028,23 @@
         seekFrac: demo.seekFrac,
         shuffle: !!demo.shuffle, repeat: demo.repeat,
         drawerOpen: !!drawerState.open,
+        /* v10.3: trạng thái cửa sổ PL/EQ Classic (nút EQ chính đọc
+           classicEqOpen thay cho drawerOpen từ v10.3). */
+        eqOpen: classicEqOpen, eqShade: classicEqShade, plShade: classicPlShade,
+        playlistOpen: (function () { try { return !!(isPlaylistOpen && isPlaylistOpen()); } catch (e) { return false; } })(),
         sheets: classicData() ? Object.keys(classicData().sheets) : []
       };
     }
-    /* Nút EQ Classic: mở/đóng ngăn kéo (trong Amp ngăn kéo CHỨA EQ —
-       cửa sổ EQ Classic riêng chưa vẽ, đợt sau). Đang mở ở tab EQ thì
-       đóng, không thì mở ở tab EQ. */
+    /* Nút EQ Classic: mở/đóng CỬA SỔ EQ Classic (v10.3 — trước đây mở
+       ngăn kéo Modern, không có ý nghĩa trên skin Classic vì ngăn kéo
+       không vẽ). */
     function classicToggleEq() {
-      if (drawerState.open && drawerTab === "eq") {
-        if (onDrawerToggle) onDrawerToggle(false); else setDrawerOpen(false);
-      } else {
-        openDrawerTab("eq");
-      }
+      setClassicEqOpen(!classicEqOpen);
     }
     /* Nút PL Classic: đổi trạng thái playlist (như Modern). Cửa sổ
-       Playlist Classic CHƯA VẼ ở đợt này (playlist/m3u đã chốt không
-       lấy) — nút chỉ đổi trạng thái + sáng đèn; cửa sổ playlist sẽ
-       vẽ ở đợt sau. */
+       Playlist Classic vẽ ở renderClassicStage khi playlistOpen (v10.3 —
+       trước đây nút chỉ đổi trạng thái + sáng đèn, không có cửa sổ nào
+       để mở nên bấm mà không thấy gì). */
     function classicTogglePlaylist() {
       if (onPlaylistToggle) onPlaylistToggle();
     }
@@ -7755,6 +8272,9 @@
           thumbSprite: "MAIN_VOLUME_THUMB", thumbActiveSprite: "MAIN_VOLUME_THUMB_SELECTED",
           thumbW: G.volume.thumbW, thumbH: G.volume.thumbH, thumbY: G.volume.thumbY,
           frac0: demo.volume,
+          /* v10.3 — fork: input volume rộng 65px (kém nền 68px 3px) nên
+             thumb chỉ trượt 65-14 = 51px, khớp nền fill tới 65px. */
+          travelW: 51,
           trackOffset: function () { return lib.volumeTrackOffset(demo.volume); },
           onSet: function (frac) {
             demo.volume = frac; updateVolumebar();
@@ -7775,8 +8295,8 @@
       rec.buttons.eq = classicButton(win, G.eqButton, "SHUFREP", {
         id: "equalizer-button", sprite: "MAIN_EQ_BUTTON", selectedSprite: "MAIN_EQ_BUTTON_SELECTED",
         activeSprite: "MAIN_EQ_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_EQ_BUTTON_DEPRESSED_SELECTED",
-        title: "Bật/tắt Bộ chỉnh âm (ngăn kéo)",
-        isSelected: function () { return !!drawerState.open; },
+        title: "Bật/tắt Bộ chỉnh âm (cửa sổ EQ Classic)",
+        isSelected: function () { return !!classicEqOpen; },
         onClick: function () { classicToggleEq(); refreshClassicMain(); }
       });
       rec.buttons.playlist = classicButton(win, G.playlistButton, "SHUFREP", {
@@ -7854,6 +8374,7 @@
         activeSprite: "MAIN_REPEAT_BUTTON_DEPRESSED", activeSelectedSprite: "MAIN_REPEAT_BUTTON_SELECTED_DEPRESSED",
         title: "Lặp lại: bấm để xoay Tắt → Lặp tất cả → Lặp 1 bài",
         isSelected: function () { return demo.repeat !== 0; },
+        badge: function () { return demo.repeat === -1 ? "1" : null; },
         onClick: function () {
           cycleRepeat();
           refreshClassicMain();
@@ -8017,6 +8538,452 @@
       classicShadeRec = rec;
       return rec;
     }
+    /* ---------- Đợt v10.3 (việc Classic PL/EQ) — cửa sổ Playlist + EQ Classic ----------
+       Trước v10.3, nút PL/EQ trên skin Classic bấm mà không có gì xảy ra
+       (chỉ đổi trạng thái, không có cửa sổ nào để mở) — người dùng báo
+       20:21 "nút PL không hoạt động", rồi "tất cả nút không tác dụng"
+       (tin 20:23 làm rõ: nút chỉ lên/xuống, xem sửa pressOn ở
+       classicButton). Nay vẽ thật 2 cửa sổ theo fork Webamp (chỉ lấy dữ
+       liệu định dạng + hình học, KHÔNG bê Redux/React):
+       - Playlist: khung PLEDIT.bmp (top 20 + list + bottom 38, mặc định
+         275×116 như fork: BASE_WINDOW_HEIGHT 58 + top 20 + bottom 38;
+         kéo đổi cỡ theo segment 25×29 CHƯA làm — ghi README), hàng 13px
+         màu từ pledit.txt, nút ADD/REM/SEL/MISC/LIST mở đúng menu đã có
+         của Amp, nút chạy lên/xuống cuộn 4 bài, giờ chạy tổng ở đáy
+         (chữ TEXT.bmp 5×6), shade 275×14 (tên bài + giờ + nút mở lại).
+       - EQ: khung EQMAIN.bmp 275×116, ON/AUTO/PRESETS, đồ thị 113×19,
+         11 dải dọc (preamp + 10 dải, nền cell EQ_SLIDER_BACKGROUND theo
+         công thức spriteNumber của fork Band.tsx: cell 15×65, số
+         round(frac*27)), vùng +12dB/0dB/-12dB, shade EQ_EX 275×14
+         (volume/balance mini 3×7, đổi sprite trái/giữa/phải theo vị trí
+         như fork EqualizerShade segment()).
+       Trạng thái mở do renderer giữ (classicEqOpen/classicEqShade/
+       classicPlShade); nút EQ trên cửa sổ chính + mục "Ngăn kéo" trong
+       menu (qua toggleDrawer ở index.html) đều mở cửa sổ EQ Classic
+       khi đang dùng skin Classic, không mở ngăn kéo Modern. */
+    var CLASSIC_PL_W = 275, CLASSIC_PL_H = 116;
+    var CLASSIC_EQ_W = 275, CLASSIC_EQ_H = 116;
+    var classicEqOpen = false, classicEqShade = false, classicPlShade = false;
+    var classicPlListDiv = null, classicPlTimeDiv = null;
+    var classicPlRec = null, classicEqRec = null;
+    var classicEqGraphCv = null, classicEqGraphSig = "";
+    function classicPlStyle() {
+      var lib = classicLib();
+      var c = classicData();
+      if (c && c.playlistStyle) return c.playlistStyle;
+      return lib ? lib.DEFAULT_PLAYLIST_STYLE : { normal: "#00FF00", current: "#FFFFFF", normalbg: "#000000", selectedbg: "#0000FF", font: "Arial" };
+    }
+    function classicPlTimeText() {
+      var total = 0;
+      try { total = playlistTotalTime() || 0; } catch (e) { total = 0; }
+      var sel = 0;
+      try { sel = (playlistState.selected >= 0) ? playlistSelectedTime() : 0; } catch (e) { sel = 0; }
+      var t = (sel > 0) ? sel : total;
+      return fmtTime(t);
+    }
+    function refreshClassicPlTime() {
+      if (!classicPlTimeDiv) return;
+      var txt = classicPlTimeText();
+      while (txt.length < 18) txt += " ";
+      classicPlTimeDiv.innerHTML = "";
+      classicPlTimeDiv.appendChild(classicTextRow(txt));
+    }
+    function buildClassicPlRows(listDiv) {
+      if (!listDiv) return;
+      var olds = listDiv.querySelectorAll(".row");
+      for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
+      var st = classicPlStyle();
+      var rows = playlistFiltered();
+      for (var r = 0; r < rows.length; r++) {
+        (function (rec) {
+          var row = document.createElement("div");
+          row.className = "row" + (rec.idx === playlistState.selected ? " sel" : "") + (rec.idx === playlistState.current ? " cur" : "");
+          row.style.display = "flex";
+          row.style.height = "13px"; row.style.lineHeight = "13px";
+          row.style.fontSize = "9px"; row.style.letterSpacing = "0.5px";
+          row.style.fontFamily = (st.font || "Arial") + ", Arial, sans-serif";
+          row.style.color = st.normal; row.style.background = st.normalbg;
+          if (rec.idx === playlistState.selected) row.style.background = st.selectedbg;
+          if (rec.idx === playlistState.current) { row.style.color = st.current; row.style.fontWeight = "bold"; }
+          var nm = document.createElement("span");
+          nm.style.flex = "1 1 auto"; nm.style.minWidth = "0";
+          nm.style.overflow = "hidden"; nm.style.textOverflow = "ellipsis"; nm.style.whiteSpace = "nowrap";
+          nm.textContent = rec.item.name;
+          row.appendChild(nm);
+          var ln = document.createElement("span");
+          ln.style.flex = "0 0 auto"; ln.style.paddingRight = "3px"; ln.style.textAlign = "right";
+          ln.textContent = playlistRowLabel(rec.item);
+          row.appendChild(ln);
+          row.dataset.idx = String(rec.idx);
+          row.onclick = function () { selectPlaylistItem(rec.idx); };
+          row.ondblclick = function () { playPlaylistItem(rec.idx); };
+          listDiv.appendChild(row);
+        })(rows[r]);
+      }
+    }
+    function refreshClassicPlRows() {
+      if (!classicPlListDiv) return;
+      buildClassicPlRows(classicPlListDiv);
+      refreshClassicPlTime();
+    }
+    /* Vùng bấm trong suốt trên nền đã vẽ sẵn icon (vd nút thu gọn EQ
+       trong titlebar, nút menu ADD/REM... trong đáy playlist): chỉ vùng
+       bấm + title, không vẽ thêm sprite. */
+    function classicHotZone(parent, geo, id, title, fn) {
+      var z = document.createElement("div");
+      if (id) z.dataset.classicBtn = id;
+      z.style.position = "absolute";
+      z.style.left = geo.x + "px"; z.style.top = geo.y + "px";
+      z.style.width = geo.w + "px"; z.style.height = geo.h + "px";
+      z.style.cursor = "pointer";
+      if (title) z.title = title;
+      setAbs(z, parent, geo.x, geo.y);
+      parent.appendChild(z);
+      z.onclick = fn;
+      return z;
+    }
+    /* Vẽ cửa sổ Playlist Classic (275×116) tại topY trong T. Trả 116. */
+    async function renderClassicPlaylistWindow(T, topY) {
+      var W = CLASSIC_PL_W, H = CLASSIC_PL_H;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = topY + "px";
+      win.style.width = W + "px"; win.style.height = H + "px";
+      win.dataset.classicWindow = "playlist";
+      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
+      T.appendChild(win);
+      var rec = { win: win, w: W, h: H, buttons: {} };
+      var st = classicPlStyle();
+      /* --- top bar 20px: góc trái + 2 dải tile + title 100px + góc phải
+         (fork: spacer chỉ khi rộng chẵn; 275 lẻ nên không có spacer). --- */
+      var fillW = Math.floor((W - 25 - 100 - 25) / 2); /* 62 */
+      function topPart(name, x, w, rep) {
+        var d = classicSpriteDiv("PLEDIT", name);
+        if (!d) return null;
+        d.style.left = x + "px"; d.style.top = "0px";
+        d.style.width = w + "px";
+        if (rep) d.style.backgroundRepeat = "repeat-x";
+        setAbs(d, win, x, 0);
+        win.appendChild(d);
+        return d;
+      }
+      topPart("PLAYLIST_TOP_LEFT_SELECTED", 0, 25, false);
+      topPart("PLAYLIST_TOP_TILE_SELECTED", 25, fillW, true);
+      topPart("PLAYLIST_TITLE_BAR_SELECTED", 25 + fillW, 100, false);
+      topPart("PLAYLIST_TOP_TILE_SELECTED", 25 + fillW + 100, W - 25 - fillW - 100 - 25, true);
+      topPart("PLAYLIST_TOP_RIGHT_SELECTED", W - 25, 25, false);
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1";
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = W + "px"; titleZone.style.height = "20px";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { classicPlShade = true; if (requestRerender) requestRerender(); };
+      rec.buttons.collapse = classicButton(win, { x: 254, y: 3, w: 9, h: 9 }, "PLEDIT", {
+        id: "playlist-shade", sprite: "PLAYLIST_COLLAPSE_SELECTED",
+        title: "Thu gọn playlist", onClick: function () { classicPlShade = true; if (requestRerender) requestRerender(); }
+      });
+      rec.buttons.close = classicButton(win, { x: 264, y: 3, w: 9, h: 9 }, "PLEDIT", {
+        id: "playlist-close", sprite: "PLAYLIST_CLOSE_SELECTED",
+        title: "Đóng playlist", onClick: function () { classicTogglePlaylist(); }
+      });
+      /* --- giữa (y=20, cao 58): tile trái/phải + danh sách --- */
+      var lt = classicSpriteDiv("PLEDIT", "PLAYLIST_LEFT_TILE");
+      if (lt) { lt.style.left = "0px"; lt.style.top = "20px"; lt.style.height = "58px"; lt.style.backgroundRepeat = "repeat-y"; setAbs(lt, win, 0, 20); win.appendChild(lt); }
+      var rt = classicSpriteDiv("PLEDIT", "PLAYLIST_RIGHT_TILE");
+      if (rt) { rt.style.left = "255px"; rt.style.top = "20px"; rt.style.height = "58px"; rt.style.backgroundRepeat = "repeat-y"; setAbs(rt, win, 255, 20); win.appendChild(rt); }
+      var list = document.createElement("div");
+      list.className = "pl-list";
+      list.dataset.classicPlList = "1";
+      list.style.position = "absolute";
+      list.style.left = "12px"; list.style.top = "20px";
+      list.style.width = "243px"; list.style.height = "58px";
+      list.style.overflowY = "auto"; list.style.overflowX = "hidden";
+      list.style.background = st.normalbg; list.style.color = st.normal;
+      list.style.fontSize = "9px";
+      list.style.fontFamily = (st.font || "Arial") + ", Arial, sans-serif";
+      setAbs(list, win, 12, 20);
+      win.appendChild(list);
+      classicPlListDiv = list;
+      buildClassicPlRows(list);
+      /* --- đáy 38px (y=78): góc trái/phải + giờ chạy + 5 nút menu --- */
+      var bl = classicSpriteDiv("PLEDIT", "PLAYLIST_BOTTOM_LEFT_CORNER");
+      if (bl) { bl.style.left = "0px"; bl.style.top = "78px"; setAbs(bl, win, 0, 78); win.appendChild(bl); }
+      var br = classicSpriteDiv("PLEDIT", "PLAYLIST_BOTTOM_RIGHT_CORNER");
+      if (br) { br.style.left = "125px"; br.style.top = "78px"; setAbs(br, win, 125, 78); win.appendChild(br); }
+      var timeDiv = document.createElement("div");
+      timeDiv.dataset.classicPlTime = "1";
+      timeDiv.style.position = "absolute";
+      timeDiv.style.left = "7px"; timeDiv.style.top = "88px";
+      timeDiv.style.width = "110px"; timeDiv.style.height = "10px";
+      timeDiv.style.overflow = "hidden";
+      setAbs(timeDiv, win, 7, 88);
+      win.appendChild(timeDiv);
+      classicPlTimeDiv = timeDiv;
+      refreshClassicPlTime();
+      /* Nút menu đáy: icon đã vẽ sẵn trong ảnh góc đáy, chỉ cần vùng
+         bấm trong suốt (vị trí theo fork css: bottom:12 → top=78+8). */
+      classicHotZone(win, { x: 14, y: 86, w: 22, h: 18 }, "pl-add", "Thêm (nạp lại radio / nhạc local / URL)", function (ev) { showPlaylistMenu(this, addMenuItems(this)); });
+      classicHotZone(win, { x: 43, y: 86, w: 22, h: 18 }, "pl-remove", "Xóa mục", function () {
+        showPlaylistMenu(this, [
+          { label: "Xóa mục đang chọn", action: function () { removePlaylistItem(playlistState.selected); } },
+          { label: "Xóa hết", action: function () { clearPlaylist(); } }
+        ]);
+      });
+      classicHotZone(win, { x: 72, y: 86, w: 22, h: 18 }, "pl-select", "Chọn", function () { showPlaylistMenu(this, selectMenuItems()); });
+      classicHotZone(win, { x: 101, y: 86, w: 22, h: 18 }, "pl-misc", "Tùy chọn", function () { showPlaylistMenu(this, miscMenuItems()); });
+      classicHotZone(win, { x: 231, y: 86, w: 22, h: 18 }, "pl-list", "Danh sách (lưu / nạp lại / xóa hết)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
+      /* Nút cuộn lên/xuống (fork: right:7, top:2/8 trong đáy-phải):
+         mũi tên đã vẽ sẵn trong ảnh góc đáy-phải, chỉ cần vùng bấm. */
+      classicHotZone(win, { x: 260, y: 80, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
+      classicHotZone(win, { x: 260, y: 86, w: 8, h: 5 }, "pl-scroll-down", "Cuộn xuống 4 bài", function () { if (classicPlListDiv) { try { classicPlListDiv.scrollTop = (classicPlListDiv.scrollTop || 0) + 52; } catch (e) { /* bỏ qua */ } } });
+      classicPlRec = rec;
+      return H;
+    }
+    /* Playlist shade 275×14: tên bài + giờ (chữ TEXT.bmp) + nút mở lại. */
+    async function renderClassicPlaylistShadeWindow(T, topY) {
+      var W = 275, H = 14;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = topY + "px";
+      win.style.width = W + "px"; win.style.height = H + "px";
+      win.dataset.classicWindow = "playlist-shade";
+      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
+      T.appendChild(win);
+      var left = classicSpriteDiv("PLEDIT", "PLAYLIST_SHADE_BACKGROUND_LEFT");
+      if (left) { left.style.left = "0px"; left.style.top = "0px"; left.style.width = W + "px"; setAbs(left, win, 0, 0); win.appendChild(left); }
+      var right = classicSpriteDiv("PLEDIT", "PLAYLIST_SHADE_BACKGROUND_RIGHT_SELECTED");
+      if (right) { right.style.left = "0px"; right.style.top = "0px"; right.style.width = W + "px"; right.style.backgroundPosition = "right 0px"; setAbs(right, win, 0, 0); win.appendChild(right); }
+      var title = document.createElement("div");
+      title.style.position = "absolute";
+      title.style.left = "5px"; title.style.top = "4px";
+      title.style.height = "6px"; title.style.overflow = "hidden";
+      setAbs(title, win, 5, 4);
+      win.appendChild(title);
+      var cur = playlistState.items[playlistState.current];
+      var name = cur ? stripDiacritics(cur.name || "") : "[No file]";
+      if (name.length > 41) name = name.slice(0, 40) + "…";
+      title.appendChild(classicTextRow(name));
+      var time = document.createElement("div");
+      time.style.position = "absolute";
+      time.style.right = "30px"; time.style.top = "4px";
+      time.style.height = "6px"; time.style.overflow = "hidden";
+      setAbs(time, win, W - 30 - 40, 4);
+      win.appendChild(time);
+      time.appendChild(classicTextRow(classicPlTimeText()));
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1";
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = W + "px"; titleZone.style.height = H + "px";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { classicPlShade = false; if (requestRerender) requestRerender(); };
+      classicButton(win, { x: 254, y: 3, w: 9, h: 9 }, "PLEDIT", {
+        id: "playlist-expand", sprite: "PLAYLIST_EXPAND_SELECTED",
+        title: "Mở lại playlist đầy đủ", onClick: function () { classicPlShade = false; if (requestRerender) requestRerender(); }
+      });
+      return H;
+    }
+    /* Đồ thị EQ Classic (canvas 113×19 trên nền EQ_GRAPH_BACKGROUND):
+       đường cong qua 11 điểm (preamp + 10 dải), y = (1-frac)*18. Fork vẽ
+       bằng màu từng hàng của EQ_GRAPH_LINE_COLORS; Amp vẽ 1 nét trắng
+       (đơn giản, đọc được — ghi README). Có guard sig để không vẽ lại
+       mỗi lần refreshClassicMain (nó chạy theo từng timeupdate). */
+    function drawClassicEqGraph() {
+      if (!classicEqGraphCv) return;
+      var sig = EQ_BAND_IDS.map(function (id) {
+        var v = drawerState.eqBands[id];
+        return (v == null ? 0.5 : v).toFixed(3);
+      }).join(",");
+      if (sig === classicEqGraphSig) return;
+      classicEqGraphSig = sig;
+      var cv = classicEqGraphCv, ctx = null;
+      try { ctx = cv.getContext("2d"); } catch (e) { ctx = null; }
+      if (!ctx) return;
+      try {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.beginPath();
+        for (var i = 0; i < EQ_BAND_IDS.length; i++) {
+          var f = drawerState.eqBands[EQ_BAND_IDS[i]];
+          if (f == null) f = 0.5;
+          var x = 4 + i * 10.5, y = (1 - f) * 18;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      } catch (e) { /* canvas test không vẽ được */ }
+    }
+    function setAllClassicEqBands(frac) {
+      /* Ủy thác cho setAllEqBands đã có (đặt drawerState + sliderRecords;
+         onSet của dải Classic tự nối engine + vẽ lại đồ thị). */
+      setAllEqBands(frac * 24 - 12);
+      drawClassicEqGraph();
+    }
+    /* Vẽ cửa sổ EQ Classic (275×116) tại topY trong T. Trả 116. */
+    async function renderClassicEqWindow(T, topY) {
+      var W = CLASSIC_EQ_W, H = CLASSIC_EQ_H;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = topY + "px";
+      win.style.width = W + "px"; win.style.height = H + "px";
+      win.dataset.classicWindow = "equalizer";
+      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
+      T.appendChild(win);
+      var rec = { win: win, w: W, h: H, buttons: {}, bandRecs: [] };
+      var bg = classicSpriteDiv("EQMAIN", "EQ_WINDOW_BACKGROUND");
+      if (bg) { bg.style.left = "0px"; bg.style.top = "0px"; setAbs(bg, win, 0, 0); win.appendChild(bg); }
+      var tb = classicSpriteDiv("EQMAIN", "EQ_TITLE_BAR_SELECTED");
+      if (tb) { tb.style.left = "0px"; tb.style.top = "0px"; setAbs(tb, win, 0, 0); win.appendChild(tb); }
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1";
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = W + "px"; titleZone.style.height = "14px";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { classicEqShade = true; if (requestRerender) requestRerender(); };
+      /* Nút thu gọn: icon đã vẽ sẵn trong titlebar (fork không có sprite
+         riêng cho trạng thái nghỉ — chỉ có sprite lúc bấm), nên chỉ cần
+         vùng bấm trong suốt ở (254,3). */
+      classicHotZone(win, { x: 254, y: 3, w: 9, h: 9 }, "eq-shade", "Thu gọn EQ", function () { classicEqShade = true; if (requestRerender) requestRerender(); });
+      rec.buttons.close = classicButton(win, { x: 264, y: 3, w: 9, h: 9 }, "EQMAIN", {
+        id: "eq-close", sprite: "EQ_CLOSE_BUTTON", activeSprite: "EQ_CLOSE_BUTTON_ACTIVE",
+        title: "Đóng EQ", onClick: function () { setClassicEqOpen(false); }
+      });
+      rec.buttons.on = classicButton(win, { x: 14, y: 18, w: 26, h: 12 }, "EQMAIN", {
+        id: "eq-on", sprite: "EQ_ON_BUTTON", selectedSprite: "EQ_ON_BUTTON_SELECTED",
+        activeSprite: "EQ_ON_BUTTON_DEPRESSED", activeSelectedSprite: "EQ_ON_BUTTON_SELECTED_DEPRESSED",
+        title: "Bật/tắt Equalizer",
+        isSelected: function () { return !!drawerState.eqOn; },
+        onClick: function () { toggleCfg("EQ_TOGGLE"); refreshClassicMain(); }
+      });
+      rec.buttons.auto = classicButton(win, { x: 40, y: 18, w: 32, h: 12 }, "EQMAIN", {
+        id: "eq-auto", sprite: "EQ_AUTO_BUTTON", selectedSprite: "EQ_AUTO_BUTTON_SELECTED",
+        activeSprite: "EQ_AUTO_BUTTON_DEPRESSED", activeSelectedSprite: "EQ_AUTO_BUTTON_SELECTED_DEPRESSED",
+        title: "Tự động (không hoạt động — đã chốt không làm)",
+        isSelected: function () { return !!drawerState.eqAuto; },
+        onClick: function () { /* Auto không hoạt động theo chốt của Hải — chỉ đổi sprite lúc bấm */ }
+      });
+      rec.buttons.presets = classicButton(win, { x: 217, y: 18, w: 44, h: 12 }, "EQMAIN", {
+        id: "eq-presets", sprite: "EQ_PRESETS_BUTTON", selectedSprite: "EQ_PRESETS_BUTTON_SELECTED",
+        title: "Preset EQ (17 preset chuẩn Winamp)",
+        onClick: function (div) { showEqPresetsMenu(div); }
+      });
+      /* Đồ thị EQ: nền sprite + canvas vẽ đường cong. */
+      var graphBg = classicSpriteDiv("EQMAIN", "EQ_GRAPH_BACKGROUND");
+      if (graphBg) { graphBg.style.left = "86px"; graphBg.style.top = "17px"; setAbs(graphBg, win, 86, 17); win.appendChild(graphBg); }
+      var graphCv = document.createElement("canvas");
+      graphCv.width = 113; graphCv.height = 19;
+      graphCv.style.position = "absolute";
+      graphCv.style.left = "86px"; graphCv.style.top = "17px";
+      graphCv.style.width = "113px"; graphCv.style.height = "19px";
+      setAbs(graphCv, win, 86, 17);
+      win.appendChild(graphCv);
+      classicEqGraphCv = graphCv;
+      classicEqGraphSig = "";
+      /* 11 dải dọc: preamp x=21, 10 dải x=78..240 (bước 18), y=38, cao 63.
+         Nền mỗi dải = 1 cell 15×65 của EQ_SLIDER_BACKGROUND (fork Band.tsx:
+         spriteNumber = round(frac*27); x = (n%14)*15; y = floor(n/14)*65). */
+      var bandXs = [21, 78, 96, 114, 132, 150, 168, 186, 204, 222, 240];
+      for (var bi = 0; bi < EQ_BAND_IDS.length; bi++) {
+        (function (idx) {
+          var id = EQ_BAND_IDS[idx];
+          var label = id === "preamp" ? "Preamp" : ("Dải " + id);
+          var bandRec = classicSlider(win, { x: bandXs[idx], y: 38, w: 14, h: 63 }, "EQMAIN", {
+            id: id, action: "EQ_BAND", title: label,
+            thumbSprite: "EQ_SLIDER_THUMB", thumbActiveSprite: "EQ_SLIDER_THUMB_SELECTED",
+            thumbW: 11, thumbH: 11, thumbY: 0,
+            vertical: true, travelH: 51,
+            frac0: (drawerState.eqBands[id] == null ? 0.5 : drawerState.eqBands[id]),
+            trackPosition: function (frac) {
+              var n = Math.round(Math.max(0, Math.min(1, frac)) * 27);
+              var cx = n % 14, cy = Math.floor(n / 14);
+              return (-(13 + cx * 15)) + "px " + (-(164 + cy * 65)) + "px";
+            },
+            onSet: function (frac) {
+              drawerState.eqBands[id] = frac;
+              if (audioEngine) { try { audioEngine.setEqBand(idx, frac); } catch (e) { /* bỏ qua */ } }
+              persistPlayback();
+              drawClassicEqGraph();
+            }
+          });
+          rec.bandRecs.push(bandRec);
+        })(bi);
+      }
+      drawClassicEqGraph();
+      /* Vùng +12dB / 0dB / -12dB: bấm đặt TẤT CẢ dải về max/giữa/min. */
+      classicHotZone(win, { x: 45, y: 36, w: 22, h: 8 }, "eq-max", "Tất cả +12dB", function () { setAllClassicEqBands(1); });
+      classicHotZone(win, { x: 45, y: 64, w: 22, h: 8 }, "eq-mid", "Tất cả 0dB", function () { setAllClassicEqBands(0.5); });
+      classicHotZone(win, { x: 45, y: 95, w: 22, h: 8 }, "eq-min", "Tất cả -12dB", function () { setAllClassicEqBands(0); });
+      classicEqRec = rec;
+      return H;
+    }
+    /* EQ shade 275×14 (EQ_EX): nền + volume/balance mini + nút mở lại/đóng. */
+    async function renderClassicEqShadeWindow(T, topY) {
+      var W = 275, H = 14;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = topY + "px";
+      win.style.width = W + "px"; win.style.height = H + "px";
+      win.dataset.classicWindow = "equalizer-shade";
+      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
+      T.appendChild(win);
+      var bg = classicSpriteDiv("EQ_EX", "EQ_SHADE_BACKGROUND_SELECTED");
+      if (bg) { bg.style.left = "0px"; bg.style.top = "0px"; setAbs(bg, win, 0, 0); win.appendChild(bg); }
+      var titleZone = document.createElement("div");
+      titleZone.dataset.classicTitle = "1";
+      titleZone.style.position = "absolute";
+      titleZone.style.left = "0px"; titleZone.style.top = "0px";
+      titleZone.style.width = W + "px"; titleZone.style.height = H + "px";
+      setAbs(titleZone, win, 0, 0);
+      win.appendChild(titleZone);
+      titleZone.ondblclick = function () { classicEqShade = false; if (requestRerender) requestRerender(); };
+      /* Volume/balance mini: rãnh đã vẽ sẵn trong nền shade nên track
+         trong suốt (noTrackBg); thumb 3×7 đổi sprite trái/giữa/phải theo
+         vị trí như fork EqualizerShade segment(). */
+      classicSlider(win, { x: 61, y: 4, w: 97, h: 6 }, "EQ_EX", {
+        id: "eqshade-volume", action: "VOLUME", title: "Âm lượng",
+        thumbSprite: function (frac) {
+          if (frac <= 1 / 3) return "EQ_SHADE_VOLUME_SLIDER_LEFT";
+          if (frac >= 2 / 3) return "EQ_SHADE_VOLUME_SLIDER_RIGHT";
+          return "EQ_SHADE_VOLUME_SLIDER_CENTER";
+        },
+        thumbW: 3, thumbH: 7, thumbY: 0, frac0: demo.volume, travelW: 94,
+        noTrackBg: true,
+        onSet: function (frac) { demo.volume = frac; updateVolumebar(); applyEngineVolume(); persistPlayback(); }
+      });
+      classicSlider(win, { x: 164, y: 4, w: 43, h: 6 }, "EQ_EX", {
+        id: "eqshade-balance", action: "PAN", title: "Cân bằng trái/phải",
+        thumbSprite: function (frac) {
+          if (frac <= 1 / 3) return "EQ_SHADE_BALANCE_SLIDER_LEFT";
+          if (frac >= 2 / 3) return "EQ_SHADE_BALANCE_SLIDER_RIGHT";
+          return "EQ_SHADE_BALANCE_SLIDER_CENTER";
+        },
+        thumbW: 3, thumbH: 7, thumbY: 0, frac0: drawerState.balance, travelW: 40,
+        noTrackBg: true,
+        onSet: function (frac) { applyBalance(frac); }
+      });
+      classicButton(win, { x: 254, y: 3, w: 9, h: 9 }, "EQ_EX", {
+        id: "eq-expand", sprite: "EQ_MAXIMIZE_BUTTON_ACTIVE",
+        title: "Mở lại EQ đầy đủ", onClick: function () { classicEqShade = false; if (requestRerender) requestRerender(); }
+      });
+      classicButton(win, { x: 264, y: 3, w: 9, h: 9 }, "EQ_EX", {
+        id: "eq-close", sprite: "EQ_SHADE_CLOSE_BUTTON", activeSprite: "EQ_SHADE_CLOSE_BUTTON_ACTIVE",
+        title: "Đóng EQ", onClick: function () { setClassicEqOpen(false); }
+      });
+      return H;
+    }
+    function setClassicEqOpen(open) {
+      classicEqOpen = !!open;
+      if (!classicEqOpen) classicEqShade = false;
+      if (requestRerender) requestRerender();
+      return classicEqOpen;
+    }
+    function isClassicEqOpen() { return classicEqOpen; }
+    function isClassicEqShade() { return classicEqShade; }
+    function isClassicPlShade() { return classicPlShade; }
+
     /* Skin Classic: vẽ cửa sổ chính (hoặc shade) + cửa sổ AVS rời (nếu
        đang tách). Trả về chiều cao stage. Điểm vào duy nhất cho cả
        renderLayoutInner lẫn renderStackedInner. Không có classic.js /
@@ -8031,6 +8998,8 @@
       animLayerRecs = [];
       channelsRec = null;
       classicMainRec = null; classicShadeRec = null;
+      classicPlRec = null; classicEqRec = null;
+      classicPlListDiv = null; classicPlTimeDiv = null; classicEqGraphCv = null;
       T.innerHTML = "";
       var lib = classicLib(), C = classicData();
       var totalH = 0;
@@ -8039,6 +9008,19 @@
         else await renderClassicMainWindow(T);
         totalH = shade ? lib.CLASSIC_SHADE.h : lib.CLASSIC_MAIN.h;
         T.style.width = (shade ? lib.CLASSIC_SHADE.w : lib.CLASSIC_MAIN.w) + "px";
+        /* v10.3 — xếp cửa sổ Playlist + EQ Classic dưới cửa sổ chính
+           (playlistOpen lấy từ opts của renderStacked, hoặc isPlaylistOpen
+           khi đi đường renderLayout đơn). */
+        var plOpen = (opts && opts.playlistOpen !== undefined) ? !!opts.playlistOpen
+          : (function () { try { return !!(isPlaylistOpen && isPlaylistOpen()); } catch (e) { return false; } })();
+        if (plOpen) {
+          totalH += classicPlShade ? await renderClassicPlaylistShadeWindow(T, totalH)
+            : await renderClassicPlaylistWindow(T, totalH);
+        }
+        if (classicEqOpen) {
+          totalH += classicEqShade ? await renderClassicEqShadeWindow(T, totalH)
+            : await renderClassicEqWindow(T, totalH);
+        }
       } else {
         var sz0 = (avsState.open && avsState.detached) ? detachedWinSize(avsState.mode) : { w: DETACHED_WIN_W, h: 0 };
         T.style.width = sz0.w + "px";
@@ -8172,6 +9154,16 @@
       if (sizeOv) {
         var cOv = clampWinSize(container, layoutId, sizeOv.w, sizeOv.h);
         if (cOv) { LW = cOv.w; LH = cOv.h; }
+      }
+      /* v10.3 — sizeOverride (renderStacked ép ML gọn về bằng stage thay
+         vì 790px XML) + kẹp ML compact về viewport (XML min 354 vẫn
+         thắng khi viewport < 354 — ghi README). */
+      if (opts && opts.sizeOverride) {
+        var cOv2 = clampWinSize(container, layoutId, opts.sizeOverride.w, opts.sizeOverride.h);
+        if (cOv2) { LW = cOv2.w; LH = cOv2.h; }
+      }
+      if (lowerStr(container) === "mlibrary" && isMlCompact()) {
+        LW = Math.min(LW, Math.max(viewportWidth(), 354));
       }
       T.style.width = LW + "px"; T.style.height = LH + "px";
       /* renderStacked truyền playerDiv/plDiv đã đặt _absY (plDiv = playerH):
@@ -8410,9 +9402,12 @@
       var stackedSeen = new Set(); /* Đợt C: chống vẽ trùng xuyên các lượt player/playlist/ML */
       var plWH = showPl ? effectiveLayoutWH("Pledit", "normal") : null;
       var mlWH = showMl ? effectiveLayoutWH("MLibrary", "normal") : null;
+      /* v10.3 — ML compact: stage KHÔNG lấy rộng 790px của ML; cửa sổ ML
+         tự kẹp về bằng màn hình trong renderLayoutInner (sizeOverride). */
+      var mlCompact = showMl && isMlCompact();
       var stageW = mainWHStacked ? mainWHStacked.w : 354;
       if (plWH) stageW = Math.max(stageW, plWH.w);
-      if (mlWH) stageW = Math.max(stageW, mlWH.w);
+      if (mlWH && !mlCompact) stageW = Math.max(stageW, mlWH.w);
       T.innerHTML = "";
       T.style.width = stageW + "px";
       T._absX = 0; T._absY = 0;
@@ -8491,7 +9486,7 @@
         mlDiv.style.position = "absolute"; mlDiv.style.left = "0px"; mlDiv.style.top = totalH + "px";
         mlDiv._absX = 0; mlDiv._absY = totalH;
         T.appendChild(mlDiv);
-        mlH = await renderLayoutInner("MLibrary", "normal", "MEDIA LIBRARY", { applyTheme: false, noDetached: true, _seenGroups: stackedSeen }, mlDiv);
+        mlH = await renderLayoutInner("MLibrary", "normal", "MEDIA LIBRARY", { applyTheme: false, noDetached: true, _seenGroups: stackedSeen, sizeOverride: mlCompact ? { w: stageW, h: mlWH.h } : null }, mlDiv);
         visCanvases = savedRegs2.vis.concat(visCanvases);
         statusEls = savedRegs2.status.concat(statusEls);
         tickerEls = savedRegs2.ticker.concat(tickerEls);
@@ -8646,6 +9641,11 @@
       getVisFrame: getVisFrame, getTickerMode: tickerMode, getTickerState: getTickerState,
       /* Đợt v10.1 (việc 3: Classic) — cửa sổ chính Classic (.wsz). */
       getClassicMainState: getClassicMainState, refreshClassicMain: refreshClassicMain,
+      /* Đợt v10.3 — cửa sổ Playlist + EQ Classic (.wsz). */
+      isClassicSkin: function () { return !!(RES && RES.kind === "classic"); },
+      setClassicEqOpen: setClassicEqOpen, isClassicEqOpen: isClassicEqOpen,
+      isClassicEqShade: isClassicEqShade, isClassicPlShade: isClassicPlShade,
+      refreshClassicPlRows: refreshClassicPlRows, drawClassicEqGraph: drawClassicEqGraph,
       /* Đợt v10.0 (việc AVS-vis): khung vis AVS kiểu Webamp. */
       getAvsFrame: getAvsFrame, AVS_BARS: AVS_BARS, AVS_ROWS: AVS_ROWS,
       stepTicker: stepTicker, syncTickerAnim: syncTickerAnim,
@@ -8716,10 +9716,13 @@
       showLocalAddMenu: showLocalAddMenu,
       DETACHED_WIN_W: DETACHED_WIN_W, DETACHED_WIN_H: DETACHED_WIN_H,
       DETACHED_MEDIA_RECT: DETACHED_MEDIA_RECT, VIS_VARIANTS: VIS_VARIANTS,
+      getLocalLoadState: getLocalLoadState, waitLocalLoadIdle: waitLocalLoadIdle,
+      flushMlRows: flushMlRows, getMlRenderState: getMlRenderState, ensureLocalUrl: ensureLocalUrl,
+      scheduleListRefresh: scheduleListRefresh, flushListRefresh: flushListRefresh,
       getPlaylistState: getPlaylistState, setPlaylistData: setPlaylistData,
       setPlaylistItems: setPlaylistItems, selectPlaylistItem: selectPlaylistItem,
       playPlaylistItem: playPlaylistItem, removePlaylistItem: removePlaylistItem,
-      addPlaylistItem: addPlaylistItem, addUrl: addUrl, isM3UListUrl: isM3UListUrl, sortPlaylistByName: sortPlaylistByName,
+      addPlaylistItem: addPlaylistItem, addPlaylistItems: addPlaylistItems, addUrl: addUrl, isM3UListUrl: isM3UListUrl, sortPlaylistByName: sortPlaylistByName,
       restorePlaylistOrder: restorePlaylistOrder, exportPlaylistM3U: exportPlaylistM3U,
       playlistTotalTime: playlistTotalTime, parseM3U: parseM3U,
       /* Đợt A (9.9): đồng hồ playlist (việc 3), đồng hồ chính (việc 4),
@@ -8730,6 +9733,8 @@
       timerDisplayText: timerDisplayText, currentTrackDuration: currentTrackDuration,
       hasMediaLibrary: hasMediaLibrary, setMlFilter: setMlFilter, getMlState: getMlState,
       refreshMlRows: refreshMlRows,
+      /* Đợt v10.3 — ML gọn trên điện thoại. */
+      isMlCompact: isMlCompact, viewportWidth: viewportWidth, mlColDefs: mlColDefs,
       getWinSizes: getWinSizes, restoreWinSizes: restoreWinSizes, setWinSize: setWinSize,
       clampWinSize: clampWinSize, isLayoutResizable: isLayoutResizable, layoutMinMax: layoutMinMax,
       effectiveLayoutWH: effectiveLayoutWH, detachedWinSize: detachedWinSize,

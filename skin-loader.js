@@ -7,7 +7,7 @@
    từ Winamp thật: display/seek/playbuttons đều thấp hơn Amp đúng 18px;
    main phải ở y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
      - snapadjustbottom + drawerRestY ghi vào model layout.
-   Version: LOADER_VERSION = "10.2". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.3". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Chạy được cả trình duyệt (window) lẫn Node (module.exports, dùng với
    jsdom trong test). Không dùng Blob khi đọc file trong zip (tránh lỗi
@@ -19,8 +19,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.2";
-  var EXPECTED_LOADER_VERSION = "10.2";
+  var LOADER_VERSION = "10.3";
+  var EXPECTED_LOADER_VERSION = "10.3";
   /* ĐỢT v10.1 (việc 3: Classic parser) — loader đổi: nhánh Classic
      (.wsz, không có skin.xml) nay parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
@@ -188,6 +188,28 @@
        trước (chạy cả jsdom), chỉ dùng Image cho ảnh không phải PNG và
        khi có trình duyệt thật. */
     var urlCache = new Map(), sizeCache = new Map();
+    /* v10.3 — MIME cho Blob của file trong zip: trước đây
+       `new Blob([ab])` không có type — blob: URL không có content-type
+       thì trình duyệt (đặc biệt Chrome trên điện thoại) chỉ còn đoán
+       theo nội dung, có lúc không nhận ra ảnh BMP của skin Classic
+       (DOM7009 / ảnh không hiện, cửa sổ trắng trơn dù sprite đã vẽ).
+       Gán type theo đuôi file (.bmp/.png/.jpg/.gif/.cur) để ảnh chắc
+       chắn giải mã được; đuôi lạ thì để trống như cũ. */
+    var MIME_BY_EXT = {
+      bmp: "image/bmp", png: "image/png", jpg: "image/jpeg",
+      jpeg: "image/jpeg", gif: "image/gif", cur: "image/x-icon",
+      ico: "image/x-icon", webp: "image/webp"
+    };
+    function blobMime(zipPath) {
+      var m = /\.([A-Za-z0-9]+)$/.exec(String(zipPath || ""));
+      return (m && MIME_BY_EXT[m[1].toLowerCase()]) || "";
+    }
+    function makeBlob(ab, zipPath) {
+      var type = blobMime(zipPath);
+      try {
+        return type ? new Blob([ab], { type: type }) : new Blob([ab]);
+      } catch (e) { return new Blob([ab]); }
+    }
     async function blobFor(zipPath) {
       var real = findPath(zipPath);
       if (!real) return null;
@@ -201,7 +223,7 @@
       var url = null;
       try {
         if (typeof Blob !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
-          url = URL.createObjectURL(new Blob([ab]));
+          url = URL.createObjectURL(makeBlob(ab, zipPath));
         }
       } catch (e) { url = null; }
       if (!url) url = "amp9://" + zipPath; /* fallback cho môi trường test */
@@ -216,7 +238,7 @@
       if (ab) size = pngSizeFromBytes(ab);
       if (!size && ab && typeof Image !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL) {
         try {
-          var blobUrl = URL.createObjectURL(new Blob([ab]));
+          var blobUrl = URL.createObjectURL(makeBlob(ab, zipPath));
           size = await new Promise(function (resolve) {
             var im = new Image();
             var done = false;
