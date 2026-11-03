@@ -103,7 +103,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.7" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.8" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
    lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
    checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
@@ -117,16 +117,20 @@
    state; menu nền sáng + chống cắt; nền stage lót texture skin).
    Đợt K: 9.6 → 9.7 (3 điểm 3/11: chỉ báo stereo/mono; font songinfo vẽ nguyên
    bản không đảo alpha; vis vẽ lại vạch mẫu khi analyser im + cột trắng theo
-   XML; VIDEO/VIS KHÔNG thêm — XML 566 không có chữ đó; sửa self-check 17→35). */
-window.AMP_VERSION = "9.7";
+   XML; VIDEO/VIS KHÔNG thêm — XML 566 không có chữ đó; sửa self-check 17→35).
+   Đợt L: 9.7 → 9.8 (3/11: TV360 qua vmttv nghe tiếng không thấy hình —
+   isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
+   + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
+   thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
+window.AMP_VERSION = "9.8";
 </script>
-<script src="skin-loader.js?v=9.7"></script>
-<script src="audio.js?v=9.7"></script>
-<script src="renderer.js?v=9.7"></script>
+<script src="skin-loader.js?v=9.8"></script>
+<script src="audio.js?v=9.8"></script>
+<script src="renderer.js?v=9.8"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.7" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "9.8" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -142,7 +146,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "9.7";
+var VERSION = "9.8";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
@@ -171,7 +175,7 @@ function logVersion(extra) {
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v9.7 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v9.8 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];

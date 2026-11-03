@@ -44,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.7";
-  var EXPECTED_RENDERER_VERSION = "9.7";
+  var RENDERER_VERSION = "9.8";
+  var EXPECTED_RENDERER_VERSION = "9.8";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.7" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.8" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -368,6 +368,7 @@
     var onPlayerClose = opts.onPlayerClose || null; /* v9.6 (Điểm 2): nút X cửa sổ chính — web không "thoát app" như Winamp thật nên index.html ẩn giao diện + hiện nút mở lại */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
+    var fetchFn = opts.fetchFn || null; /* Đợt L (9.8): fetch tiêm vào cho addUrl (.m3u) — test đưa mock, chạy thật dùng fetch global. */
     /* State ngăn kéo đợt B (sống trong closure, KHÔNG reset khi re-render):
        - open: ngăn kéo mở hay đóng (mặc định đóng = chỉ lộ 13px + nút mở).
        - eqBands: frac 0..1 từng dải (0.5 = 0 dB); balance 0..1 (0.5 = giữa).
@@ -629,15 +630,50 @@
        - nhóm chứa "hình"/"video".
        - link .mp4/.m4v/.mov/.webm.
        - link qua 2 host TV đã xác nhận (mediatech.vn, truyenhinhnghean.vn).
-       .m3u8 CHUNG CHUNG không tính là video (radio HLS cũng .m3u8). */
+       .m3u8 CHUNG CHUNG không tính là video (radio HLS cũng .m3u8).
+       Đợt L (9.8) — LỖI TV360 3/11: mọi kênh TV360 qua vmttv
+       (https://vmttv.dpdns.org/tv360/?id=N) đều nghe được tiếng mà
+       KHÔNG thấy hình, kể cả id=4 (VTV3) vốn xem được cả hình lẫn
+       tiếng trên IPTV Viewer/Radio TV. Nguyên nhân: URL vmttv không
+       khớp luật nào ở trên (không .mp4, không host cũ, group "TV360"
+       không chứa "hình"/"video") nên isVideoItem trả false → audio.js
+       dùng thẻ <audio> phát (nghe được tiếng), thẻ <video> trong vùng
+       AVS không bao giờ được gán src (đen trống). Sửa: thêm nhận diện
+       nguồn TV vào 3 hằng TV_* dưới đây (host proxy TV / đường dẫn
+       / group-title). Mọi kênh TV360 đều qua chung 1 host vmttv
+       (redirect 302 tới HLS tv360.vn, có token) nên luật host bao
+       hết mọi id, không riêng id=2 hay id=4.
+       - Host: vmttv.dpdns.org — proxy TV duy nhất đã xác nhận bằng
+         curl 3/11 (id=2 → fo-hlc.tv360.vn, id=4 → rr1-ateme.tv360.vn,
+         cả hai đều là master HLS có video avc1). Chỉ thêm host nào
+         đã đo thật; đừng đoán thêm.
+       - Đường dẫn: /tv360/ và /VTVGo/ (vd vmttv .../VTVGo/?sctv1).
+       - Group-title: "TV360" (khớp đúng tên), nhóm chứa "TV" hoặc
+         "Truyền hình". Chỉ xét it.group (không xét it.name) để đài
+         radio có chữ "TV" trong tên không bị nhận nhầm. */
+    var TV_PROXY_HOSTS = ["vmttv.dpdns.org"];
+    var TV_PATH_RE = /\/(tv360|vtvgo)\//i;
+    /* Nhóm chứa "TV" (vd "TV360", "SCTV", "VTV", "HTV", "VTVcab",
+       "Kênh TV", "LƯƠNG SƠN TV") hoặc "Truyền hình". CHỈ xét it.group,
+       KHÔNG xét it.name — đài radio có chữ "TV" trong TÊN bài/kênh
+       không bị nhận nhầm. Đã đối chiếu với file kênh thật của người
+       dùng (channels-clean.m3u, 3/11): không có group radio nào chứa
+       "TV" ("Radio", "UK Radio", "Địa phương", "Quốc Tế"...); mọi
+       group chứa "TV" đều là kênh hình. */
+    var TV_GROUP_RE = /TV|truyền hình/i;
     function isVideoItem(it) {
       if (!it) return false;
       if (it.video === true) return true;
       if (it.video === false) return false;
       if (/hình|video/i.test(it.group || "")) return true;
+      if (TV_GROUP_RE.test(it.group || "")) return true;
       var url = it.url || "";
       if (/\.(mp4|m4v|mov|webm)($|\?)/i.test(url)) return true;
       if (/mediatech\.vn|truyenhinhnghean\.vn/i.test(url)) return true;
+      for (var hi = 0; hi < TV_PROXY_HOSTS.length; hi++) {
+        if (url.toLowerCase().indexOf(TV_PROXY_HOSTS[hi]) >= 0) return true;
+      }
+      if (TV_PATH_RE.test(url)) return true;
       return false;
     }
     function syncAvsAnim() { if (avsState.open) startAvsAnim(); else stopAvsAnim(); }
@@ -938,6 +974,16 @@
     function onAudioTimeUpdate(t, dur, seekable) {
       demo.t = t || 0;
       demo.seekFrac = (dur && dur > 0) ? Math.max(0, Math.min(1, demo.t / dur)) : 0;
+      /* Đợt L (9.8): file nhạc (kind track) chưa có len thì lấy duration
+         thật từ engine khi metadata đã về — nhãn góc phải đổi "…" ->
+         "M:SS". Chỉ ghi 1 lần (len != null thì thôi) để khỏi vẽ lại
+         hàng mỗi lần timeupdate. Đài live (kind radio) không ghi —
+         duration live là null/Infinity. */
+      var curDur = playlistState.items[playlistState.current];
+      if (curDur && curDur.kind === "track" && curDur.len == null && dur && isFinite(dur) && dur > 0) {
+        curDur.len = Math.round(dur);
+        refreshPlaylistRows(); updateInfoEls();
+      }
       /* Lặp 1 bài: tua về đầu khi gần hết (còn < 0.5s), chỉ bài có thời
          lượng — đài live không bị tua (dur null). */
       if (demo.repeat === -1 && dur && dur > 0 && demo.t >= dur - 0.5 && audioEngine) {
@@ -973,6 +1019,13 @@
          dấu trên dòng chữ chạy, Ở YÊN kênh — không tự nhảy kênh dưới. */
       showTickerError("Khong phat duoc kenh " + stripDiacritics(name));
       demo.playing = false; playlistState.playing = false;
+      /* Đợt L (9.8): kênh VIDEO lỗi hẳn thì không có loadedmetadata —
+         nhãn WxH cũ (của kênh trước, vd 1920x1080 của Nghệ An) sẽ dính
+         lại và vùng video đen. setVideoInfo(0,0) xóa nhãn + lưới an
+         toàn trong đó tự về vis cho khỏi màn hình đen; kênh video sau
+         phát được thì loadedmetadata lại tự về video. Kênh audio thì
+         không động tới AVS. */
+      if (it && isVideoItem(it)) setVideoInfo(0, 0);
       updateStatusEls(); refreshPlaylistRows(); persistPlayback();
     }
     function onAudioPlayingChange(playing) {
@@ -1076,6 +1129,36 @@
     /* Nhạc local: chọn thư mục (file picker webkitdirectory) — trình
        duyệt không nhớ file local nên mỗi lần chọn lại thư mục (quy ước
        đã chốt). Chỉ nhận file audio, không parse metadata ở đợt E. */
+    /* Đợt L (9.8) — đọc thời lượng file local khi thêm (không phát):
+       thẻ <audio preload="metadata"> tạm, chỉ đọc header rồi bỏ; khi
+       loadedmetadata có duration thật thì ghi vào item.len + vẽ lại
+       hàng (nhãn góc phải đổi "…" -> "M:SS"). Không đọc kiểu phát thử
+       từng file. Đài live (kind radio) không probe — duration của live
+       là Infinity/NaN, không có nghĩa. */
+    function probeLocalDuration(item) {
+      if (!item || item.kind !== "track" || item.len != null) return;
+      if (!document || !document.createElement) return;
+      var tmp = null;
+      try { tmp = document.createElement("audio"); } catch (e) { return; }
+      if (!tmp) return;
+      var done = false;
+      function finish() {
+        if (done) return; done = true;
+        var d = NaN;
+        try { d = tmp.duration; } catch (e) { d = NaN; }
+        try { tmp.removeAttribute("src"); tmp.load(); } catch (e) { /* bỏ qua */ }
+        if (d && isFinite(d) && d > 0) {
+          item.len = Math.round(d);
+          refreshPlaylistRows(); updateInfoEls();
+        }
+      }
+      try {
+        tmp.addEventListener("loadedmetadata", finish);
+        tmp.addEventListener("error", finish);
+        try { tmp.preload = "metadata"; } catch (e) { /* bỏ qua */ }
+        tmp.src = item.url;
+      } catch (e) { finish(); }
+    }
     function addLocalFiles(files) {
       var added = 0;
       var list = files || [];
@@ -1091,6 +1174,7 @@
           name: String(f.name).replace(/\.[^.]+$/, ""),
           url: url, len: null, group: "Local", kind: "track", local: true
         });
+        probeLocalDuration(playlistState.items[playlistState.items.length - 1]);
         added++;
       }
       if (added) {
@@ -1179,7 +1263,7 @@
       var items = radio;
       playlistState.items = items;
       playlistState.original = items.slice();
-      playlistState.selected = 0; playlistState.current = 0;
+      playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
       playlistState.source = sourceName || "radio.m3u";
       requestRerender();
@@ -1188,14 +1272,19 @@
     function setPlaylistItems(items, sourceName) {
       playlistState.items = items.slice();
       playlistState.original = items.slice();
-      playlistState.selected = 0; playlistState.current = 0;
+      playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
       playlistState.source = sourceName || "";
       requestRerender();
       return playlistState.items.length;
     }
+    /* Đợt L (9.8): danh sách rỗng thì trả -1 (không chọn gì) thay vì 0 —
+       0 trỏ vào hàng không tồn tại, kẹt lại sau khi xóa hết rồi thêm
+       mục mới (removePlaylistItem đã clamp nên xóa mục cuối cũng về -1).
+       Mọi chỗ đọc items[current]/items[selected] đều guard `if (it…)`
+       nên -1 an toàn; select/play/next/prev đều guard rỗng trước. */
     function clampPlaylistIdx(i) {
-      if (!playlistState.items.length) return 0;
+      if (!playlistState.items.length) return -1;
       return Math.max(0, Math.min(playlistState.items.length - 1, i | 0));
     }
     /* Click 1 lần = chỉ CHỌN hàng (không phát — quy ước đã chốt ở Webamp
@@ -1280,14 +1369,19 @@
       requestRerender();
     }
     /* Đợt 9.5: xóa hết playlist (không còn "chỉ còn Demo" — đã bỏ hết
-       bài Demo theo yêu cầu người dùng). */
+       bài Demo theo yêu cầu người dùng).
+       Đợt L (9.8): selected/current về -1 (không chọn gì) khi rỗng —
+       giữ 0 sẽ trỏ vào hàng không tồn tại; vẽ lại hàng ngay tại chỗ
+       (refreshPlaylistRows) để hàng cũ biến mất tức thì, khỏi chờ
+       re-render async. */
     function clearPlaylist() {
       playlistState.items = [];
       playlistState.original = playlistState.items.slice();
-      playlistState.selected = 0; playlistState.current = 0; playlistState.playing = false;
+      playlistState.selected = -1; playlistState.current = -1; playlistState.playing = false;
       demo.playing = false;
       if (audioEngine) audioEngine.stop();
       updateInfoEls();
+      refreshPlaylistRows();
       requestRerender();
     }
     function exportPlaylistM3U() {
@@ -1540,6 +1634,26 @@
        không phát media thật). Chuỗi rỗng khi chưa có metadata. */
     function setVideoInfo(w, h) {
       var s = (w > 0 && h > 0) ? (w + "x" + h) : "";
+      /* Đợt L (9.8) — LƯỚI AN TOÀN RUNTIME (phát hiện từ luồng thật):
+         loadedmetadata trên thẻ <video> là bằng chứng trực tiếp có/không
+         có hình — đáng tin hơn mọi heuristic URL/group ở isVideoItem.
+         Chạy TRƯỚC early-return bên dưới (videoInfo "" đã bằng s "" khi
+         w=0 nên return sớm sẽ nuốt mất lưới). Chỉ đổi mode khi AVS đang
+         MỞ (đóng thì không tự mở, không đổi mode lén).
+         - videoWidth > 0: chắc chắn có hình — AVS đang ở "vis" thì về
+           "video", đừng để video đang chạy mà hiện vis.
+         - videoWidth == 0: luồng này không có video track (vd HLS chỉ
+           có tiếng) — kênh đã phân loại video mà AVS đang ở "video"
+           thì về "vis" cho khỏi màn hình đen. Giữ nguyên logic ở
+           playPlaylistItem (kênh audio mà AVS đang video thì về vis). */
+      if (avsState.open) {
+        if (w > 0 && avsState.mode === "vis") {
+          setAvsMode("video");
+        } else if (w === 0 && avsState.mode === "video") {
+          var cur = playlistState.items && playlistState.items[playlistState.current];
+          if (cur && isVideoItem(cur)) setAvsMode("vis");
+        }
+      }
       if (avsState.videoInfo === s) return s;
       avsState.videoInfo = s;
       updateVidInfo();
@@ -2583,13 +2697,23 @@
         cur: c["wasabi.list.text.current"] || "187,210,255"
       };
     }
-    /* Hàng playlist: bài có thời lượng -> "N. Tên (M:SS)"; kênh radio
-       (len null) -> "N. Tên kênh — Trực tiếp" (không bịa số).
+    /* Hàng playlist (Đợt L 9.8): tên bài ở TRÁI, nhãn thời lượng ở GÓC
+       PHẢI (như Winamp thật) — không còn "— Trực tiếp" dính sau tên.
+       Nhãn (playlistRowLabel): "M:SS" khi biết thời lượng (len != null);
+       "Trực tiếp" khi là đài live (kind radio, len null); "…" khi là
+       file nhạc (kind track) chưa đọc được thời lượng (đang chờ
+       metadata — probe lúc thêm file hoặc lúc phát, xem probeLocalDuration
+       + onAudioTimeUpdate). Hàng dùng flex: tên flex:1 (ellipsis khi
+       dài), nhãn flex:none nên luôn sát mép phải.
        Số thứ tự N = vị trí trong FULL list (không đổi khi lọc) để số hàng
        ổn định khi tìm kiếm. */
     function playlistRowText(it, n) {
-      if (it.kind === "track" && it.len != null) return n + ". " + it.name + " (" + fmtTime(it.len) + ")";
-      return n + ". " + it.name + " — Trực tiếp";
+      return n + ". " + it.name;
+    }
+    function playlistRowLabel(it) {
+      if (it.len != null) return fmtTime(it.len);
+      if (it.kind === "track") return "…";
+      return "Trực tiếp";
     }
     /* Vẽ lại các hàng trong listDiv (giữ nguyên ô tìm ở đầu): dùng cho cả
        render lần đầu lẫn chọn/lọc/phát tại chỗ (không re-render toàn cửa
@@ -2616,7 +2740,22 @@
             if (rec.idx !== playlistState.selected) row.style.color = rgbVal(sel.cur);
             row.style.fontWeight = "bold";
           }
-          row.textContent = playlistRowText(rec.item, rec.idx + 1);
+          row.style.display = "flex";
+          var nameSpan = document.createElement("span");
+          nameSpan.className = "pl-name";
+          nameSpan.style.flex = "1 1 auto";
+          nameSpan.style.minWidth = "0";
+          nameSpan.style.overflow = "hidden";
+          nameSpan.style.textOverflow = "ellipsis";
+          nameSpan.style.whiteSpace = "nowrap";
+          nameSpan.textContent = playlistRowText(rec.item, rec.idx + 1);
+          row.appendChild(nameSpan);
+          var lenSpan = document.createElement("span");
+          lenSpan.className = "pl-len";
+          lenSpan.style.flex = "0 0 auto";
+          lenSpan.style.marginLeft = "6px";
+          lenSpan.textContent = playlistRowLabel(rec.item);
+          row.appendChild(lenSpan);
           row.dataset.idx = String(rec.idx);
           /* Click 1 lần = chỉ chọn (không phát); click đúp = phát. */
           row.onclick = function () { selectPlaylistItem(rec.idx); };
@@ -3090,7 +3229,28 @@
        Cùng 1 helper cho cả nút Add/Sel/Misc/List dưới playlist, mục
        File/Playlist/Sort/Help trên menubar playlist và mục View trên
        menubar chính. Menu đóng khi bấm mục khác hoặc bấm ra ngoài. */
+    /* Đợt L (9.8) — closer của menu playlist (bấm ra ngoài thì đóng menu).
+       LỖI GỐC (người dùng báo 3/11: sau "Xóa hết" thì không chọn được
+       nữa): closer gắn bằng setTimeout(0) sau khi mở menu, nhưng khi
+       chọn 1 mục trong menu thì row.onclick stopPropagation nên closer
+       KHÔNG bao giờ được tiêu thụ — nó còn armed mãi. Cú bấm MỞ MENU
+       KẾ TIẾP bubble lên document thì closer cũ chạy, đóng ngay menu
+       vừa mở (bấm Manage Playlist mà menu không hiện — sau "Xóa hết"
+       thì playlist trống, không còn đường nạp lại kênh nên tưởng như
+       không chọn được nữa; bấm hụt cứ lặp lại vì mỗi lần mở hụt lại
+       gắn thêm 1 closer mới). Sửa: giữ tham chiếu closer (plMenuCloser),
+       gỡ nó mỗi khi đóng menu và mỗi khi mở menu mới; chỉ gắn closer
+       khi menu vẫn còn mở lúc timeout chạy (người dùng có thể đã chọn
+       mục và đóng menu trước khi timeout chạy — gắn lúc đó là thừa). */
+    var plMenuCloser = null;
+    function disarmPlMenuCloser() {
+      if (plMenuCloser) {
+        try { document.removeEventListener("click", plMenuCloser); } catch (e) { /* jsdom */ }
+        plMenuCloser = null;
+      }
+    }
     function closePlaylistMenus() {
+      disarmPlMenuCloser();
       var T = lastStage;
       if (!T) return;
       var olds = null;
@@ -3129,10 +3289,16 @@
       placePopupInStage(menu, anchorDiv, items.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       try {
         setTimeout(function () {
-          document.addEventListener("click", function h() {
+          /* Chỉ gắn closer khi menu vẫn còn mở (đã chọn mục và đóng menu
+             trước khi timeout chạy thì không gắn — closer thừa sẽ ăn mất
+             lần mở menu kế tiếp, xem ghi chú ở disarmPlMenuCloser). */
+          if (!lastStage || !lastStage.querySelector("[data-pl-menu]")) return;
+          disarmPlMenuCloser();
+          plMenuCloser = function h() {
             closePlaylistMenus();
-            try { document.removeEventListener("click", h); } catch (e) { /* jsdom */ }
-          });
+            disarmPlMenuCloser();
+          };
+          document.addEventListener("click", plMenuCloser);
         }, 0);
       } catch (e) { /* jsdom */ }
     }
@@ -3145,9 +3311,55 @@
         return name || u.hostname;
       } catch (e) { return url; }
     }
+    /* Đợt L (9.8) — nhập URL danh sách .m3u (người dùng báo 3/11: nhập
+       URL .m3u thì không dùng được, chỉ nhập được URL đơn kênh).
+       Trước đây showAddUrlForm thêm MỌI URL như 1 mục đơn nên URL .m3u
+       thành mục chết (trình phát không đọc được file text .m3u).
+       - URL .m3u (đuôi .m3u trước ?/#; .m3u8 KHÔNG tính): fetch file
+         về, tách kênh bằng parseM3U(text, url) — link tương đối đổi
+         tuyệt đối theo URL gốc (resolveM3UUrl, như Webamp fork) —
+         rồi thêm TỪNG kênh vào playlist, giữ tên + thứ tự gốc +
+         group-title nếu có.
+       - URL khác (.m3u8/.mp3/...): giữ nguyên hành vi cũ — thêm như
+         1 mục đơn (group "Thêm tay").
+       Trả Promise<{ok, added, reason}>; lỗi fetch / không tách được
+       kênh nào thì báo đỏ trên dòng chữ chạy (showTickerError, không
+       dấu như mọi lỗi kênh khác) và KHÔNG thêm mục rác. */
+    function isM3UListUrl(url) {
+      return /\.m3u([?#]|$)/i.test(String(url || ""));
+    }
+    function addUrl(url) {
+      url = String(url || "").trim();
+      if (!url) return Promise.resolve({ ok: false, added: 0, reason: "empty" });
+      if (!isM3UListUrl(url)) {
+        addPlaylistItem({ name: deriveNameFromUrl(url), url: url, len: null, group: "Thêm tay", kind: "radio" });
+        return Promise.resolve({ ok: true, added: 1, reason: "" });
+      }
+      var f = fetchFn || (typeof fetch !== "undefined" ? fetch : null);
+      if (!f) {
+        showTickerError("khong tai duoc danh sach .m3u (thieu fetch)");
+        return Promise.resolve({ ok: false, added: 0, reason: "no-fetch" });
+      }
+      return f(url).then(function (res) {
+        if (!res || !res.ok) throw new Error("HTTP " + (res ? res.status : "?"));
+        return res.text();
+      }).then(function (text) {
+        var items = parseM3U(text, url).filter(function (it) {
+          return it.url && !/[<>\s]/.test(it.url);
+        });
+        if (!items.length) throw new Error("empty");
+        for (var i = 0; i < items.length; i++) addPlaylistItem(items[i]);
+        return { ok: true, added: items.length, reason: "" };
+      }).catch(function (e) {
+        showTickerError("khong nap duoc danh sach .m3u");
+        return { ok: false, added: 0, reason: (e && e.message) || "fetch-error" };
+      });
+    }
     /* Form thêm URL (mục "Thêm URL…" trong menu Add/File): ô nhập + nút
        Thêm/Hủy. Tên kênh lấy từ cuối đường dẫn URL (vd .../kenh.m3u8 ->
-       "kenh"); người dùng sửa tên sau bằng cách xóa rồi thêm lại. */
+       "kenh"); người dùng sửa tên sau bằng cách xóa rồi thêm lại.
+       Đợt L (9.8): nút Thêm gọi addUrl — URL .m3u thì nạp cả danh sách,
+       URL đơn kênh thì thêm 1 mục như cũ. */
     function showAddUrlForm(anchorDiv) {
       var T = lastStage;
       if (!T) return;
@@ -3163,7 +3375,7 @@
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       var inp = document.createElement("input");
       inp.type = "text";
-      inp.placeholder = "https://…/kenh.m3u8 (hoặc .mp3)";
+      inp.placeholder = "https://…/kenh.m3u8, .mp3 hoặc danh sách .m3u";
       inp.style.width = "220px"; inp.style.font = "11px Arial, sans-serif";
       inp.style.background = "#fff"; inp.style.color = "#000";
       inp.style.border = "1px solid #7F9DB9"; inp.style.padding = "3px";
@@ -3174,7 +3386,7 @@
       ok.onclick = function () {
         var url = (inp.value || "").trim();
         if (!url) return;
-        addPlaylistItem({ name: deriveNameFromUrl(url), url: url, len: null, group: "Thêm tay", kind: "radio" });
+        addUrl(url); /* Đợt L (9.8): .m3u -> nạp cả danh sách; URL đơn -> 1 mục */
         closePlaylistMenus();
       };
       box.appendChild(ok);
@@ -4119,7 +4331,7 @@
       getPlaylistState: getPlaylistState, setPlaylistData: setPlaylistData,
       setPlaylistItems: setPlaylistItems, selectPlaylistItem: selectPlaylistItem,
       playPlaylistItem: playPlaylistItem, removePlaylistItem: removePlaylistItem,
-      addPlaylistItem: addPlaylistItem, sortPlaylistByName: sortPlaylistByName,
+      addPlaylistItem: addPlaylistItem, addUrl: addUrl, isM3UListUrl: isM3UListUrl, sortPlaylistByName: sortPlaylistByName,
       restorePlaylistOrder: restorePlaylistOrder, exportPlaylistM3U: exportPlaylistM3U,
       playlistTotalTime: playlistTotalTime, parseM3U: parseM3U,
       getLastExportedM3U: function () { return lastExportedM3U; },

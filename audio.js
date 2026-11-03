@@ -69,10 +69,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "9.7";
-  var EXPECTED_AUDIO_VERSION = "9.7";
+  var AUDIO_VERSION = "9.8";
+  var EXPECTED_AUDIO_VERSION = "9.8";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.7" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.8" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -92,7 +92,25 @@
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
   function fracToDb(frac) { return clamp01(frac) * 24 - 12; }
-  function isHlsUrl(url) { return /\.m3u8($|\?)/i.test(String(url || "")); }
+  /* Đợt L (9.8): URL HLS không nhất thiết có đuôi .m3u8 — proxy TV vmttv
+     (https://vmttv.dpdns.org/tv360/?id=N) redirect 302 tới master HLS
+     tv360.vn nhưng URL gốc không có .m3u8. Trước đây isHlsUrl trả false
+     nên trên trình duyệt KHÔNG có HLS native (Chrome Linux/desktop)
+     engine không bao giờ thử hls.js: đo headless 3/11 — native lỗi 4
+     (MEDIA_ERR_SRC_NOT_SUPPORTED), hlsTried=false, videoWidth=0 mãi.
+     Trên điện thoại (native HLS) không ảnh hưởng — native vẫn thử
+     trước, hls.js chỉ là fallback khi native lỗi/timeout. Chỉ thêm host
+     nào đã đo thật là proxy HLS (vmttv); đừng đoán thêm. */
+  var HLS_PROXY_HOSTS = ["vmttv.dpdns.org"];
+  function isHlsUrl(url) {
+    var u = String(url || "");
+    if (/\.m3u8($|\?)/i.test(u)) return true;
+    var low = u.toLowerCase();
+    for (var i = 0; i < HLS_PROXY_HOSTS.length; i++) {
+      if (low.indexOf(HLS_PROXY_HOSTS[i]) >= 0) return true;
+    }
+    return false;
+  }
   function originOf(u) {
     var m = /^[a-z][a-z0-9+.-]*:\/\/[^\/]+/i.exec(String(u || ""));
     return m ? m[0].toLowerCase() : "";
@@ -520,7 +538,8 @@
       clearTimers();
       detachHls();
       /* Dừng thẻ đang phát (đổi audio <-> video thì thẻ kia phải im). */
-      if (currentEl) pauseEl(currentEl);
+      var prevEl = currentEl;
+      if (prevEl) pauseEl(prevEl);
       pendingSeek = null;
       currentItem = item;
       var video = isVideoItem(item);
@@ -533,6 +552,21 @@
         if (!el) { handleLoadFailure("no-element"); return { ok: false, reason: "no-element" }; }
       }
       currentEl = el;
+      /* Đợt L (9.8) — ĐỔI KÊNH XÓA KHUNG HÌNH CŨ NGAY (người dùng báo
+         3/11: chọn kênh TV360 khác mà hình vẫn là Đà Nẵng — kênh TV360
+         bị xếp nhầm audio nên thẻ video không được gán src mới, giữ
+         nguyên src + frame cuối của đài trước):
+         - Thẻ video cũ không còn dùng (video -> audio): xóa src + load()
+           để về trạng thái rỗng, khỏi dính frame đài cũ khi sau này mở
+           lại AVS ở chế độ video.
+         - Thẻ video dùng tiếp (video -> video, audio -> video): xóa src
+           cũ TRƯỚC khi gán src mới — khung cũ biến mất ngay (vùng video
+           đen/trống trong lúc nạp), hình mới chỉ hiện khi kênh mới có
+           loadeddata/videoWidth > 0 (lưới an toàn renderer.setVideoInfo).
+           Chỉ gán src mới thôi chưa đủ: trình duyệt có thể giữ frame
+           cuối của luồng cũ tới khi có frame mới. */
+      if (prevEl && prevEl !== el && prevEl === lastVideoEl) clearSrc(prevEl);
+      if (el === lastVideoEl) clearSrc(el);
       /* Đợt K (9.7): bài/kênh mới -> kết quả đo kênh cũ hết hiệu lực (thẻ
          audio dùng lại cho bài mới nên không thể dựa vào measuredForEl). */
       measuredChannels = null; measuredForEl = null;
