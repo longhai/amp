@@ -19,10 +19,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "9.8";
-  var EXPECTED_LOADER_VERSION = "9.8";
+  var LOADER_VERSION = "9.9";
+  var EXPECTED_LOADER_VERSION = "9.9";
   /* ĐỢT F — version manifest duy nhất: index.html đặt window.AMP_VERSION
-     = "9.8" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
+     = "9.9" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
      manifest có mà khác version của file thì MANIFEST_MISMATCH = true để
      trang báo "bản mix" thay vì vẽ sai trong im lặng (bài học v7.4/v8).
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -119,6 +119,7 @@
     return i < 0 ? "" : path.slice(0, i);
   }
   function lowerTag(el) { return (el.tagName || "").toLowerCase(); }
+  function lowerId(s) { return String(s == null ? "" : s).toLowerCase(); }
 
   /* Đo kích thước PNG từ header IHDR (không cần Image, chạy được cả jsdom):
      signature 8 byte, width ở byte 16-19, height ở byte 20-23 (big-endian). */
@@ -196,7 +197,10 @@
         version: LOADER_VERSION, fromCache: false, kind: "classic",
         bitmaps: {}, fonts: {}, colors: {},
         groupdefs: {}, groupdefEls: {}, xuiMap: {},
-        layouts: {}, xmlFiles: [], makiFiles: classicMaki,
+        layouts: {}, layoutList: [], containers: {},
+        findLayout: function () { return null; },
+        firstLayoutInContainer: function () { return null; },
+        xmlFiles: [], makiFiles: classicMaki,
         gammasets: [], gammas: [],
         drawer: null, embeddedAvs: null,
         fileURL: async function () { return null; },
@@ -310,6 +314,33 @@
         }
       }
     }
+    /* ĐỢT C (9.9) — containers: gom mọi <container> trong model (khóa
+       không phân biệt hoa/thường, first-wins). default_x/default_y là vị
+       trí mặc định trên desktop Winamp; Amp xếp chồng dọc trên điện thoại
+       360px (quyết 3/11) nên KHÔNG áp chúng làm vị trí tuyệt đối — chỉ
+       ghi lại vào RES.containers để dùng sau (chế độ cửa sổ rời) và để
+       layout thiếu w/h thì lấy default_w/default_h của container.
+       default_h của main 566 là 164 = chiều cao cửa sổ ĐÓNG, không phải
+       cao layout (280) — chỉ dùng khi layout không có w/h. */
+    var containers = {};
+    for (di = 0; di < docs.length; di++) {
+      var cnlist = elList(docs[di].doc, "container");
+      for (var cn = 0; cn < cnlist.length; cn++) {
+        var cid0 = cnlist[cn].getAttribute("id") || "";
+        if (!cid0) continue;
+        var ckey = lowerId(cid0);
+        if (containers[ckey]) continue;
+        containers[ckey] = {
+          id: cid0,
+          name: cnlist[cn].getAttribute("name") || "",
+          default_x: intAttr(cnlist[cn], "default_x", 0),
+          default_y: intAttr(cnlist[cn], "default_y", 0),
+          default_w: cnlist[cn].getAttribute("default_w") !== null ? intAttr(cnlist[cn], "default_w", 0) : null,
+          default_h: cnlist[cn].getAttribute("default_h") !== null ? intAttr(cnlist[cn], "default_h", 0) : null,
+          default_visible: cnlist[cn].getAttribute("default_visible")
+        };
+      }
+    }
     /* Layout khóa theo (container, id); container suy từ đồ thị include. */
     function containerForFile(path) {
       var target = path.toLowerCase();
@@ -324,6 +355,20 @@
           var nxts = includesByFile[low] || [];
           for (var j = 0; j < nxts.length; j++) q.push(nxts[j]);
         }
+      }
+      return "";
+    }
+    /* ĐỢT C — layout nằm TRỰC TIẾP trong <container> thì container là tổ
+       tiên gần nhất (nhiều skin gom nhiều container vào 1 file, hoặc
+       <container><layout> inline). Trước đây chỉ có đồ thị include +
+       fallback dc[0] (container ĐẦU TIÊN trong file) nên mọi layout
+       trong file nhiều container đều bị gán nhầm về container đầu, layout
+       sau trùng khóa thì mất hẳn (probe S6: Pledit|normal biến mất). */
+    function containerAncestor(layEl) {
+      var p = layEl ? layEl.parentNode : null;
+      while (p) {
+        if (p.nodeType === 1 && lowerTag(p) === "container") return p.getAttribute("id") || "";
+        p = p.parentNode;
       }
       return "";
     }
@@ -349,24 +394,57 @@
       }
       return 0;
     }
-    var layouts = {};
+    var layouts = {}, layoutList = [], layoutOrder = 0;
+    /* ĐỢT C — tra layout không phân biệt hoa/thường (Winamp không phân
+       biệt hoa/thường ở id; skin ghi Main/Normal thì tra main/normal vẫn
+       thấy — trước đây tra đúng chữ nên ném lỗi "không tìm được layout",
+       probe S2). Trả entry hoặc null; KHÔNG fallback trần sang container
+       khác (xem renderer.resolveLayout). */
+    function findLayout(container, layoutId) {
+      var k = lowerId(container) + "|" + lowerId(layoutId);
+      return layouts[k] || null;
+    }
     for (di = 0; di < docs.length; di++) {
       var llist = elList(docs[di].doc, "layout");
       for (var l = 0; l < llist.length; l++) {
         var lid = llist[l].getAttribute("id") || "";
         if (!lid) continue;
-        var container = containerForFile(docs[di].path);
+        /* Thứ tự xác định container: (1) tổ tiên <container> trong cùng
+           file; (2) đồ thị include; (3) file chỉ có ĐÚNG 1 container.
+           KHÔNG đoán dc[0] khi file có nhiều container (lỗi S6). */
+        var container = containerAncestor(llist[l]) || containerForFile(docs[di].path);
         if (!container) {
           var dc = elList(docs[di].doc, "container");
-          if (dc.length) container = dc[0].getAttribute("id") || "";
+          if (dc.length === 1) container = dc[0].getAttribute("id") || "";
         }
-        var key = container + "|" + lid;
+        var key = lowerId(container) + "|" + lowerId(lid);
+        var origKey = container + "|" + lid;
         if (!layouts[key]) {
-          var LW = intAttr(llist[l], "w", 354), LH = intAttr(llist[l], "h", 280);
+          /* w/h: thuộc tính layout trước; thiếu thì default_w/default_h
+             của container; cuối cùng mới 354×280. Trước đây thiếu w/h là
+             về thẳng 354×280 nên skin 500×200 vẽ sai cỡ (probe S7). */
+          var contInfo = container ? containers[lowerId(container)] : null;
+          var LW = llist[l].getAttribute("w") !== null ? intAttr(llist[l], "w", 354)
+            : (contInfo && contInfo.default_w ? contInfo.default_w : 354);
+          var LH = llist[l].getAttribute("h") !== null ? intAttr(llist[l], "h", 280)
+            : (contInfo && contInfo.default_h ? contInfo.default_h : 280);
           var foY = frameOffsetFor(llist[l]);
-          layouts[key] = {
-            el: llist[l], container: container,
+          var entry = {
+            el: llist[l], container: container, layoutId: lid,
+            key: key, order: layoutOrder++,
             w: LW, h: LH,
+            /* Đợt A (9.9, việc 6 — resize): giới hạn co giãn của layout,
+               đọc từ XML (không gán cứng số của skin 566). Skin 566:
+               main|normal min 354×280 (= đúng w/h → cố định, như Winamp
+               thật: cửa sổ chính không kéo được); Pledit min 354×164
+               (w 436 → kéo rộng được, cao ≥164); MLibrary min 354×164
+               (790×349 → kéo được cả 2 chiều); Video min 354×164
+               (354×280 → kéo cao được). Không có maximum_* trong XML
+               566 → null (renderer tự kẹp theo giới hạn chung). */
+            minW: intAttr(llist[l], "minimum_w", 0) || null,
+            minH: intAttr(llist[l], "minimum_h", 0) || null,
+            maxW: intAttr(llist[l], "maximum_w", 0) || null,
+            maxH: intAttr(llist[l], "maximum_h", 0) || null,
             snapadjustbottom: intAttr(llist[l], "snapadjustbottom", 0),
             frameOffsetY: foY,
             /* contentH = layoutH (đầy đủ — xem ghi chú frameOffsetFor):
@@ -375,9 +453,30 @@
             contentH: LH,
             drawerRestY: 0 /* điền ở dưới, từ instance ngăn kéo trong model */
           };
-          if (!layouts[lid]) layouts[lid] = layouts[key];
+          /* Ghi 2 khóa cùng trỏ 1 entry: khóa thường (không phân biệt
+             hoa/thường) + khóa đúng chữ trong XML (tương thích code/test
+             cũ tra "MLibrary|normal"). KHÔNG còn alias trần layouts[lid]:
+             alias đó từng làm renderLayout("main","normal") vẽ nhầm layout
+             của container khác (vd Pledit 436×164) khi main thiếu layout,
+             và làm renderStacked vẽ main 2 lần (probe S8 + stacked S1). */
+          layouts[key] = entry;
+          if (origKey !== key) layouts[origKey] = entry;
+          layoutList.push(entry);
         }
       }
+    }
+    /* ĐỢT C — layout đầu tiên (theo thứ tự XML) trong 1 container, dùng
+       cho fallback cùng container (ngăn kéo/AVS nhúng suy từ layout main
+       khi main chỉ có layout khác 'normal', vd chỉ có 'shade'). */
+    function firstLayoutInContainer(container) {
+      var lc = lowerId(container), best = null;
+      for (var fi = 0; fi < layoutList.length; fi++) {
+        if (lowerId(layoutList[fi].container) === lc) { best = layoutList[fi]; break; }
+      }
+      return best;
+    }
+    function findMainLayout() {
+      return findLayout("main", "normal") || firstLayoutInContainer("main");
     }
     /* drawerRestY: vị trí nghỉ của ngăn kéo trong hệ layout.
        Instance <group id="player.normal.drawer" y="-263" relaty="1"> nằm
@@ -394,7 +493,7 @@
         for (var j = 0; j < kids.length; j++) {
           if (lowerTag(kids[j]) !== "group") continue;
           if (kids[j].getAttribute("id") !== "player.normal.drawer") continue;
-          var mainLay = layouts["main|normal"] || layouts["normal"];
+          var mainLay = findMainLayout();
           var cH = mainLay ? mainLay.contentH : 280;
           var y = intAttr(kids[j], "y", 0);
           var relat = kids[j].getAttribute("relaty");
@@ -579,7 +678,7 @@
     function extractEmbeddedAvs() {
       var gd = groupdefEls["AVSGroup"];
       if (!gd) return null;
-      var mainLay = layouts["main|normal"] || layouts["normal"];
+      var mainLay = findMainLayout();
       var layW = mainLay ? mainLay.w : 354;
       var contentH = mainLay ? mainLay.contentH : 280;
       var frameOff = mainLay ? mainLay.frameOffsetY : 18;
@@ -616,7 +715,9 @@
       version: LOADER_VERSION, fromCache: false, kind: "modern",
       bitmaps: bitmaps, fonts: fonts, colors: colors,
       groupdefs: groupdefs, groupdefEls: groupdefEls, xuiMap: xuiMap,
-      layouts: layouts, xmlFiles: xmlFiles, makiFiles: makiFiles,
+      layouts: layouts, layoutList: layoutList, containers: containers,
+      findLayout: findLayout, firstLayoutInContainer: firstLayoutInContainer,
+      xmlFiles: xmlFiles, makiFiles: makiFiles,
       gammasets: gammasets, gammas: gammasets.length ? gammasets[0].groups : [],
       drawer: drawerInfo,
       embeddedAvs: embeddedAvs,

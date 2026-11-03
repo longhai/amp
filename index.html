@@ -103,7 +103,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.8" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.9" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
    lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
    checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
@@ -122,15 +122,15 @@
    isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
    + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
    thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "9.8";
+window.AMP_VERSION = "9.9";
 </script>
-<script src="skin-loader.js?v=9.8"></script>
-<script src="audio.js?v=9.8"></script>
-<script src="renderer.js?v=9.8"></script>
+<script src="skin-loader.js?v=9.9"></script>
+<script src="audio.js?v=9.9"></script>
+<script src="renderer.js?v=9.9"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.8" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "9.9" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -146,12 +146,17 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "9.8";
+var VERSION = "9.9";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
 var shadeMode = false; /* đợt G: shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
 var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
+/* Đợt A (9.9, việc 1): Media Library mặc định đóng; mở bằng nút ML trong
+   skin, menu View, hoặc nút X trên titlebar ML để đóng. */
+/* Đợt A (9.9, việc 6): kích thước cửa sổ đã kéo (playlist/ML/video rời),
+   lưu localStorage "amp9-winsize-v9", khôi phục khi nạp trang. */
+var mlOpen = false;
 
 /* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN: không còn dòng version thường
    trực trên màn hình. Thông báo thường → console (im lặng trên màn
@@ -175,7 +180,7 @@ function logVersion(extra) {
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v9.8 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v9.9 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -259,8 +264,24 @@ function setZoom(mode) {
     if (zf) zf.classList.toggle("on", mode === "fit");
   }
 }
+/* Đợt B (9.9) — "Animate Video/Vis Drawer" tắt thì AVS mở/đóng TỨC THÌ
+   (không trượt theo transition height 250ms của .stage/#stage-wrap).
+   Theo dõi trạng thái AVS + ngăn kéo lần render trước: chỉ tắt transition
+   khi LẦN NÀY chỉ đổi AVS (không đổi ngăn kéo) — mở ngăn kéo vẫn trượt
+   mượt theo tùy chọn "Animate Config Drawer" của nó. Transition trả lại
+   sau 60ms (sau khi chiều cao mới đã áp — trả ngay trong cùng lượt thì
+   trình duyệt có thể gom batch và vẫn trượt). */
+var prevAvsOpenAnim = null, prevDrawerOpenAnim = null;
 async function renderCurrent() {
   if (!renderer) return;
+  var avsNow = false;
+  try { avsNow = !!(renderer.getAvsState && renderer.getAvsState().open); } catch (e) { avsNow = false; }
+  var avsAnimOff = !!(renderer.isAvsAnimEnabled && renderer.isAvsAnimEnabled() === false);
+  var avsChanged = prevAvsOpenAnim !== null && avsNow !== prevAvsOpenAnim;
+  var drawerChanged = prevDrawerOpenAnim !== null && drawerOpen !== prevDrawerOpenAnim;
+  var instantAvs = avsAnimOff && avsChanged && !drawerChanged;
+  if (instantAvs) { stage.style.transition = "none"; stageWrap.style.transition = "none"; }
+  try {
   /* Đợt C: playlist mở thì xếp chồng Player + Playlist (stage rộng 436);
      đóng thì chỉ cửa sổ chính (354). Tổng cao = playerH + playlistH:
      ngăn kéo đóng 156+164=320 (đỉnh ngăn kéo lộ 13px), ngăn kéo mở
@@ -268,18 +289,22 @@ async function renderCurrent() {
      Đợt G — shadeMode: vẽ layout shade 354×25 (không ngăn kéo, không AVS
      nhúng); playlist rời vẫn xếp dưới shade nếu đang mở (25+164=189). */
   if (shadeMode) {
-    if (playlistOpen) {
-      await renderer.renderStacked(stage, { shadeMode: true });
+    if (playlistOpen || mlOpen) {
+      await renderer.renderStacked(stage, { shadeMode: true, playlistOpen: playlistOpen, mlOpen: mlOpen });
     } else {
       await renderer.renderLayout("main", "shade", "WINAMP", {}, stage);
     }
-  } else if (playlistOpen) {
-    await renderer.renderStacked(stage, { drawerOpen: drawerOpen });
+  } else if (playlistOpen || mlOpen) {
+    await renderer.renderStacked(stage, { drawerOpen: drawerOpen, playlistOpen: playlistOpen, mlOpen: mlOpen });
   } else {
     await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
   }
   setZoom(zoom);
   checkDrawer();
+  } finally {
+    prevAvsOpenAnim = avsNow; prevDrawerOpenAnim = drawerOpen;
+    if (instantAvs) setTimeout(function () { stage.style.transition = ""; stageWrap.style.transition = ""; }, 60);
+  }
 }
 /* Đợt G — chuyển normal<->shade (nút winshade trong skin / bấm đúp nền
    shade). Lưu localStorage để tải lại trang giữ nguyên chế độ. Khi sang
@@ -296,6 +321,28 @@ function setShadeMode(open) {
 function setPlaylistOpen(open) {
   playlistOpen = !!open;
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+}
+/* Đợt A (9.9, việc 1): mở/đóng Media Library (nút ML trong skin, menu
+   View → Media Library, nút X trên titlebar ML). Skin không có ML
+   (vd Classic .wsz) thì báo rõ, không mở cửa sổ trống. */
+function setMlOpen(open) {
+  if (open && renderer && renderer.hasMediaLibrary && !renderer.hasMediaLibrary()) {
+    setStatus("Skin này không có cửa sổ Media Library.", true);
+    return;
+  }
+  mlOpen = !!open;
+  renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
+}
+/* Đợt A (9.9, việc 6): kéo đổi kích thước cửa sổ xong → lưu localStorage
+   để lần nạp trang sau giữ nguyên (theo từng cửa sổ). */
+function saveWinSizes(sizes) {
+  try { localStorage.setItem("amp9-winsize-v9", JSON.stringify(sizes || {})); } catch (e) { /* private mode */ }
+}
+function loadWinSizes() {
+  try {
+    var s = JSON.parse(localStorage.getItem("amp9-winsize-v9") || "null");
+    return s && typeof s === "object" ? s : null;
+  } catch (e) { return null; }
 }
 /* Self-check sau khi vẽ (đợt B + đợt F): sai thì ghi console, KHÔNG
    hiện banner trên màn hình (đợt 9.5: người dùng chốt bỏ banner
@@ -363,8 +410,28 @@ function toggleDrawer(open) {
     }
   }, 50);
 }
+/* Đợt D (9.9) — MINIMIZE: web không thu nhỏ cửa sổ thật như Winamp
+   desktop (không có taskbar/cửa sổ hệ thống); Amp ẩn giao diện + nút ⋯,
+   hiện nút "Mở lại Amp", GIỮ TIẾNG đang phát — chung đường với nút X
+   của cửa sổ chính (onPlayerClose). Bấm "Mở lại Amp" thì hiện lại. */
+function hideUi() {
+  try { stageWrap.style.display = "none"; } catch (e) { /* bỏ qua */ }
+  try { btnMenu.style.display = "none"; } catch (e) { /* bỏ qua */ }
+  try { menuPop.hidden = true; } catch (e) { /* bỏ qua */ }
+  try { btnReopen.hidden = false; } catch (e) { /* bỏ qua */ }
+}
 async function bootSkin(file, name) {
   setStatus("Đang mở " + name + " …");
+  /* Đợt C (9.9) — GIỮ SKIN CŨ khi skin mới nạp lỗi: chụp lại toàn bộ trạng
+     thái đang chạy (model + renderer + engine + DOM stage) TRƯỚC khi thay
+     bằng skin mới. Lỗi ở bất cứ bước nào (zip hỏng, không có layout chính
+     dùng được, render lỗi) thì trả lại y nguyên + báo rõ, KHÔNG để trang
+     ở trạng thái vỡ (ngăn kéo trơ trọi trên nền đen như ảnh 13:47).
+     Render nguyên tử (build rồi swapIn) đã bảo đảm stage thật không bị
+     chạm khi render lỗi; khôi phục ở đây lo nốt phần model/renderer đã
+     bị thay trước lúc render. */
+  var prevSkin = { RES: RES, SKIN: SKIN, renderer: renderer, audioEngine: audioEngine,
+    shadeMode: shadeMode };
   try {
     await ensureJSZip();
     var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
@@ -382,15 +449,37 @@ async function bootSkin(file, name) {
         if (open === undefined) setPlaylistOpen(!playlistOpen);
         else setPlaylistOpen(!!open);
       },
+      /* Đợt A (9.9, việc 1): nút ML trong skin / menu View / nút đóng X
+         của cửa sổ ML. */
+      onMlToggle: function (open) {
+        if (open === undefined) setMlOpen(!mlOpen);
+        else setMlOpen(!!open);
+      },
+      isMlOpen: function () { return mlOpen; },
+      /* Đợt A (9.9, việc 6): kéo đổi kích thước cửa sổ xong → lưu. */
+      onWinSizeChange: function (sizes) { saveWinSizes(sizes); },
       /* v9.6 (Điểm 2): nút X của cửa sổ chính — web không "thoát app"
          như Winamp thật: ẩn giao diện + nút ⋯, hiện nút "Mở lại Amp"
          (không dừng tiếng; bấm nút mở lại thì giao diện hiện lại). */
-      onPlayerClose: function () {
-        try { stageWrap.style.display = "none"; } catch (e) { /* bỏ qua */ }
-        try { btnMenu.style.display = "none"; } catch (e) { /* bỏ qua */ }
-        try { menuPop.hidden = true; } catch (e) { /* bỏ qua */ }
-        try { btnReopen.hidden = false; } catch (e) { /* bỏ qua */ }
-      },
+      onPlayerClose: function () { hideUi(); },
+      /* Đợt D (9.9) — MINIMIZE (nút thu nhỏ cửa sổ chính + shade):
+         cùng đường hideUi với nút X (ghi rõ ở trên: không phải minimize
+         của desktop, chỉ ẩn giao diện + giữ tiếng). */
+      onMinimize: function () { hideUi(); },
+      /* Đợt D (9.9) — Preferences "Nạp skin…" / menu File "Nạp skin…":
+         mở hộp chọn file .wal/.wsz của trang (giống mục "skin" của
+         menu ⋯ và kéo-thả file vào trang). */
+      onOpenSkinPicker: function () { fileInput.click(); },
+      /* Đợt D (9.9) — Preferences "Zoom": 1x / Vừa màn hình (giống
+         menu ⋯; chỉ 2 chế độ này, theo chốt 3/11). */
+      onZoom: function (mode) { setZoom(mode); },
+      /* Đợt D (9.9) — Preferences / menu Options "Thu gọn (Shade)":
+         đọc trạng thái shade hiện tại để đánh dấu ✓ và đảo trạng thái. */
+      isShadeMode: function () { return shadeMode; },
+      /* Đợt D (9.9) — About: tên/phiên bản/tác giả của skin đang nạp
+         (SKIN do loader trả về; đổi skin thì bootSkin tạo renderer mới
+         với SKIN mới). */
+      skinInfo: SKIN,
       isPlaylistOpen: function () { return playlistOpen; },
       /* Đợt C: menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
          thư mục rồi đặt làm dữ liệu playlist (41 kênh). */
@@ -411,8 +500,22 @@ async function bootSkin(file, name) {
       },
       /* Đợt E — lưu state phát (playing/current/repeat/shuffle/volume/EQ)
          mỗi khi đổi, để lần nạp trang sau khôi phục (trừ file local). */
-      onPlaybackChange: function (st) { savePlaybackState(st); }
+      onPlaybackChange: function (st) { savePlaybackState(st); },
+      /* Đợt B (9.9) — lưu cfg Options (Show Menus / Animate / Detach /
+         ticker / visbutton...) mỗi khi đổi, để lần nạp trang sau khôi
+         phục (localStorage "amp9-cfg-v9"; không gồm Shuffle/Repeat/EQ
+         vì đã có trong state phát). */
+      onCfgChange: function (st) {
+        try { localStorage.setItem("amp9-cfg-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
+      }
     });
+    /* Đợt B (9.9) — khôi phục cfg Options đã lưu TRƯỚC lần render đầu
+       (ghi đè mặc định trong renderer; EQ/Shuffle/Repeat khôi sau qua
+       state phát, không xung đột vì 2 key khác nhau). */
+    try {
+      var savedCfg = JSON.parse(localStorage.getItem("amp9-cfg-v9") || "null");
+      if (savedCfg) renderer.restoreCfgState(savedCfg);
+    } catch (e) { /* state lưu hỏng thì dùng mặc định */ }
     /* Đợt E — tạo audio engine SAU renderer (engine cần getVideoEl/
        isVideoItem của renderer), rồi gắn vào renderer. */
     if (window.AmpAudio) {
@@ -434,6 +537,13 @@ async function bootSkin(file, name) {
       var savedAvs = JSON.parse(localStorage.getItem("amp9-avs-v9") || "null");
       if (savedAvs) renderer.restoreAvsState(savedAvs);
     } catch (e) { /* state lưu hỏng thì mở mặc định (đóng) */ }
+    /* Đợt A (9.9, việc 6): khôi phục kích thước cửa sổ đã kéo TRƯỚC lần
+       render đầu (size sai/không còn đúng XML thì restoreWinSizes kẹp
+       lại theo minimum/maximum trong XML, hỏng thì về mặc định). */
+    try {
+      var savedSizes = loadWinSizes();
+      if (savedSizes) renderer.restoreWinSizes(savedSizes);
+    } catch (e) { /* state lưu hỏng thì dùng kích thước mặc định */ }
     /* Đợt G — khôi phục shadeMode đã lưu TRƯỚC lần render đầu (mặc định
        normal). Shade vẽ layout main|shade 354×25, không ngăn kéo/AVS. */
     try { shadeMode = localStorage.getItem("amp9-shade-v9") === "1"; } catch (e) { shadeMode = false; }
@@ -462,16 +572,17 @@ async function bootSkin(file, name) {
       var savedPlay = loadPlaybackState();
       if (savedPlay) renderer.restorePlaybackState(savedPlay);
     } catch (e) { /* state lưu hỏng thì mở mặc định */ }
-    var lay = RES.layouts["main|normal"] || RES.layouts["normal"];
+    var layResolved = (renderer.resolveLayout ? renderer.resolveLayout("main", "normal") : null);
+    var lay = layResolved ? layResolved.entry : (RES.layouts["main|normal"] || null);
     var lines = [];
     lines.push("Skin: " + (SKIN.name || "(không tên)") + (SKIN.version ? " v" + SKIN.version : ""));
     if (SKIN.author) lines.push("Tác giả: " + SKIN.author);
     lines.push("Bitmap: " + Object.keys(RES.bitmaps).length + " · Font: " + Object.keys(RES.fonts).length
       + " · Màu: " + Object.keys(RES.colors).length + " · Group: " + Object.keys(RES.groupdefs).length
       + " · Layout: " + Object.keys(RES.layouts).length);
-    if (lay) lines.push("Layout main|normal: " + lay.w + "×" + lay.h + " · contentH=" + lay.contentH
+    if (lay) lines.push("Layout main|normal" + (layResolved && layResolved.fallback !== "exact" ? " (fallback " + layResolved.fallback + ": " + layResolved.container + "|" + layResolved.layoutId + ")" : "") + ": " + lay.w + "×" + lay.h + " · contentH=" + lay.contentH
       + " (frameOffsetY=" + lay.frameOffsetY + ") · snapadjustbottom=" + lay.snapadjustbottom
-      + " · drawerRestY=" + lay.drawerRestY + " · cửa sổ chính sau trim: 354×" + finalH);
+      + " · drawerRestY=" + lay.drawerRestY + " · cửa sổ chính sau trim: " + lay.w + "×" + finalH);
     var layShade = RES.layouts["main|shade"];
     if (layShade) lines.push("Layout main|shade: " + layShade.w + "×" + layShade.h
       + " · group shademain (thanh transport 25px, gọn khít, không ngăn kéo/AVS; về normal bằng nút winshade hoặc bấm đúp nền)"
@@ -499,7 +610,21 @@ async function bootSkin(file, name) {
       setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
     }
   } catch (e) {
-    setStatus("Lỗi: " + (e.message || e), true);
+    /* Đợt C — khôi phục skin cũ đang chạy (nếu có). Chưa từng nạp skin nào
+       thành công thì không có gì để khôi phục, chỉ báo lỗi như trước. */
+    if (prevSkin.renderer) {
+      RES = prevSkin.RES; SKIN = prevSkin.SKIN; renderer = prevSkin.renderer;
+      audioEngine = prevSkin.audioEngine; shadeMode = prevSkin.shadeMode;
+      /* KHÔNG đụng stage.innerHTML: render nguyên tử (build rồi swapIn)
+         nên khi render lỗi stage thật chưa hề bị chạm — DOM cũ còn nguyên
+         kèm registry/handler của renderer cũ. Ghi đè innerHTML bằng chuỗi
+         sẽ phá hết handler onclick + registry trỏ vào node cũ. Chỉ cần
+         trả lại biến model/renderer + tính lại zoom theo stage cũ. */
+      setZoom(zoom);
+      setStatus("Lỗi: " + (e.message || e) + " — skin này không dùng được, vẫn giữ skin '" + (prevSkin.SKIN && prevSkin.SKIN.name ? prevSkin.SKIN.name : "cũ") + "'.", true);
+    } else {
+      setStatus("Lỗi: " + (e.message || e), true);
+    }
   }
 }
 /* Đợt G — menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.

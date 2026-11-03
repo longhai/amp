@@ -69,10 +69,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "9.8";
-  var EXPECTED_AUDIO_VERSION = "9.8";
+  var AUDIO_VERSION = "9.9";
+  var EXPECTED_AUDIO_VERSION = "9.9";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.8" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.9" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -141,6 +141,15 @@
     /* --- graph --- */
     var ctx = null, preamp = null, bandNodes = [], master = null, analyser = null;
     var graphBuilt = false, graphUnavailable = false;
+    /* Đợt D (9.9) — PAN (cân bằng trái/phải, slider Balance trong ngăn kéo
+       EQ): StereoPannerNode đặt SAU master, TRƯỚC analyser
+       (preamp -> 10 biquad -> master -> panner -> analyser -> destination).
+       Pan chỉ có tác dụng khi tiếng đi QUA CHUỖI EQ (EQ bật): EQ tắt thì
+       source nối thẳng destination, panner không nằm trên đường tiếng nên
+       Pan không đổi được gì — cùng giới hạn như vis (xem README đợt D).
+       Trình duyệt/jsdom không có createStereoPanner thì panner = null,
+       setPan chỉ lưu giá trị (panSupported=false), không ném lỗi. */
+    var panner = null, panValue = 0.5;
     /* Đợt K (9.7, điểm 7a) — đo kênh thật (stereo/mono) khi có source:
        ChannelSplitter(2) tách L/R từ source + 2 analyser nhỏ đo biên độ
        từng kênh. Chỉ đo được khi MediaElementSource đã tồn tại (EQ bật +
@@ -216,11 +225,21 @@
         analyser = ctx.createAnalyser();
         analyser.fftSize = ANALYSER_FFT_SIZE;
         try { analyser.smoothingTimeConstant = 0.8; } catch (e) { /* stub */ }
-        /* Nối chuỗi (chưa có nguồn vào): preamp -> 10 biquad -> master -> analyser -> destination. */
+        /* Đợt D (9.9) — StereoPannerNode cho PAN (xem ghi chú ở đầu graph):
+           có thì chèn giữa master và analyser, không có thì nối thẳng như cũ. */
+        try {
+          if (ctx.createStereoPanner) {
+            panner = ctx.createStereoPanner();
+            panner.pan.value = (panValue - 0.5) * 2;
+          }
+        } catch (e) { panner = null; }
+        /* Nối chuỗi (chưa có nguồn vào): preamp -> 10 biquad -> master
+           -> [panner] -> analyser -> destination. */
         var head = preamp;
         for (var j = 0; j < bandNodes.length; j++) { head.connect(bandNodes[j]); head = bandNodes[j]; }
         head.connect(master);
-        master.connect(analyser);
+        if (panner) { master.connect(panner); panner.connect(analyser); }
+        else master.connect(analyser);
         analyser.connect(ctx.destination);
       } catch (e) { graphUnavailable = true; return false; }
       graphBuilt = true;
@@ -369,6 +388,23 @@
         try { master.gain.value = volume; } catch (e) { /* stub */ }
       }
     }
+
+    /* Đợt D (9.9) — PAN: đặt lại giá trị pan trên node (gọi khi kéo slider
+       Balance trong renderer, và khi graph mới tạo). Trả {pan, applied,
+       audible}: applied = đã đặt được lên node; audible = Pan NGHE được
+       (cần EQ bật để tiếng đi qua chuỗi có panner — EQ tắt thì source đi
+       thẳng loa, xem ghi chú ở đầu graph). */
+    function applyPan() {
+      if (!panner) return false;
+      try { panner.pan.value = (panValue - 0.5) * 2; } catch (e) { return false; }
+      return true;
+    }
+    function setPan(v) {
+      panValue = clamp01(typeof v === "number" && isFinite(v) ? v : 0.5);
+      var applied = applyPan();
+      return { pan: panValue, applied: applied, audible: applied && eqOn };
+    }
+    function getPan() { return panValue; }
 
     /* ---------- media elements ---------- */
     function wireMediaEl(el) {
@@ -801,6 +837,18 @@
       if (!wasPlaying2) { pauseEl(currentEl); }
       return { changed: true, reloaded: true };
     }
+    /* Đợt B (9.9) — KHZ đo thật: sample rate của AudioContext (thiết bị
+       phát, vd 48000 -> KHZ hiện "48"). Chỉ có khi graph đã được tạo
+       (lần phát đầu với EQ bật — ensureGraph trong playItem/setEqOn);
+       chưa có graph thì null -> renderer hiện "44" demo (ghi rõ demo,
+       không bịa thành số đo). Tắt EQ KHÔNG hủy graph nên sampleRate vẫn
+       đọc được sau khi tắt — đúng vì đó là sample rate của thiết bị,
+       không đổi khi bypass. Lưu ý: đây là rate của THIẾT BỊ, không phải
+       của file (trình duyệt không cho đọc sample rate file qua thẻ
+       media) — xem README đợt B. */
+    function getSampleRate() {
+      return ctx ? ctx.sampleRate : null;
+    }
     function analyserHasSignal() {
       /* Tín hiệu vis: chuỗi EQ đang nối (EQ bật + source của thẻ đang
          phát đã nối vào preamp). EQ tắt hoặc chưa có source -> không tín hiệu. */
@@ -818,7 +866,9 @@
         playing: playing, loadState: loadState, volume: volume,
         hlsActive: !!hls, hlsTried: hlsTried, retried: retried,
         analyserConnected: !!analyser, analyserSignal: analyserHasSignal(),
+        sampleRate: ctx ? ctx.sampleRate : null, /* Đợt B (9.9): KHZ đo thật */
         measuredChannels: getMeasuredChannels(),
+        pan: panValue, panSupported: !!panner, panApplied: !!(panner && eqOn), /* Đợt D (9.9): PAN */
         eqValues: { preamp: eqValues.preamp, bands: eqValues.bands.slice() }
       };
     }
@@ -831,13 +881,14 @@
       stop: stop, seekTo: seekTo, seekToFraction: seekToFraction,
       getDuration: getDuration, getCurrentTime: getCurrentTime,
       setVolume: setVolume, setPreamp: setPreamp, setEqBand: setEqBand,
-      setEqOn: setEqOn, getState: getState,
+      setEqOn: setEqOn, getState: getState, getSampleRate: getSampleRate,
+      setPan: setPan, getPan: getPan, /* Đợt D (9.9): PAN */
       getAudioEl: getAudioEl, getVideoElement: getVideoElement,
       ensureGraph: ensureGraph,
       measureChannels: measureChannels, getMeasuredChannels: getMeasuredChannels,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, audioSrc: audioSrc, videoSrc: videoSrc, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
       }
     };
   }
