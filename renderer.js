@@ -44,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.9";
-  var EXPECTED_RENDERER_VERSION = "9.9";
+  var RENDERER_VERSION = "10.0";
+  var EXPECTED_RENDERER_VERSION = "10.0";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.9" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -581,18 +581,29 @@
       if (ov) { var c = clampWinSize(container, layoutId, ov.w, ov.h); if (c) return c; }
       return { w: lay.w, h: lay.h };
     }
-    /* Kéo mép đổi kích thước (việc 6): 3 tay nắm trên cửa sổ kéo được —
-       mép phải (rộng), mép đáy (cao), góc dưới-phải (cả 2). Dùng
-       mousedown/touchstart như slider (kéo bằng chạm trên điện thoại).
-       - Lúc kéo: đổi kích thước hộp cửa sổ + stage/wrap theo (xem trước
-         trực tiếp, chia theo tỉ lệ zoom của stage — kéo 100px màn hình
-         khi stage đang fit 0.8x = 125px CSS); nội dung vẽ lại 1 lần lúc
-         THẢ (re-render theo kích thước mới), không vẽ lại liên tục lúc
-         kéo (render bất đồng bộ, kéo liên tục sẽ kẹt/chậm).
+    /* Kéo mép đổi kích thước (việc 6, đợt v10.0 sửa 15:22 + 15:28):
+       3 tay nắm trên cửa sổ kéo được — mép phải, mép đáy, góc dưới-phải.
+       - Tay nắm THẤY ĐƯỢC: góc 24px có gờ chéo trắng mờ (kiểu grip cổ
+         điển), mép 10px có 1 gờ dọc/ngang ở giữa; không còn nền
+         transparent tàng hình (ở fit 0.45x, góc 16px cũ chỉ còn ~7px
+         màn hình, ngón tay không chạm trúng — ML/video rời tưởng như
+         không kéo được). Cửa sổ chính KHÔNG có tay nắm (Winamp thật
+         cố định 354×280).
+       - Pointer events khi có (pointerdown/move/up/cancel +
+         setPointerCapture trên tay nắm — ngón trượt khỏi tay nắm vẫn
+         kéo tiếp); không có thì mousedown/touchstart như cũ (jsdom).
+         touch-action:none để trình duyệt không cuộn trang khi kéo.
+       - Lúc kéo: cập nhật LIÊN TỤC theo từng pointermove (không
+         throttle/debounce), đổi kích thước hộp cửa sổ + xem trước nhẹ
+         (phần tử data-stretch + .pl-list/.ml-content/video/canvas co
+         giãn theo tỉ lệ) — nội dung vẽ lại đầy đủ 1 lần lúc THẢ.
+         Chiều cao stage/wrap tính TUYỆT ĐỐI từ kích thước lúc bắt đầu
+         kéo (baseStageH + dh) — bản cũ cộng dồn (curH + dh mỗi lần
+         move) nên stage phồng lên rồi nhảy lại lúc thả. Chỉ nới
+         stage/wrap, không thu (thu lại do re-render lúc thả lo).
        - Lúc thả: setWinSize (kẹp min/max + lưu localStorage qua
          onWinSizeChange) rồi requestRerender.
-       - Listener document (mousemove/mouseup/touchmove/touchend) chỉ gắn
-         1 lần cho cả renderer (không gắn lại mỗi lần render như slider). */
+       - Listener document chỉ gắn 1 lần cho cả renderer. */
     var resizeSession = null, resizeDocWired = false;
     function resizeClientPos(e) {
       try {
@@ -600,6 +611,12 @@
         if (e.changedTouches && e.changedTouches[0]) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
         return { x: e.clientX || 0, y: e.clientY || 0 };
       } catch (err) { return { x: 0, y: 0 }; }
+    }
+    /* Co giãn cặp "NNpx MMpx" (backgroundSize/Position) theo tỉ lệ. */
+    function scalePxPair(str, fx, fy) {
+      var m = /^(-?[\d.]+)px\s+(-?[\d.]+)px$/.exec(String(str || "").trim());
+      if (!m) return null;
+      return (Math.round(parseFloat(m[1]) * fx * 10) / 10) + "px " + (Math.round(parseFloat(m[2]) * fy * 10) / 10) + "px";
     }
     function resizeMove(e) {
       var s = resizeSession;
@@ -615,9 +632,21 @@
       try {
         s.live.style.width = c.w + "px";
         s.live.style.height = c.h + "px";
-        /* Xem trước: nới stage + wrap theo (kẻo hộp to ra mà bị stage
-           overflow:hidden / wrap overflow-y:hidden cắt mất lúc kéo).
-           Chỉ nới, không thu (thu lại do re-render lúc thả lo). */
+        /* Xem trước nhẹ: phần tử co giãn + vùng nội dung theo tỉ lệ. */
+        var fx = c.w / (s.startW || 1), fy = c.h / (s.startH || 1);
+        for (var pi = 0; pi < (s.preview || []).length; pi++) {
+          var pv = s.preview[pi];
+          if (pv.w) pv.el.style.width = Math.round(pv.w * fx) + "px";
+          if (pv.h) pv.el.style.height = Math.round(pv.h * fy) + "px";
+          if (pv.stretch) {
+            var bs = scalePxPair(pv.bgSize, fx, fy);
+            if (bs) pv.el.style.backgroundSize = bs;
+            var bp = scalePxPair(pv.bgPos, fx, fy);
+            if (bp) pv.el.style.backgroundPosition = bp;
+          }
+        }
+        /* Nới stage + wrap theo — TÍNH TUYỆT ĐỐI từ lúc bắt đầu kéo
+           (baseStageH/baseWrapH), không cộng dồn curH + dh. */
         var stageEl = s.live;
         if (stageEl && stageEl.id !== "stage") stageEl = stageEl.parentElement;
         if (stageEl) {
@@ -625,13 +654,9 @@
           if (s.live !== stageEl && c.w > curW) stageEl.style.width = c.w + "px";
           var dh = c.h - s.startH;
           if (dh > 0) {
-            var curH = parseInt(stageEl.style.height || "0", 10) || 0;
-            if (curH) stageEl.style.height = (curH + dh) + "px";
+            if (s.baseStageH) stageEl.style.height = (s.baseStageH + dh) + "px";
             var wrap = stageEl.parentElement;
-            if (wrap && wrap.id === "stage-wrap") {
-              var wh = parseInt(wrap.style.height || "0", 10) || 0;
-              if (wh) wrap.style.height = (wh + dh) + "px";
-            }
+            if (wrap && wrap.id === "stage-wrap" && s.baseWrapH) wrap.style.height = (s.baseWrapH + dh) + "px";
           }
         }
       } catch (err) { /* bỏ qua */ }
@@ -650,19 +675,28 @@
       if (resizeDocWired) return;
       resizeDocWired = true;
       try {
-        document.addEventListener("mousemove", resizeMove);
-        document.addEventListener("mouseup", resizeEnd);
-        document.addEventListener("touchmove", resizeMove, { passive: false });
-        document.addEventListener("touchend", resizeEnd);
+        if (typeof window !== "undefined" && window.PointerEvent) {
+          document.addEventListener("pointermove", resizeMove);
+          document.addEventListener("pointerup", resizeEnd);
+          document.addEventListener("pointercancel", resizeEnd);
+        } else {
+          document.addEventListener("mousemove", resizeMove);
+          document.addEventListener("mouseup", resizeEnd);
+          document.addEventListener("touchmove", resizeMove, { passive: false });
+          document.addEventListener("touchend", resizeEnd);
+        }
       } catch (err) { /* môi trường test không có document đầy đủ */ }
     }
     function attachResizeHandles(live, container, layoutId) {
       if (!live || !isLayoutResizable(container, layoutId)) return;
       wireResizeDocOnce();
       var edges = [
-        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "10px", height: "100%" } },
-        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "10px" } },
-        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "16px", height: "16px" } }
+        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "10px", height: "100%" },
+          bg: "linear-gradient(90deg, transparent 0px 4px, rgba(255,255,255,0.55) 4px 6px, transparent 6px 10px)" },
+        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "10px" },
+          bg: "linear-gradient(0deg, transparent 0px 4px, rgba(255,255,255,0.55) 4px 6px, transparent 6px 10px)" },
+        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "24px", height: "24px" },
+          bg: "repeating-linear-gradient(135deg, rgba(255,255,255,0.6) 0px 2px, transparent 2px 7px)" }
       ];
       for (var i = 0; i < edges.length; i++) {
         (function (spec) {
@@ -680,7 +714,8 @@
           hd.style.cursor = spec.cursor;
           hd.style.zIndex = "30";
           hd.style.pointerEvents = "auto";
-          hd.style.background = "transparent";
+          hd.style.background = spec.bg;
+          hd.style.boxShadow = "inset 0 0 0 1px rgba(0,0,0,0.2)";
           hd.style.touchAction = "none";
           function start(e) {
             var p = resizeClientPos(e);
@@ -692,16 +727,41 @@
               if (r && r.width > 0 && startW > 0) scaleX = r.width / startW;
               if (r && r.height > 0 && startH > 0) scaleY = r.height / startH;
             } catch (err) { /* jsdom: rect 0 → tỉ lệ 1 */ }
+            /* Đợt v10.0 (15:22): kích thước stage/wrap lúc bắt đầu kéo
+               (để resizeMove tính tuyệt đối, không cộng dồn) + snapshot
+               phần tử xem trước nhẹ. */
+            var stageEl0 = live;
+            if (stageEl0 && stageEl0.id !== "stage") stageEl0 = stageEl0.parentElement;
+            var baseStageH = stageEl0 ? (parseInt(stageEl0.style.height || "0", 10) || 0) : 0;
+            var wrap0 = stageEl0 ? stageEl0.parentElement : null;
+            var baseWrapH = (wrap0 && wrap0.id === "stage-wrap") ? (parseInt(wrap0.style.height || "0", 10) || 0) : 0;
+            var preview = [];
+            try {
+              var nodes = live.querySelectorAll('[data-stretch="1"], .pl-list, .ml-content, video, canvas');
+              for (var ni = 0; ni < nodes.length; ni++) {
+                var nd = nodes[ni];
+                preview.push({ el: nd, w: parseInt(nd.style.width || "0", 10) || 0, h: parseInt(nd.style.height || "0", 10) || 0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: !!(nd.dataset && nd.dataset.stretch === "1") });
+              }
+            } catch (err2) { preview = []; }
             resizeSession = {
               live: live, container: container, layoutId: layoutId, edge: spec.edge,
               startX: p.x, startY: p.y, startW: startW, startH: startH,
-              scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH
+              scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH,
+              baseStageH: baseStageH, baseWrapH: baseWrapH, preview: preview
             };
             if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
             if (e.stopPropagation) { try { e.stopPropagation(); } catch (err) { /* bỏ qua */ } }
+            /* Đợt v10.0 (15:22): giữ con trỏ trên tay nắm suốt lần kéo. */
+            if (e.pointerId !== undefined && hd.setPointerCapture) {
+              try { hd.setPointerCapture(e.pointerId); } catch (err) { /* bỏ qua */ }
+            }
           }
-          hd.addEventListener("mousedown", start);
-          hd.addEventListener("touchstart", start, { passive: false });
+          if (typeof window !== "undefined" && window.PointerEvent) {
+            hd.addEventListener("pointerdown", start);
+          } else {
+            hd.addEventListener("mousedown", start);
+            hd.addEventListener("touchstart", start, { passive: false });
+          }
           live.appendChild(hd);
         })(edges[i]);
       }
@@ -938,9 +998,14 @@
     };
     /* Đợt D (9.9) — Beat Visualization: nhóm player.normal.display.beatvisualization
        (2 cột beat trái/phải, filmstrip 15 khung) có visible="0" trong XML,
-       MAKI gốc ẩn/hiện theo tùy chọn "Enable Beat Visualization". Amp giữ
-       1 cờ duy nhất theo tùy chọn đó (mặc định theo CFG_DEFAULTS: bật);
-       xem setBeatVisOn / renderLayoutInner (override hiện nhóm). */
+       MAKI gốc chỉ hiện khi cửa sổ kéo đủ rộng (easter egg: "stretch the
+       main window until the Beat Analyzer appears"). Amp giữ 1 cờ duy nhất
+       theo tùy chọn "Enable Beat Visualization" (mặc định theo CFG_DEFAULTS:
+       bật); xem setBeatVisOn / renderLayoutInner (override hiện nhóm).
+       Đợt v10.0 (việc 2): override chỉ có tác dụng khi nhóm VỪA TRỌN trong
+       layout (kiểm vừa trong renderGroupInstance) — cửa sổ mặc định 354
+       thì nhóm (mép phải 372) không hiện, không còn dải sọc tràn đè nút
+       Repeat; kéo rộng cửa sổ thì nhóm hiện theo đúng XML. */
     var beatVisOn = false;
     var avsMedia = null; /* {wrap, video, canvas} — tạo 1 lần, DI CHUYỂN giữa hộp nhúng/rời (không tạo lại để khỏi mất trạng thái phát) */
     var avsAnalyser = null; /* ĐIỂM NỐI ĐỢT E: AnalyserNode của chuỗi EQ (audio.js
@@ -1183,7 +1248,7 @@
       persistAvs();
       return avsState.visVariant;
     }
-    function setAvsAnalyser(node) { avsAnalyser = node || null; return !!avsAnalyser; }
+    function setAvsAnalyser(node) { avsAnalyser = node || null; resetAvsVisState(); return !!avsAnalyser; } /* Đợt v10.0 (việc AVS-vis): đổi analyser thì reset state falloff/peak AVS */
     function getAvsAnalyser() { return avsAnalyser; }
     /* Khôi phục trạng thái đã lưu (đường (d) — index.html lưu qua
        onAvsChange vào localStorage "amp9-avs-v9" rồi gọi hàm này lúc nạp
@@ -1618,23 +1683,54 @@
         tmp.src = item.url;
       } catch (e) { finish(); }
     }
+    /* Đợt v10.0 (việc 5: thêm nhạc local): tách đường dẫn tương đối của
+       file trong thư mục đã chọn (webkitRelativePath) thành nhóm/album/
+       nghệ sĩ — cầu nối cho metadata (tag ID3 đọc sau): nhóm = thư mục
+       cha trực tiếp, album = thư mục cha trực tiếp, nghệ sĩ = thư mục
+       ông (dưới thư mục gốc đã chọn) nếu có; file ngay dưới thư mục
+       gốc thì nhóm/album = tên thư mục gốc; file đơn (không có đường
+       dẫn tương đối) thì nhóm "Local". */
+    function localPathParts(f) {
+      var rel = (f && f.webkitRelativePath) ? String(f.webkitRelativePath) : "";
+      var parts = rel ? rel.split("/") : [];
+      if (parts.length >= 2) {
+        var root = parts[0] || "Local";
+        var parent = parts[parts.length - 2] || root;
+        var artist = parts.length >= 4 ? (parts[parts.length - 3] || "") : "";
+        return { relPath: rel, root: root, group: parent, album: parent, artist: artist };
+      }
+      return { relPath: "", root: "", group: "Local", album: "", artist: "" };
+    }
     function addLocalFiles(files) {
       var added = 0;
       var list = files || [];
-      for (var i = 0; i < list.length; i++) {
-        var f = list[i];
+      /* Đợt v10.0 (việc 5): xếp theo đường dẫn tương đối để file cùng
+         thư mục kề nhau, đúng thứ tự duyệt thư mục. */
+      var sorted = [];
+      for (var si = 0; si < list.length; si++) sorted.push(list[si]);
+      sorted.sort(function (a, b) {
+        var pa = (a && a.webkitRelativePath) || (a && a.name) || "";
+        var pb = (b && b.webkitRelativePath) || (b && b.name) || "";
+        return pa < pb ? -1 : (pa > pb ? 1 : 0);
+      });
+      for (var i = 0; i < sorted.length; i++) {
+        var f = sorted[i];
         if (!f || !/\.(mp3|wav|ogg|oga|m4a|flac|aac|opus)$/i.test(f.name || "")) continue;
         var url = "";
         try {
           if (typeof URL !== "undefined" && URL.createObjectURL) url = URL.createObjectURL(f);
         } catch (e) { url = ""; }
         if (!url) continue;
+        var pp = localPathParts(f);
         playlistState.items.push({
           name: String(f.name).replace(/\.[^.]+$/, ""),
-          url: url, len: null, group: "Local", kind: "track", local: true,
+          url: url, len: null, group: pp.group, kind: "track", local: true,
           /* Đợt B (9.9): giữ kích thước file để tính KBPS trung bình thật
              (fileSize*8/len/1000) khi có thời lượng — xem songInfoValues. */
-          fileSize: (f && f.size) || null
+          fileSize: (f && f.size) || null,
+          /* Đợt v10.0 (việc 5): đường dẫn tương đối + nghệ sĩ/album suy
+             từ cấu trúc thư mục (chờ tag ID3 ở đợt metadata). */
+          relPath: pp.relPath, album: pp.album, artist: pp.artist
         });
         probeLocalDuration(playlistState.items[playlistState.items.length - 1]);
         added++;
@@ -1646,11 +1742,30 @@
       }
       return added;
     }
+    var LOCAL_AUDIO_ACCEPT = "audio/*,.mp3,.wav,.ogg,.oga,.m4a,.flac,.aac,.opus";
+    /* Đợt v10.0 (việc 5): chọn 1 bài nhạc (1 file, không webkitdirectory,
+       không multiple) — khác với chọn thư mục bên dưới. */
+    function openLocalFilePicker() {
+      if (!document || !document.createElement) return false;
+      var inp = document.createElement("input");
+      inp.type = "file";
+      try { inp.setAttribute("accept", LOCAL_AUDIO_ACCEPT); } catch (e) { /* bỏ qua */ }
+      inp.style.display = "none";
+      inp.addEventListener("change", function () {
+        addLocalFiles(inp.files || []);
+        try { if (inp.parentElement) inp.parentElement.removeChild(inp); } catch (e) { /* bỏ qua */ }
+      });
+      var host = (document.body || lastStage || document.documentElement);
+      if (host) host.appendChild(inp);
+      if (inp.click) inp.click();
+      return true;
+    }
     function openLocalFolderPicker() {
       if (!document || !document.createElement) return false;
       var inp = document.createElement("input");
       inp.type = "file";
       try { inp.setAttribute("webkitdirectory", ""); } catch (e) { /* bỏ qua */ }
+      try { inp.setAttribute("accept", LOCAL_AUDIO_ACCEPT); } catch (e) { /* bỏ qua */ }
       try { inp.multiple = true; } catch (e) { /* bỏ qua */ }
       inp.style.display = "none";
       inp.addEventListener("change", function () {
@@ -1660,6 +1775,51 @@
       var host = (document.body || lastStage || document.documentElement);
       if (host) host.appendChild(inp);
       if (inp.click) inp.click();
+      return true;
+    }
+    /* Đợt v10.0 (việc 5): popup 2 lựa chọn cho nút Eject (kiểu menu
+       PRESETS: nền #ECE9D8, mở hướng lên khi không đủ chỗ dưới). */
+    function showLocalAddMenu(anchorDiv) {
+      var T = lastStage;
+      if (!T) return false;
+      var old = null;
+      try { old = T.querySelector("[data-local-add-menu]"); } catch (e) { old = null; }
+      if (old && old.parentElement) old.parentElement.removeChild(old);
+      var menu = document.createElement("div");
+      menu.dataset.localAddMenu = "1";
+      menu.style.position = "absolute";
+      menu.style.left = ((anchorDiv && anchorDiv._absX) || 0) + "px";
+      menu.style.top = (((anchorDiv && anchorDiv._absY) || 0) + 12) + "px";
+      menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
+      menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
+      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      var choices = [
+        { label: "1 bài nhạc…", key: "localfile", fn: openLocalFilePicker },
+        { label: "Cả thư mục…", key: "localdir", fn: openLocalFolderPicker }
+      ];
+      for (var i = 0; i < choices.length; i++) {
+        (function (ch) {
+          var row = document.createElement("div");
+          row.textContent = ch.label;
+          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          row.dataset.localAdd = ch.key;
+          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
+          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
+          row.onclick = function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            if (menu.parentElement) menu.parentElement.removeChild(menu);
+            ch.fn();
+          };
+          menu.appendChild(row);
+        })(choices[i]);
+      }
+      T.appendChild(menu);
+      placePopupInStage(menu, anchorDiv, choices.length);
+      var close = function () {
+        if (menu.parentElement) menu.parentElement.removeChild(menu);
+        try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
+      };
+      try { setTimeout(function () { document.addEventListener("click", close); }, 0); } catch (e) { /* jsdom */ }
       return true;
     }
 
@@ -2053,6 +2213,159 @@
         var rec = sliderRecords[j];
         if (rec.action === "EQ_BAND") rec.setFrac(frac, true);
       }
+    }
+
+    /* Đợt v10.0 (việc 1: winamp-eqf) — module .eqf/.q1 (eqf.js):
+       index.html truyền qua opts.eqf (window.AmpEqf, nạp trước
+       renderer.js); test tiêm qua opts hoặc global.AmpEqf. Không có
+       module thì các hàm eqf trả false / báo lỗi trên ticker, các
+       preset có sẵn vẫn chạy bình thường. */
+    var EQF = opts.eqf || null;
+    if (!EQF && typeof AmpEqf !== "undefined" && AmpEqf) EQF = AmpEqf;
+    if (!EQF && typeof window !== "undefined" && window.AmpEqf) EQF = window.AmpEqf;
+    /* Áp 1 bộ frac EQ {preamp, eq1..eq10} (0..1, 0.5 = 0 dB) vào
+       drawerState + slider đang hiển thị + lưu state phát. Dùng chung
+       cho preset có sẵn và preset .eqf/.q1. Engine chỉ nhận khi slider
+       đang hiển thị (đường setFrac EQ_BAND); ngăn kéo đóng thì chỉ đổi
+       state, mở lại mới đẩy — như applyEqPreset. */
+    function applyEqFracs(fracs) {
+      if (!fracs) return false;
+      for (var i = 0; i < EQ_BAND_IDS.length; i++) {
+        var v = fracs[EQ_BAND_IDS[i]];
+        if (typeof v === "number" && isFinite(v)) drawerState.eqBands[EQ_BAND_IDS[i]] = Math.max(0, Math.min(1, v));
+      }
+      for (var j = 0; j < sliderRecords.length; j++) {
+        var rec = sliderRecords[j];
+        if (rec.action === "EQ_BAND" && drawerState.eqBands[rec.sliderId] !== undefined) rec.setFrac(drawerState.eqBands[rec.sliderId], true);
+      }
+      persistPlayback();
+      return true;
+    }
+    /* Áp 1 preset .eqf/.q1 đã parse ({name, hz60..hz16000, preamp}).
+       Map vị trí theo eqf.js (hz60→eq1 … hz16000→eq10, preamp→preamp),
+       map dB-chính-xác (33 = 0 dB). Không tự bật EQ — nút ON/OFF riêng. */
+    function applyEqfPreset(preset) {
+      if (!EQF || !preset) return false;
+      var fracs = null;
+      try { fracs = EQF.eqfPresetToAmpFracs(preset); } catch (e) { return false; }
+      return applyEqFracs(fracs);
+    }
+    var lastLoadedEqf = null; /* {type, presets} của file .eqf/.q1 vừa nạp */
+    var lastExportedEqf = null; /* ArrayBuffer .eqf vừa lưu (cho test) */
+    function getLastLoadedEqf() { return lastLoadedEqf; }
+    function getLastExportedEqf() { return lastExportedEqf; }
+    var lastEqPresetsAnchor = null; /* nút PRESETS lần mở menu gần nhất */
+    /* Nạp 1 ArrayBuffer .eqf/.q1 đã đọc: parse → lưu → 1 preset thì áp
+       ngay, nhiều preset thì mở menu chọn (kiểu menu PRESETS). Trả số
+       preset trong file, -1 khi lỗi (đã báo trên ticker). */
+    function loadEqfArrayBuffer(ab) {
+      if (!EQF) { showTickerError("thieu thu vien eqf"); return -1; }
+      var data = null;
+      try { data = EQF.parseEqf(ab); } catch (e) { showTickerError("file eqf khong dung dinh dang"); return -1; }
+      if (!data || !data.presets || !data.presets.length) { showTickerError("file eqf khong co preset"); return -1; }
+      lastLoadedEqf = data;
+      if (data.presets.length === 1) {
+        applyEqfPreset(data.presets[0]);
+        return 1;
+      }
+      showEqfChooserMenu(data.presets);
+      return data.presets.length;
+    }
+    /* Menu chọn preset trong file .eqf vừa nạp — tái dùng kiểu menu
+       PRESETS (nền sáng #ECE9D8, hover #316AC5 — xem showEqPresetsMenu).
+       Neo ở nút PRESETS lần mở gần nhất, không có thì góc trái-trên. */
+    function showEqfChooserMenu(presets) {
+      var T = lastStage;
+      if (!T || !presets || !presets.length) return;
+      var old = null;
+      try { old = T.querySelector("[data-eqf-chooser-menu]"); } catch (e) { old = null; }
+      if (old && old.parentElement) old.parentElement.removeChild(old);
+      var anchor = lastEqPresetsAnchor || { _absX: 8, _absY: 8 };
+      var menu = document.createElement("div");
+      menu.dataset.eqfChooserMenu = "1";
+      menu.style.position = "absolute";
+      menu.style.left = (anchor._absX || 0) + "px";
+      menu.style.top = ((anchor._absY || 0) + 12) + "px";
+      menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
+      menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
+      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      for (var i = 0; i < presets.length; i++) {
+        (function (preset) {
+          var row = document.createElement("div");
+          row.textContent = preset.name || "(khong ten)";
+          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          row.dataset.eqfPresetName = preset.name || "";
+          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
+          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
+          row.onclick = function (ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            applyEqfPreset(preset);
+            if (menu.parentElement) menu.parentElement.removeChild(menu);
+            requestRerender();
+          };
+          menu.appendChild(row);
+        })(presets[i]);
+      }
+      T.appendChild(menu);
+      placePopupInStage(menu, anchor, presets.length);
+      var close = function () {
+        if (menu.parentElement) menu.parentElement.removeChild(menu);
+        try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
+      };
+      try { setTimeout(function () { document.addEventListener("click", close); }, 0); } catch (e) { /* jsdom */ }
+    }
+    /* Mở hộp chọn file .eqf/.q1 (accept .eqf,.q1), đọc bằng arrayBuffer
+       (FileReader làm fallback), rồi loadEqfArrayBuffer. */
+    function openEqfPicker() {
+      if (!document || !document.createElement) return false;
+      var inp = document.createElement("input");
+      inp.type = "file";
+      try { inp.setAttribute("accept", ".eqf,.q1"); } catch (e) { /* bỏ qua */ }
+      inp.style.display = "none";
+      inp.addEventListener("change", function () {
+        var f = (inp.files && inp.files[0]) || null;
+        try { if (inp.parentElement) inp.parentElement.removeChild(inp); } catch (e) { /* bỏ qua */ }
+        if (!f) return;
+        if (f.arrayBuffer) {
+          f.arrayBuffer().then(function (ab) { loadEqfArrayBuffer(ab); }).catch(function () { showTickerError("khong doc duoc file eqf"); });
+        } else if (typeof FileReader !== "undefined") {
+          var rd = new FileReader();
+          rd.onload = function () { loadEqfArrayBuffer(rd.result); };
+          rd.onerror = function () { showTickerError("khong doc duoc file eqf"); };
+          try { rd.readAsArrayBuffer(f); } catch (e) { showTickerError("khong doc duoc file eqf"); }
+        } else { showTickerError("khong doc duoc file eqf"); }
+      });
+      var host = (document.body || lastStage || document.documentElement);
+      if (host) host.appendChild(inp);
+      if (inp.click) inp.click();
+      return true;
+    }
+    /* Lưu EQ hiện tại ra file .eqf 1 preset tên "Entry1" (tên mặc định
+       của Winamp khi lưu preset lẻ), tải về amp-eq.eqf. Trả ArrayBuffer
+       (null khi thiếu thư viện). Mở lại được bằng Winamp PC. */
+    function exportCurrentEqf() {
+      if (!EQF) { showTickerError("thieu thu vien eqf"); return null; }
+      var fracs = {};
+      for (var i = 0; i < EQ_BAND_IDS.length; i++) {
+        var v = drawerState.eqBands[EQ_BAND_IDS[i]];
+        fracs[EQ_BAND_IDS[i]] = (typeof v === "number" && isFinite(v)) ? v : 0.5;
+      }
+      var ab = null;
+      try {
+        var preset = EQF.ampFracsToEqfPreset(fracs, "Entry1");
+        ab = EQF.createEqf({ presets: [preset] });
+      } catch (e) { return null; }
+      lastExportedEqf = ab;
+      try {
+        if (typeof Blob !== "undefined" && typeof URL !== "undefined" && URL.createObjectURL && document && document.createElement) {
+          var blob = new Blob([ab], { type: "application/octet-stream" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "amp-eq.eqf";
+          if (a.click) a.click();
+        }
+      } catch (e) { /* chỉ giữ lastExportedEqf */ }
+      return ab;
     }
 
     /* ---------- Color Themes (đợt B) ---------- */
@@ -2634,8 +2947,22 @@
     }
 
     /* ---------- font bitmap ---------- */
+    /* Đợt v10.0 (việc 6: viên KBPS/KHZ): bảng font "khuôn" (stencil) đo
+       sẵn — chỉ dùng khi không đo được từ bitmap (jsdom không có canvas
+       2d; trình duyệt thật đo trực tiếp trong loadFont, bảng này không
+       thắng phép đo). Giá trị đo từ songinfofont.png của skin 566:
+       58/62 góc ô đục (pe.time.font: 0/62, không phải khuôn). */
+    var STENCIL_FONT_IDS = { "player.songinfo.font": true };
     async function loadFont(fontId) {
-      if (fontCache[fontId]) return fontCache[fontId];
+      /* Đợt v10.0 (việc 6, sửa hồi quy batch-d): cache CẢ lần tải lỗi
+         (fontCache[fontId] = null) — dùng hasOwnProperty thay cho kiểm
+         truthy, vì null là falsy nên bản cũ thử lại ảnh font ở MỖI glyph
+         (mỗi lần 1 macrotask qua loadImage) khiến mỗi lần render tốn
+         hàng chục macrotask, hàng render dồn lại chưa xử lý hết thì
+         lastStage còn trỏ div build → popup (bảng thông tin bài) mở ra
+         rơi vào div build rồi mất. Font lỗi trong skin đã nạp là lỗi
+         xác định (không phải mạng chập chờn) nên cache lỗi là đúng. */
+      if (Object.prototype.hasOwnProperty.call(fontCache, fontId)) return fontCache[fontId];
       var f = RES.fonts[fontId];
       if (!f) { fontCache[fontId] = null; return null; }
       var bmp = RES.bitmaps[f.file];
@@ -2655,7 +2982,34 @@
       /* Đợt K (9.7): KHÔNG đảo alpha. Font "khuôn" (songinfofont) vẽ nguyên
          bản — nền ô đục + glyph lỗ trong suốt là đúng như Winamp vẽ
          (xem ghi chú FONT_ROWS trên). Cơ chế đếm opaque/inverted cũ đã bỏ. */
-      var rec = { img: img, canvas: canvas, ctx: ctx, baseX: baseX, baseY: baseY, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing };
+      /* Đợt v10.0 (việc 6): phát hiện font "khuôn" (stencil) — các ô
+         glyph đục với lỗ chữ trong suốt: góc các ô phần lớn đục. Đo
+         trực tiếp từ bitmap (màu ô ghi vào stencilColor để dải đệm
+         cùng màu); đo lỗi (canvas tainted) thì giữ false. */
+      var stencil = false, stencilColor = "#fff";
+      try {
+        var regionW = bmp.crop ? bmp.crop.w : img.naturalWidth;
+        var regionH = bmp.crop ? bmp.crop.h : img.naturalHeight;
+        var cols = Math.max(1, Math.floor(regionW / cw)), rows = Math.max(1, Math.floor(regionH / chh));
+        var imgData = ctx.getImageData(baseX, baseY, cols * cw, rows * chh).data;
+        var opaque = 0, total = 0, firstRgb = null;
+        for (var r0 = 0; r0 < rows; r0++) {
+          for (var c0 = 0; c0 < cols; c0++) {
+            var corners = [[0, 0], [cw - 1, 0], [0, chh - 1], [cw - 1, chh - 1]];
+            for (var k = 0; k < 4; k++) {
+              var px = (r0 * chh + corners[k][1]) * cols * cw * 4 + (c0 * cw + corners[k][0]) * 4;
+              var a = imgData[px + 3];
+              total++;
+              if (a > 128) {
+                opaque++;
+                if (!firstRgb) firstRgb = "rgb(" + imgData[px] + "," + imgData[px + 1] + "," + imgData[px + 2] + ")";
+              }
+            }
+          }
+        }
+        if (total && opaque / total > 0.5) { stencil = true; if (firstRgb) stencilColor = firstRgb; }
+      } catch (e) { /* không đo được: giữ false */ }
+      var rec = { img: img, canvas: canvas, ctx: ctx, baseX: baseX, baseY: baseY, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing, stencil: stencil, stencilColor: stencilColor };
       fontCache[fontId] = rec;
       return rec;
     }
@@ -2720,16 +3074,57 @@
         holder.appendChild(sp);
         totalW += advance;
       }
-      if (align === "center" && boxW && totalW < boxW) holder.style.marginLeft = Math.floor((boxW - totalW) / 2) + "px";
-      if (align === "right" && boxW && totalW < boxW) holder.style.marginLeft = Math.floor(boxW - totalW) + "px";
+      var holderLeft = 0, holderTop = 0;
+      if (align === "center" && boxW && totalW < boxW) holderLeft = Math.floor((boxW - totalW) / 2);
+      if (align === "right" && boxW && totalW < boxW) holderLeft = Math.floor(boxW - totalW);
+      if (holderLeft) holder.style.marginLeft = holderLeft + "px";
       if (valign !== "top" && boxH && boxH > font.charheight) {
         /* Lỗi 4 (chữ tab lòi lên trên): holder là <span> inline nên
            margin-top bị trình duyệt bỏ qua, chữ dính lên đầu hộp.
            Đặt inline-block để margin căn giữa có tác dụng. Chỉ ảnh
            hưởng các text cần căn giữa (boxH > charheight); timer BIGNUM
            boxH=20=charheight nên không đổi. */
+        holderTop = Math.round((boxH - font.charheight) / 2);
         holder.style.display = "inline-block";
-        holder.style.marginTop = Math.round((boxH - font.charheight) / 2) + "px";
+        holder.style.marginTop = holderTop + "px";
+      }
+      /* Đợt v10.0 (việc 6: viên KBPS/KHZ): font khuôn thì thêm đệm trắng
+         quanh holder — chữ số chạm mép viên vì bearings của songinfofont
+         là 0px trái / 1px phải / 1px trên / 1px dưới (+1 hàng tách trong
+         suốt ở đáy ô). Đệm = 4 dải trắng RỜI đặt ngoài vùng glyph (không
+         phải nền sau holder — nền trắng sau holder sẽ lấp lỗ chữ trong
+         suốt, chữ biến mất). div có padding = pad nên hộp clip
+         (overflow:hidden cắt ở mép padding-box) vẫn chứa đủ 4 dải; vị
+         trí glyph không đổi (content box giữ nguyên). Chỉ font khuôn
+         mới có đệm; pe.time.font/BIGNUM/smallfont không phải khuôn nên
+         giữ nguyên. */
+      var frec = null;
+      try { frec = await loadFont(fontId); } catch (e) { frec = null; }
+      /* Phép đo trong loadFont thắng khi có (trình duyệt thật); khi
+         frec null (tải lỗi) hoặc frec.stencil undefined (jsdom không có
+         canvas 2d) thì dùng bảng đo sẵn. */
+      var isStencil = (frec && frec.stencil !== undefined) ? !!frec.stencil : (STENCIL_FONT_IDS[fontId] === true);
+      var pad = (isStencil && totalW > 0) ? 2 : 0;
+      div._stencilPad = pad;
+      if (pad > 0) {
+        div.style.padding = pad + "px";
+        var padCol = (frec && frec.stencilColor) || "#fff";
+        var strips = [
+          [holderLeft, pad + holderTop, pad, font.charheight],
+          [pad + holderLeft + totalW, pad + holderTop, pad, font.charheight],
+          [holderLeft, holderTop, totalW + 2 * pad, pad],
+          [holderLeft, pad + holderTop + font.charheight, totalW + 2 * pad, pad]
+        ];
+        for (var pi = 0; pi < strips.length; pi++) {
+          var st = strips[pi];
+          var s = document.createElement("span");
+          s.className = "stencil-pad";
+          s.style.position = "absolute";
+          s.style.left = st[0] + "px"; s.style.top = st[1] + "px";
+          s.style.width = st[2] + "px"; s.style.height = st[3] + "px";
+          s.style.background = padCol;
+          div.appendChild(s);
+        }
       }
       div.appendChild(holder);
       div._textW = totalW;
@@ -3005,6 +3400,14 @@
          y=-21 cao 21 → vừa khít 95..116; main lùi 116 → đáy 259. */
       if (gid === "AVSGroup" && gh <= 0) gh = (ctx && ctx.avsH) || 116;
       if (gh <= 0) gh = parentH;
+      /* Đợt v10.0 (việc 2: display/vis/beat — quy tắc XML, ghi đè đợt D):
+         nhóm beat KHÔNG kiểm fit ở đây: groupSize() trả parentW (305)
+         khi groupdef không có w — không phải độ rộng nội dung thật
+         (167). Fit đo SAU khi vẽ xong, theo mép phải thật của các lớp
+         con đã vẽ (xem pruneBeatGroupIfOverflows trong renderLayoutInner):
+         ở 354 thì nội dung 200..372 tràn → gỡ cả nhóm, không còn dải
+         sọc đè nút Repeat tới chữ "R"; kéo rộng ≥372 thì giữ. Vạch vis
+         (<vis>) nằm ngoài nhóm này nên vẫn hiện. */
       /* Căn giữa nội dung ngăn kéo: 326 trong 354 → thụt 14px. Chỉ áp khi
          vẽ trong ngăn kéo thật (cha là drawer). */
       if (gid === "player.normal.drawer.content" && parentEl.dataset && parentEl.dataset.gid === "player.normal.drawer") {
@@ -4082,15 +4485,15 @@
         /* Đợt E — hàng nút phát (player-normal-group.xml: PLAY/PAUSE/STOP/
            PREV/NEXT/EJECT): Play = phát tiếp/phát mục hiện tại, Pause =
            tạm dừng, Stop = dừng + về đầu (đài live không tua), Prev/Next
-           = bài trước/sau (Next tôn trọng Shuffle), Eject = chọn thư mục
-           nhạc local. Không có engine (test đợt A–D) thì các nút vẫn đổi
+           = bài trước/sau (Next tôn trọng Shuffle), Eject = popup chọn
+           1 bài hoặc cả thư mục nhạc local (đợt v10.0, việc 5). Không có engine (test đợt A–D) thì các nút vẫn đổi
            state playlist như cũ, chỉ chưa có tiếng. */
         if (action === "PLAY") { togglePlay(); return; }
         if (action === "PAUSE") { if (audioEngine) audioEngine.pause(); else { demo.playing = false; playlistState.playing = false; updateStatusEls(); } return; }
         if (action === "STOP") { stopPlayback(); return; }
         if (action === "PREV") { prevTrack(); return; }
         if (action === "NEXT") { nextTrack(demo.repeat === 1 || demo.shuffle); return; }
-        if (action === "EJECT") { openLocalFolderPicker(); return; }
+        if (action === "EJECT") { showLocalAddMenu(div); return; }
         /* Đợt G — chuyển normal<->shade (nút winshade trên cửa sổ chính:
            action SWITCH param=shade; nút shadeWinshade trên shade:
            action SWITCH param=normal). Qua onShadeToggle để index.html
@@ -4290,6 +4693,7 @@
     function showEqPresetsMenu(anchorDiv) {
       var T = lastStage;
       if (!T) return;
+      lastEqPresetsAnchor = anchorDiv || null;
       var old = null;
       try { old = T.querySelector("[data-eq-presets-menu]"); } catch (e) { old = null; }
       if (old && old.parentElement) old.parentElement.removeChild(old);
@@ -4325,8 +4729,37 @@
           menu.appendChild(row);
         })(names[i]);
       }
+      /* Đợt v10.0 (việc 1: winamp-eqf) — nạp/lưu preset .eqf/.q1
+         (mang qua lại được với Winamp PC). */
+      var sep = document.createElement("div");
+      sep.style.borderTop = "1px solid #ACA899"; sep.style.margin = "2px 0";
+      menu.appendChild(sep);
+      var eqfLoadRow = document.createElement("div");
+      eqfLoadRow.textContent = "Nạp preset .eqf…";
+      eqfLoadRow.style.padding = "4px 10px"; eqfLoadRow.style.cursor = "pointer"; eqfLoadRow.style.whiteSpace = "nowrap";
+      eqfLoadRow.dataset.eqfLoad = "1";
+      eqfLoadRow.onmouseover = function () { eqfLoadRow.style.background = "#316AC5"; eqfLoadRow.style.color = "#fff"; };
+      eqfLoadRow.onmouseout = function () { eqfLoadRow.style.background = ""; eqfLoadRow.style.color = ""; };
+      eqfLoadRow.onclick = function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (menu.parentElement) menu.parentElement.removeChild(menu);
+        openEqfPicker();
+      };
+      menu.appendChild(eqfLoadRow);
+      var eqfSaveRow = document.createElement("div");
+      eqfSaveRow.textContent = "Lưu preset .eqf…";
+      eqfSaveRow.style.padding = "4px 10px"; eqfSaveRow.style.cursor = "pointer"; eqfSaveRow.style.whiteSpace = "nowrap";
+      eqfSaveRow.dataset.eqfSave = "1";
+      eqfSaveRow.onmouseover = function () { eqfSaveRow.style.background = "#316AC5"; eqfSaveRow.style.color = "#fff"; };
+      eqfSaveRow.onmouseout = function () { eqfSaveRow.style.background = ""; eqfSaveRow.style.color = ""; };
+      eqfSaveRow.onclick = function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        exportCurrentEqf();
+        if (menu.parentElement) menu.parentElement.removeChild(menu);
+      };
+      menu.appendChild(eqfSaveRow);
       T.appendChild(menu);
-      placePopupInStage(menu, anchorDiv, names.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
+      placePopupInStage(menu, anchorDiv, names.length + 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       var close = function () {
         if (menu.parentElement) menu.parentElement.removeChild(menu);
         try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
@@ -4593,7 +5026,7 @@
        đưa vào menu (không đưa mục giả — xem README đợt D). */
     function fileMenuItems(anchorDiv) {
       return [
-        { label: "Phát file nhạc…", action: function () { openLocalFolderPicker(); } },
+        { label: "Phát file nhạc…", action: function () { openLocalFilePicker(); } },
         { label: "Phát URL…", action: function () { showAddUrlForm(anchorDiv); } },
         { label: "Nạp skin .wal/.zip…", action: function () { if (onOpenSkinPicker) onOpenSkinPicker(); } },
         { label: "Đóng Amp", action: function () { if (onPlayerClose) onPlayerClose(); } }
@@ -4941,8 +5374,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v9 — Winamp Modern",
-        "Phiên bản Amp: 9.9 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.0 — Winamp Modern",
+        "Phiên bản Amp: 10.0 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -5175,11 +5608,18 @@
       return timerMode;
     }
     function toggleTimerMode() { return setTimerMode(timerMode === "remaining" ? "elapsed" : "remaining"); }
+    /* Đợt v10.0 (sửa hồi quy do cache loadFont): vẽ lại đồng hồ là async
+       (await makeBitmapText) — 2 lần gọi chồng nhau (bấm đổi chế độ +
+       timeupdate) thì lần gọi SAU phải thắng; lần cũ resolve muộn hơn
+       không được ghi đè. Số thứ tự: lần cũ thấy seq đã đổi thì bỏ. */
+    var timerElsSeq = 0;
     async function updateTimerEls() {
+      var mySeq = ++timerElsSeq;
       for (var i = 0; i < timerEls.length; i++) {
         var rec = timerEls[i];
         try {
           var tdiv = await makeBitmapText(rec.fontId, timerDisplayText(), rec.boxW, rec.align, rec.color);
+          if (mySeq !== timerElsSeq) return;
           rec.div.innerHTML = "";
           rec.div.appendChild(tdiv);
           inheritAbs(rec.div);
@@ -5226,7 +5666,11 @@
     }
     /* Vẽ lại PLTime (đồng hồ playlist, việc 3 đợt A) tại chỗ sau khi
        thêm/xóa/sắp xếp/chọn mục — không cần re-render toàn cửa sổ. */
+    /* Đợt v10.0: cùng số thứ tự như updateTimerEls — tránh lần vẽ cũ
+       (đổi bài/metadata về) ghi đè lần vẽ mới của KBPS/KHZ/PLTime. */
+    var infoElsSeq = 0;
     async function updateInfoEls() {
+      var mySeq = ++infoElsSeq;
       for (var i = 0; i < infoEls.length; i++) {
         var rec = infoEls[i];
         if (rec.kind !== "pltime" && rec.kind !== "bitrate" && rec.kind !== "frequency") continue;
@@ -5236,6 +5680,7 @@
           var txt = rec.kind === "pltime" ? playlistClockText()
             : songInfoText(rec.kind === "bitrate" ? "Bitrate" : "Frequency");
           var tdiv = await makeBitmapText(rec.fontId, txt, rec.boxW, rec.align, rec.color, rec.valign, rec.boxH);
+          if (mySeq !== infoElsSeq) return;
           rec.div.innerHTML = "";
           rec.div.appendChild(tdiv);
           inheritAbs(rec.div);
@@ -5307,6 +5752,136 @@
        Canvas trong display để trong suốt (fillBg false) để nền display hiện
        qua; canvas AVS giữ nền tối. lastVisFrame ghi lại khung vẽ gần nhất
        (mode/maxBin/heights) cho test + debug. */
+    /* Đợt v10.0 (việc AVS-vis, 15:15) — vạch spectrum trong vùng AVS/Video
+       vẽ KIỂU WEBAMP, chỉ áp cho canvas AVS (fillBg=true); canvas display
+       giữ nguyên 16 cột trực tiếp (người dùng xác nhận 15:14 đã giống
+       Webamp, không đụng tới). Lấy HÀNH VI từ BarPaintHandler của Webamp
+       (packages/webamp/js/components/VisPainter.ts — KHÔNG bê code, viết
+       lại theo Amp, không dùng FFTNullsoft):
+       - 75 cột mỏng (AVS_BARS=75), nhóm 4 cột lấy trung bình rồi bỏ 1 cột
+         làm khe (bandwidth "wide": 3 cột + 1 khe) — như Webamp.
+       - Ánh xạ tần số log: scale 0.91 (0 = tuyến tính, 1 = log hẳn),
+         nội suy giữa 2 bin kề — như Webamp (maxFreqIndex = số bin của
+         analyser Amp, fftSize 64 → 32 bin).
+       - Falloff: lên tức thì, xuống 0.75 hàng/khung (falloff 12
+         "moderate" /16 của Webamp); đỉnh (peak) 1 vạch, vận tốc rơi
+         khởi đầu 3/256 hàng/khung rồi nhân 1.1 mỗi khung ("slow").
+       - Màu: gradient theo HÀNG (hàng r → ColorBand r+1 của <vis>; band 1
+         = hàng đáy); variant 1-2 (VIS_Prev/Next) thì 1 màu đặc như cũ.
+         Vạch peak lấy màu hàng trên cùng (variant 0) hoặc màu variant.
+       - Chế độ flat/sample: vẽ trực tiếp (phẳng 2px / sine), không
+         falloff/peak — giống display. State falloff/peak reset khi rời
+         mode real hoặc đổi analyser (setAvsAnalyser). */
+    var AVS_BARS = 75, AVS_ROWS = 16, AVS_MAX_ROWS = 15;
+    var AVS_FALLOFF = 12 / 16; /* 0.75 hàng/khung — "moderate" của Webamp */
+    var AVS_PEAK_VEL0 = 3 / 256, AVS_PEAK_FALLOFF = 1.1; /* "slow" */
+    var avsShownRows = [], avsPeakRows = [], avsPeakVel = [];
+    var lastAvsFrame = { mode: "sample", maxBin: 0, heights: [], peaks: [] };
+    var avsGradCanvas = null, avsGradKey = "";
+    function resetAvsVisState() {
+      avsShownRows = []; avsPeakRows = []; avsPeakVel = [];
+      for (var k = 0; k < AVS_BARS; k++) { avsShownRows.push(0); avsPeakRows.push(0); avsPeakVel.push(0); }
+      lastAvsFrame = { mode: lastAvsFrame.mode || "sample", maxBin: 0, heights: [], peaks: [] };
+    }
+    resetAvsVisState();
+    function getAvsFrame() { return { mode: lastAvsFrame.mode, maxBin: lastAvsFrame.maxBin, heights: lastAvsFrame.heights.slice(), peaks: lastAvsFrame.peaks.slice() }; }
+    /* Giá trị mục tiêu (hàng 0..15) của cột k: ánh xạ log như Webamp trên
+       các bin getByteFrequencyData của Amp (0..255 → 0..15 hàng). */
+    function avsLogTarget(k, freq) {
+      if (!freq || !freq.length) return 0;
+      var nb = AVS_BARS, maxFreqIndex = freq.length;
+      var logMax = Math.log10(maxFreqIndex);
+      var linearIndex = (k / (nb - 1)) * (maxFreqIndex - 1);
+      var logIndex = Math.pow(10, (logMax * k) / (nb - 1));
+      var scaled = 0.09 * linearIndex + 0.91 * logIndex;
+      var i1 = Math.floor(scaled), i2 = Math.ceil(scaled);
+      if (i1 >= maxFreqIndex) i1 = maxFreqIndex - 1;
+      if (i2 >= maxFreqIndex) i2 = maxFreqIndex - 1;
+      var v = (i1 === i2) ? freq[i1] : (1 - (scaled - i1)) * freq[i1] + (scaled - i1) * freq[i2];
+      return Math.min(AVS_MAX_ROWS, (v / 255) * AVS_MAX_ROWS);
+    }
+    /* Canvas gradient 1×16 cho cột AVS (hàng trên = band 16, hàng đáy =
+       band 1); cache theo màu hiện tại, vẽ lại khi đổi variant/skin. */
+    function avsBarGradient(useXmlCol, col) {
+      var key = (useXmlCol ? "xml:" + visXmlBands.join(",") : "var:" + col);
+      if (avsGradCanvas && avsGradKey === key) return avsGradCanvas;
+      avsGradKey = key; avsGradCanvas = null;
+      if (!document || !document.createElement) return null;
+      var cv = null;
+      try { cv = document.createElement("canvas"); } catch (e) { return null; }
+      if (!cv) return null;
+      cv.width = 1; cv.height = AVS_ROWS;
+      var g = null;
+      try { g = cv.getContext("2d"); } catch (e) { g = null; }
+      if (!g) return null;
+      for (var y = 0; y < AVS_ROWS; y++) {
+        g.fillStyle = useXmlCol ? (visXmlBands[AVS_ROWS - 1 - y] || "#fff") : col;
+        g.fillRect(0, y, 1, 1);
+      }
+      avsGradCanvas = cv;
+      return cv;
+    }
+    /* Vẽ 1 khung vis AVS (ctx2 null trong jsdom thì chỉ tính heights/peaks
+       cho test). H: chiều cao canvas; rowH = H/16. */
+    function drawAvsVis(ctx2, W, H, visMode, freq, maxBin, useXmlCol, col) {
+      var rowH = H / AVS_ROWS;
+      var heights = [], peaks = [];
+      var grad = null;
+      if (ctx2) {
+        ctx2.clearRect(0, 0, W, H);
+        ctx2.fillStyle = VIS_BG;
+        ctx2.fillRect(0, 0, W, H);
+        grad = avsBarGradient(useXmlCol, col);
+      }
+      if (visMode !== "real") {
+        /* flat/sample: vẽ trực tiếp, reset state falloff/peak. */
+        resetAvsVisState();
+        var bw = W / AVS_BARS;
+        for (var k = 0; k < AVS_BARS; k++) {
+          var hh = 0;
+          if (visMode === "flat") hh = 2;
+          else hh = 2 + Math.abs(Math.sin(k * 0.9 + avsPhase)) * (H - 6);
+          heights.push(hh); peaks.push(0);
+          if (ctx2 && k % 4 !== 3 && hh > 0) {
+            ctx2.fillStyle = useXmlCol ? (visXmlBands[0] || "#fff") : col;
+            ctx2.fillRect(k * bw + 1, H - hh, Math.max(1, bw - 2), hh);
+          }
+        }
+        lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks };
+        return;
+      }
+      /* real: mẫu log theo nhóm 4 (wide bandwidth) + falloff + peak. */
+      var sample = [];
+      for (var s = 0; s < AVS_BARS; s++) sample.push(avsLogTarget(s, freq));
+      var bw2 = W / AVS_BARS;
+      var peakCol = useXmlCol ? (visXmlBands[AVS_ROWS - 1] || "#fff") : col;
+      for (var k2 = 0; k2 < AVS_BARS; k2++) {
+        var chunk = k2 & 0xfffffffc;
+        var target = ((sample[chunk] || 0) + (sample[chunk + 1] || 0) + (sample[chunk + 2] || 0) + (sample[chunk + 3] || 0)) / 4;
+        avsShownRows[k2] -= AVS_FALLOFF;
+        if (avsShownRows[k2] <= target) avsShownRows[k2] = target;
+        if (avsPeakRows[k2] <= avsShownRows[k2]) { avsPeakRows[k2] = avsShownRows[k2]; avsPeakVel[k2] = AVS_PEAK_VEL0; }
+        var peakRows = avsPeakRows[k2];
+        avsPeakRows[k2] -= avsPeakVel[k2];
+        avsPeakVel[k2] *= AVS_PEAK_FALLOFF;
+        if (avsPeakRows[k2] <= 0) avsPeakRows[k2] = 0;
+        var shownPx = Math.round(avsShownRows[k2]) * rowH;
+        var peakPx = (peakRows < 1) ? 0 : peakRows * rowH;
+        heights.push(k2 % 4 === 3 ? 0 : shownPx);
+        peaks.push(k2 % 4 === 3 ? 0 : peakPx);
+        if (!ctx2 || k2 % 4 === 3) continue;
+        var bx = k2 * bw2 + 1, bwid = Math.max(1, bw2 - 2);
+        if (shownPx > 0) {
+          if (grad && typeof ctx2.drawImage === "function") ctx2.drawImage(grad, 0, 0, 1, AVS_ROWS, bx, H - shownPx, bwid, shownPx);
+          else { ctx2.fillStyle = useXmlCol ? (visXmlBands[0] || "#fff") : col; ctx2.fillRect(bx, H - shownPx, bwid, shownPx); }
+        }
+        if (peakPx > 0) {
+          ctx2.fillStyle = peakCol;
+          ctx2.fillRect(bx, H - peakPx, bwid, 2);
+        }
+      }
+      lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks };
+    }
     function drawVisStatic() {
       var freq = null, maxBin = 0;
       var hasAnalyser = !!(avsAnalyser && typeof avsAnalyser.getByteFrequencyData === "function" && avsAnalyser.frequencyBinCount);
@@ -5326,6 +5901,14 @@
         var v = visCanvases[i];
         var ctx2 = null;
         try { ctx2 = v.cv.getContext("2d"); } catch (e) { ctx2 = null; }
+        /* Đợt v10.0 (việc AVS-vis, 15:15): canvas AVS (fillBg=true) vẽ
+           kiểu Webamp qua drawAvsVis (75 cột mỏng, falloff, peak,
+           gradient hàng); canvas display giữ nguyên 16 cột trực tiếp
+           bên dưới (người dùng xác nhận 15:14 đã giống Webamp). */
+        if (v.fillBg === true) {
+          drawAvsVis(ctx2, v.cv.width || 0, v.cv.height || 0, visMode, freq, maxBin, useXmlCol, col);
+          continue;
+        }
         if (!ctx2) { /* jsdom không có canvas 2d: vẫn tính heights cho test */
           if (i === 0) {
             var H0 = v.cv.height || 0;
@@ -5768,6 +6351,44 @@
     }
 
     /* Vẽ 1 layout. Trả về chiều cao cuối sau trim (và sau shift nếu có). */
+    /* Đợt v10.0 (việc 2: display/vis/beat — quy tắc XML, ghi đè đợt D):
+       Gỡ nhóm beat khi nội dung của nó tràn khỏi layout đang vẽ. Nhóm
+       có visible="0" trong XML; MAKI gốc chỉ hiện nó khi cửa sổ kéo đủ
+       rộng ("stretch the main window until the Beat Analyzer appears").
+       Độ rộng nội dung KHÔNG lấy từ groupSize() (trả parentW khi
+       groupdef không có w) mà đo mép phải thật của các lớp con đã vẽ
+       (_absX + style.width, cùng cách dumpGeometry đo): ở 354 thì
+       beatright + 2 overlay tới 372 > 354 → gỡ cả nhóm (hết dải sọc đè
+       nút Repeat tới chữ "R"); kéo rộng ≥372 thì giữ nguyên. Không gán
+       cứng 372/354; nhóm khác không bị ảnh hưởng; vạch vis (<vis>) nằm
+       ngoài nhóm này nên vẫn hiện. animLayerRecs của beat vẫn giữ (chỉ
+       là trạng thái khung filmstrip), chỉ div bị gỡ khỏi DOM. */
+    function pruneBeatGroupIfOverflows(T, layoutW) {
+      if (!T || typeof layoutW !== "number" || !T.querySelector) return;
+      var g = null;
+      try { g = T.querySelector('[data-gid="player.normal.display.beatvisualization"]'); } catch (e) { g = null; }
+      if (!g) return;
+      var baseX = (typeof T._absX === "number") ? T._absX : 0;
+      var maxR = 0;
+      /* Chỉ đo các phần tử CON: hộp div của chính nhóm rộng bằng parentW
+         (groupSize trả parentW khi groupdef không có w) — không phải
+         nội dung thật, phải loại khỏi phép đo. */
+      var stack = [];
+      var gkids = g.children || [];
+      for (var k0 = 0; k0 < gkids.length; k0++) stack.push(gkids[k0]);
+      while (stack.length) {
+        var el = stack.pop();
+        var w = parseInt((el.style && el.style.width) || "0", 10) || 0;
+        var ax = (typeof el._absX === "number") ? el._absX : 0;
+        if (ax + w > maxR) maxR = ax + w;
+        var kids = el.children || [];
+        for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+      }
+      if (maxR - baseX > layoutW) {
+        if (g.parentElement) g.parentElement.removeChild(g);
+      }
+    }
+
     async function renderLayoutInner(container, layoutId, titleText, opts, stage) {
       opts = opts || {};
       var T = stage || lastStage;
@@ -5893,15 +6514,20 @@
         }
       }
       /* Đợt D (9.9) — Beat Visualization: nhóm beat có visible="0" trong XML
-         (MAKI gốc ẩn/hiện theo tùy chọn); Amp hiện nhóm khi tùy chọn
-         "Enable Beat Visualization" đang bật (xem setBeatVisOn). NHÓM
-         ĐẶT TRÀN: XML đặt nhóm ở display (200,11) với ảnh 167px rộng →
-         mép phải 372, tràn 18px khỏi cửa sổ 354 — skin gốc ship như vậy
-         nên Winamp thật cũng cắt phần tràn ở mép cửa sổ; stage của Amp
-         có overflow:hidden nên cắt y hệt (test drawer-test cho phép
-         tràn phải tới 372 của riêng 4 ảnh beat). */
+         (MAKI gốc chỉ hiện khi cửa sổ kéo đủ rộng). Amp hiện nhóm khi tùy
+         chọn "Enable Beat Visualization" đang bật (xem setBeatVisOn).
+         Đợt v10.0 (việc 2 — quy tắc XML, ghi đè đợt D): override chỉ mở
+         khóa nhóm; nhóm chỉ VẼ khi vừa trọn trong layout (kiểm vừa trong
+         renderGroupInstance). Cửa sổ mặc định 354 → nhóm (mép phải 372)
+         không hiện: không còn dải sọc tràn đè nút Repeat tới chữ "R";
+         kéo rộng cửa sổ thì nhóm hiện theo đúng XML. Vạch vis (<vis>)
+         nằm ngoài nhóm này nên vẫn hiện bình thường (giống Webamp). */
       if (beatVisOn) ctx.overrides.set("player.normal.display.beatvisualization", true);
       await renderChildren(kids, T, LW, LH, ctx, 0, true); /* v9.6 (Điểm 2): cấp layout không gom hideobject — xem renderChildren */
+      /* Đợt v10.0 (việc 2): gỡ nhóm beat khi nội dung tràn layout — đo
+         mép phải thật của các lớp con đã vẽ (xem pruneBeatGroupIfOverflows
+         bên dưới; chạy trước khi main lùi 116 vì shift chỉ đổi _absY). */
+      pruneBeatGroupIfOverflows(T, LW);
       /* Ngăn kéo + video (đợt B, sửa 9.4):
          - MỞ MỘT BƯỚC: đặt thẳng top cuối = restY + drawerInnerY(open)
            (không rAF hai bước như v8 — kiểu đó kẹt ở vị trí đóng khi frame
@@ -6292,12 +6918,19 @@
       menuGroupVisible: menuGroupVisible, visButtonAction: visButtonAction,
       detachOptionOn: detachOptionOn,
       getVisFrame: getVisFrame, getTickerMode: tickerMode, getTickerState: getTickerState,
+      /* Đợt v10.0 (việc AVS-vis): khung vis AVS kiểu Webamp. */
+      getAvsFrame: getAvsFrame, AVS_BARS: AVS_BARS, AVS_ROWS: AVS_ROWS,
       stepTicker: stepTicker, syncTickerAnim: syncTickerAnim,
       getSongInfoState: getSongInfoState, songInfoText: songInfoText,
       runAvsSelfCheck: runAvsSelfCheck, runAudioSelfCheck: runAudioSelfCheck,
       applyColorTheme: applyColorTheme, selectColorTheme: selectColorTheme,
       gammaScale: gammaScale, gammaMatrixValues: gammaMatrixValues,
       applyEqPreset: applyEqPreset, setAllEqBands: setAllEqBands,
+      /* Đợt v10.0 (việc 1: winamp-eqf). */
+      applyEqFracs: applyEqFracs, applyEqfPreset: applyEqfPreset,
+      loadEqfArrayBuffer: loadEqfArrayBuffer, openEqfPicker: openEqfPicker,
+      exportCurrentEqf: exportCurrentEqf, showEqfChooserMenu: showEqfChooserMenu,
+      getLastLoadedEqf: getLastLoadedEqf, getLastExportedEqf: getLastExportedEqf,
       EQ_PRESETS: EQ_PRESETS, EQ_BAND_IDS: EQ_BAND_IDS,
       measureTabWidth: measureTabWidth,
       getAvsState: getAvsState, openAvs: openAvs, closeAvs: closeAvs,
@@ -6336,6 +6969,9 @@
       showTickerError: showTickerError, clearTickerError: clearTickerError,
       getTickerError: getTickerError,
       addLocalFiles: addLocalFiles, openLocalFolderPicker: openLocalFolderPicker,
+      /* Đợt v10.0 (việc 5: thêm nhạc local — 1 bài hoặc cả thư mục). */
+      openLocalFilePicker: openLocalFilePicker, localPathParts: localPathParts,
+      showLocalAddMenu: showLocalAddMenu,
       DETACHED_WIN_W: DETACHED_WIN_W, DETACHED_WIN_H: DETACHED_WIN_H,
       DETACHED_MEDIA_RECT: DETACHED_MEDIA_RECT, VIS_VARIANTS: VIS_VARIANTS,
       getPlaylistState: getPlaylistState, setPlaylistData: setPlaylistData,

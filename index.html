@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v9 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.0 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -38,7 +38,7 @@
      (trước đây stage nhảy ngay lên 280px lúc mở, ngăn kéo trượt sau
      250ms nên lộ nền đen; lúc đóng stage giữ 280 suốt lúc trượt rồi
      mới thu lại). */
-  #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;transition:height 250ms ease;}
+  #stage-wrap{display:block;text-align:left;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;transition:height 250ms ease, margin-top 250ms ease;}
   #stage-wrap::-webkit-scrollbar{display:none;}
   .stage{position:relative;margin:0 auto;overflow:hidden;background:#000;transform-origin:0 0;transition:height 250ms ease;
     box-shadow:0 0 0 1px #333, 0 8px 30px rgba(0,0,0,.6);}
@@ -87,6 +87,41 @@
     padding:12px 22px;font-size:14px;cursor:pointer;font-family:Verdana,Arial,sans-serif;
     box-shadow:0 8px 30px rgba(0,0,0,.6);}
   #btn-reopen:hover{background:#316AC5;color:#fff;}
+  /* Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ chọn skin:
+     chỉ hiện khi mở từ menu ⋯ ("Chọn skin từ kho…"), không thêm chrome
+     thường trực. Nền sáng #ECE9D8 như menu ⋯. Danh sách cuộn dọc,
+     mỗi hàng: ảnh thu nhỏ + tên file + loại (.wal/.wsz). */
+  #skin-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;
+    width:min(340px,calc(100vw - 20px));max-height:min(480px,calc(100vh - 20px));
+    background:#ECE9D8;border:1px solid #ACA899;border-radius:6px;
+    box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;color:#000;
+    display:flex;flex-direction:column;font-family:Verdana,Arial,sans-serif;}
+  .sb-head{display:flex;justify-content:space-between;align-items:center;
+    padding:8px 10px;font-size:13px;font-weight:bold;border-bottom:1px solid #ACA899;}
+  #sb-close{background:none;border:0;font-size:14px;cursor:pointer;color:#000;padding:2px 6px;border-radius:4px;}
+  #sb-close:hover{background:#316AC5;color:#fff;}
+  #sb-search{margin:8px 10px 4px;padding:7px 8px;font-size:13px;border:1px solid #ACA899;
+    border-radius:4px;background:#fff;color:#000;font-family:Verdana,Arial,sans-serif;}
+  .sb-kinds{display:flex;gap:4px;padding:4px 10px 6px;}
+  .sb-kinds button{flex:1;background:#fff;border:1px solid #ACA899;border-radius:4px;
+    padding:6px 2px;font-size:12px;cursor:pointer;color:#000;font-family:Verdana,Arial,sans-serif;}
+  .sb-kinds button.on{background:#316AC5;color:#fff;border-color:#316AC5;}
+  #sb-status{padding:2px 10px 6px;font-size:12px;color:#444;min-height:15px;line-height:1.4;}
+  #sb-list{overflow-y:auto;padding:0 10px 8px;display:flex;flex-direction:column;gap:6px;}
+  .sb-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    background:#fff;border:1px solid #ACA899;border-radius:4px;padding:6px;cursor:pointer;
+    font-family:Verdana,Arial,sans-serif;color:#000;}
+  .sb-item:hover{border-color:#316AC5;background:#e8f0fe;}
+  .sb-thumb{flex:0 0 96px;width:96px;height:60px;background:#ddd;color:#666;
+    display:flex;align-items:center;justify-content:center;font-size:11px;overflow:hidden;border-radius:2px;}
+  .sb-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .sb-name{flex:1;font-size:12px;word-break:break-all;line-height:1.3;}
+  .sb-kind{flex:0 0 auto;font-size:11px;color:#666;white-space:nowrap;}
+  .sb-empty{font-size:12px;color:#666;padding:12px 4px;text-align:center;}
+  .sb-foot{padding:0 10px 10px;}
+  .sb-foot button{width:100%;background:#fff;border:1px solid #ACA899;border-radius:4px;
+    padding:8px;font-size:13px;cursor:pointer;color:#000;font-family:Verdana,Arial,sans-serif;}
+  .sb-foot button:hover{background:#316AC5;color:#fff;}
 </style>
 </head>
 <body>
@@ -96,18 +131,48 @@
 <button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
   <button data-act="skin">Nạp skin .wal/.zip…</button>
-  <button data-act="local">Thêm nhạc local…</button>
+  <button data-act="skins">Chọn skin từ kho…</button>
+  <button data-act="localfile">Thêm 1 bài nhạc…</button>
+  <button data-act="localdir">Thêm thư mục nhạc…</button>
   <button data-act="zoom1">Zoom: Cỡ gốc 1x</button>
   <button data-act="zoomfit">Zoom: Vừa màn hình</button>
+</div>
+<!-- Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ chọn skin:
+     ẩn mặc định, chỉ mở từ menu ⋯. Nạp danh sách từ GraphQL
+     skins.webamp.org (Modern + Classic), tìm theo tên, bấm 1 skin thì
+     tải .wal/.wsz về rồi nạp qua bootSkin (skin lỗi thì giữ skin cũ).
+     Mạng lỗi thì hiện danh sách mẫu nhúng sẵn + nút chọn file tay. -->
+<div id="skin-panel" hidden>
+  <div class="sb-head"><span>Chọn skin từ kho Webamp</span><button id="sb-close" title="Đóng">✕</button></div>
+  <input id="sb-search" type="search" placeholder="Tìm theo tên skin…" aria-label="Tìm skin theo tên">
+  <div class="sb-kinds">
+    <button data-kind="all" class="on">Tất cả</button>
+    <button data-kind="modern">Modern (.wal)</button>
+    <button data-kind="classic">Classic (.wsz)</button>
+  </div>
+  <div id="sb-status"></div>
+  <div id="sb-list"></div>
+  <div class="sb-foot"><button id="sb-file">Chọn file tay…</button></div>
 </div>
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.9" là nguồn sự thật, đặt TRƯỚC
-   mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
-   lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
-   checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
-   đổi CHỖ NÀY + 3 hằng version trong 3 file JS + ?v= trên 3 thẻ script.
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.0" là nguồn sự thật, đặt TRƯỚC
+   mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js đọc
+   window.AMP_VERSION lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html
+   kiểm lại ở checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file.
+   Đổi version thì đổi CHỖ NÀY + 4 hằng version trong 4 file JS + ?v= trên
+   4 thẻ script.
+   Đợt v10.0: 9.9 → 10.0 (tích hợp Webamp fork đợt 1: winamp-eqf; sửa
+   display/beat theo XML; vis AVS kiểu Webamp; zoom/fit + cân dọc; thêm
+   nhạc 1 bài/thư mục; viên KBPS/KHZ; kéo resize mượt + tay nắm thấy
+   được; Fit tính lại khi mở/đóng/tách/gắn cửa sổ).
+   Đợt v10.0 (việc 2: chọn skin từ kho Webamp — skin-browser.js):
+   giữ 10.0 (không đổi loader). Menu ⋯ thêm "Chọn skin từ kho…" mở
+   cửa sổ #skin-panel: danh sách từ GraphQL skins.webamp.org
+   (Modern .wal + Classic .wsz, md5 làm id, CDN r2.webampskins.org),
+   tìm theo tên, bấm skin thì tải về nạp qua bootSkin; mạng lỗi thì
+   danh sách mẫu nhúng sẵn + chọn file tay; cache localStorage 24h.
    Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
    Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
    Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
@@ -122,15 +187,17 @@
    isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
    + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
    thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "9.9";
+window.AMP_VERSION = "10.0";
 </script>
-<script src="skin-loader.js?v=9.9"></script>
-<script src="audio.js?v=9.9"></script>
-<script src="renderer.js?v=9.9"></script>
+<script src="skin-loader.js?v=10.0"></script>
+<script src="audio.js?v=10.0"></script>
+<script src="eqf.js?v=10.0"></script>
+<script src="skin-browser.js?v=10.0"></script>
+<script src="renderer.js?v=10.0"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.9" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "10.0" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -146,7 +213,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "9.9";
+var VERSION = "10.0";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
@@ -175,24 +242,30 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v9 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
+    + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
+    + " · skin-browser v" + (window.AmpSkinBrowser ? window.AmpSkinBrowser.BROWSER_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v9.9 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.0 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
   if (!window.AmpSkinLoader || window.AmpSkinLoader.LOADER_VERSION !== VERSION) bad.push("skin-loader.js v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?"));
   if (!window.AmpAudio || window.AmpAudio.AUDIO_VERSION !== VERSION) bad.push("audio.js v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?"));
   if (!window.AmpRenderer || window.AmpRenderer.RENDERER_VERSION !== VERSION) bad.push("renderer.js v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?"));
+  if (!window.AmpEqf || window.AmpEqf.EQF_VERSION !== VERSION) bad.push("eqf.js v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?"));
+  if (!window.AmpSkinBrowser || window.AmpSkinBrowser.BROWSER_VERSION !== VERSION) bad.push("skin-browser.js v" + (window.AmpSkinBrowser ? window.AmpSkinBrowser.BROWSER_VERSION : "?"));
   if (window.AmpSkinLoader && window.AmpSkinLoader.LOADER_VERSION !== window.AmpSkinLoader.EXPECTED_LOADER_VERSION) bad.push("loader lệch EXPECTED_LOADER_VERSION");
   /* Đợt F — mỗi file tự đối chiếu với manifest lúc nạp (MANIFEST_MISMATCH):
      file cũ trên host/cache sẽ tự tố mình dù hằng VERSION trong trang đã mới. */
   if (window.AmpSkinLoader && window.AmpSkinLoader.MANIFEST_MISMATCH) bad.push("skin-loader.js v" + window.AmpSkinLoader.LOADER_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpAudio && window.AmpAudio.MANIFEST_MISMATCH) bad.push("audio.js v" + window.AmpAudio.AUDIO_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpRenderer && window.AmpRenderer.MANIFEST_MISMATCH) bad.push("renderer.js v" + window.AmpRenderer.RENDERER_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpEqf && window.AmpEqf.MANIFEST_MISMATCH) bad.push("eqf.js v" + window.AmpEqf.EQF_VERSION + " (manifest v" + VERSION + ")");
+  if (window.AmpSkinBrowser && window.AmpSkinBrowser.MANIFEST_MISMATCH) bad.push("skin-browser.js v" + window.AmpSkinBrowser.BROWSER_VERSION + " (manifest v" + VERSION + ")");
   if (bad.length) {
     setStatus("BẢN MIX — version lệch, dừng lại: " + bad.join(" + ") + " (cần v" + VERSION + " ở mọi file)", true);
     return false;
@@ -244,12 +317,26 @@ function setZoom(mode) {
   var s = 1;
   if (mode === "fit") {
     var availW = Math.max(200, stageWrap.parentElement.clientWidth);
-    var availH = Math.max(120, window.innerHeight - 340);
+    /* Đợt v10.0 (việc 4: zoom/fit — 15:05/15:24/15:31/15:32): availH
+       chỉ trừ 8px mép. Số 340 cũ bóp chết chiều cao: trên điện thoại
+       availH ≈ 320 < chồng main+playlist 325 nên Fit thu nhỏ oan
+       xuống 0.63–0.90 dù chiều rộng đã vừa; mở/đóng/tách/gắn cửa sổ
+       nào renderCurrent() cũng gọi lại setZoom nên tỉ lệ tính lại theo
+       chồng hiện tại — chồng luôn vừa màn hình. */
+    var availH = Math.max(120, window.innerHeight - 8);
     s = Math.min(availW / LW, availH / LH, 2.5);
   }
   stage.style.transform = "scale(" + s + ")";
   stageWrap.style.width = "100%";
   stageWrap.style.height = Math.round(LH * s) + "px";
+  /* Đợt v10.0 (việc 4): cân đều theo chiều dọc trên màn rộng (PC):
+     chồng cửa sổ nằm giữa viewport (giống hành vi restack cân đều của
+     Webamp fork khi ẩn/hiện cửa sổ); điện thoại (<700px) giữ sát đỉnh
+     như cũ. margin-top có transition cùng height (CSS) nên lúc mở/đóng
+     ngăn kéo chồng trượt đều, không nhảy. */
+  var mt = 0;
+  if (window.innerWidth >= 700) mt = Math.max(0, Math.round((window.innerHeight - LH * s) / 2));
+  stageWrap.style.marginTop = mt + "px";
   /* Đợt 9.5 (lỗi 4): margin 0 khi stage (đã scale) gần lấp đầy wrap
      (trong 1px) — trước đây chỉ khi ">" nên trường hợp vừa khít
      (LW*s == clientWidth, vd 354×1.017=360) vẫn giữ "0 auto" (3px mỗi
@@ -662,7 +749,12 @@ function wireMenu() {
     if (!t) return;
     var act = t.getAttribute("data-act");
     if (act === "skin") { fileInput.click(); }
-    else if (act === "local") {
+    else if (act === "skins") { openSkinBrowser(); }
+    else if (act === "localfile") {
+      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
+      renderer.openLocalFilePicker();
+    }
+    else if (act === "localdir") {
       if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
       renderer.openLocalFolderPicker();
     }
@@ -693,6 +785,30 @@ function wireMenu() {
   });
 }
 wireMenu();
+/* Đợt v10.0 (việc 2: chọn skin từ kho Webamp) — cửa sổ #skin-panel:
+   mở từ menu ⋯ ("Chọn skin từ kho…"). wireSkinPanel gắn 1 lần rồi giữ
+   controller; bấm 1 skin thì tải .wal/.wsz về (fetchSkinFile) rồi nạp
+   qua bootSkin đã có (skin lỗi thì bootSkin giữ skin cũ + báo đỏ).
+   Không có module skin-browser (file thiếu) thì về chọn file tay. */
+var skinBrowser = null;
+function openSkinBrowser() {
+  if (!window.AmpSkinBrowser) { fileInput.click(); return; }
+  if (!skinBrowser) {
+    skinBrowser = window.AmpSkinBrowser.wireSkinPanel(document, {
+      fetchImpl: function (u, o) { return fetch(u, o); },
+      storage: window.localStorage,
+      onSelectSkin: function (skin) {
+        return window.AmpSkinBrowser.fetchSkinFile(skin).then(function (buf) {
+          return bootSkin(buf, skin.filename);
+        });
+      },
+      onPickFile: function () { fileInput.click(); },
+      onError: function (msg) { setStatus(msg, true); }
+    });
+  }
+  if (skinBrowser) skinBrowser.open();
+  else fileInput.click();
+}
 if (checkVersions()) {
   logVersion("");
   (async function () {
