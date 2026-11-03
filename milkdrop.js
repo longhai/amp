@@ -1,38 +1,17 @@
-/* Amp v10 — milkdrop.js (đợt 4, 03/11: Milkdrop / butterchurn).
-   Lấy QUY ƯỚC từ Webamp fork (captbaritone/webamp v2.3.1), KHÔNG bê code:
-   - packages/webamp/js/actionCreators/milkdrop.ts — normalizePresetTypes:
-     3 dạng preset: butterchurnPresetObject (object sẵn) /
-     getButterchrunPresetObject (hàm trả object) / butterchurnPresetUrl
-     (fetch JSON trực tiếp từ URL, không tải file về).
-   - packages/webamp/js/components/MilkdropWindow/Visualizer.tsx —
-     butterchurn.createVisualizer(audioCtx, canvas, {meshWidth 32,
-     meshHeight 24, pixelRatio, onlyUseWASM:true}), connectAudio(analyser),
-     loadPreset(preset, transitionTime), render() mỗi frame rAF.
-   - packages/webamp-demo/js/butterchurnOptions.ts — preset JSON lẻ host
-     ở unpkg.com/butterchurn-presets/*.json (cho dạng URL).
-   Amp làm gọn hơn Webamp: KHÔNG có preset cycling/random/overlay/drop file
-   .milk — chỉ 1 preset mặc định + chuyển preset bằng 3 dạng trên.
-   NGUỒN PRESET (KHÔNG đóng gói vào zip — lấy từ mạng lúc chạy):
-   - Lib: https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js
-          https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js
-     (đã kiểm sống 03/11, UMD thật: window.butterchurn /
-     window.butterchurnPresets, xem batch7-milkdrop-note.md).
-   - Preset mặc định dạng URL (đã kiểm sống 03/11, HTTP 200, JSON hợp lệ,
-     3824 byte): .../butterchurn-presets@2.4.7/presets/converted/
-     Zylot%20-%20Star%20Ornament.json
-   - Fallback: preset "Zylot - Star Ornament" NHÚNG SẴN trong code
-     (FALLBACK_PRESET — đúng file JSON trên, minified) — dùng khi fetch URL
-     lỗi VÀ tra kho preset cũng lỗi. CHỈ fallback preset, KHÔNG fallback
-     lib: CDN lib chết thì Milkdrop không chạy được, vis AVS thường ở lại.
-   GIỚI HẠN (ghi rõ, không giấu):
-   - Milkdrop chỉ "nghe" được nhạc khi EQ BẬT (analyser của Amp chỉ có tín
-     hiệu khi tiếng đi qua chuỗi EQ — cùng giới hạn như vis, xem README
-     đợt B). EQ tắt thì preset vẫn chạy hình nhưng không theo nhạc.
-   - Tốn GPU/pin trên điện thoại nên MẶC ĐỊNH TẮT — bật từ menu ⋯.
-   - butterchurn không có hàm hủy visualizer: tắt chỉ dừng vòng render +
-     ẩn canvas, không giải phóng WebGL (bật lại dùng tiếp visualizer cũ).
-   Chạy được cả trình duyệt (window.AmpMilkdrop) lẫn Node (module.exports,
-   dùng với jsdom). Không dependency, không build step.
+/* Amp v10 — milkdrop.js: Milkdrop / butterchurn (đợt 4, 03/11).
+   Quy ước từ Webamp fork (captbaritone/webamp v2.3.1), KHÔNG bê code:
+   3 dạng preset (normalizePresetTypes): object sẵn / hàm trả object /
+   URL fetch JSON trực tiếp; createVisualizer(ctx, canvas, {meshWidth 32,
+   meshHeight 24, pixelRatio, onlyUseWASM:true}), connectAudio(analyser),
+   loadPreset(preset, transitionTime), render() mỗi frame rAF.
+   Amp gọn hơn Webamp: KHÔNG preset cycling/random/overlay/drop .milk —
+   chỉ 1 preset mặc định + chuyển preset bằng 3 dạng trên.
+   GIỚI HẠN: Milkdrop chỉ "nghe" được nhạc khi EQ BẬT (analyser chỉ có
+   tín hiệu khi tiếng qua chuỗi EQ — cùng giới hạn như vis); EQ tắt thì
+   preset vẫn chạy hình nhưng không theo nhạc. Tốn GPU/pin nên MẶC ĐỊNH
+   TẮT (bật từ menu ⋯). butterchurn không có hàm hủy visualizer: tắt chỉ
+   dừng vòng render + ẩn canvas, không giải phóng WebGL.
+   Chạy được cả trình duyệt (window.AmpMilkdrop) lẫn Node (module.exports).
    API: createMilkdrop(opts) -> { enable, disable, isEnabled, setPlaying,
    setVisible, setSize, syncSizeFromWrap, attachTo, detach, ensureReady,
    loadPreset, loadDefaultPreset, resolvePreset, getState, getVisualizer }.
@@ -43,14 +22,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MILKDROP_VERSION = "10.3";
-  var EXPECTED_MILKDROP_VERSION = "10.3";
+  var MILKDROP_VERSION = "10.4";
+  var EXPECTED_MILKDROP_VERSION = "10.4";
   if (MILKDROP_VERSION !== EXPECTED_MILKDROP_VERSION) {
     throw new Error("milkdrop.js: MILKDROP_VERSION (" + MILKDROP_VERSION + ") khac EXPECTED_MILKDROP_VERSION (" + EXPECTED_MILKDROP_VERSION + ") — ban mix, dung lai");
   }
-  /* Đợt v10.0: kiểm manifest như các file kia (index.html đặt
-     window.AMP_VERSION trước khi nạp file này). Không có manifest
-     (chạy test trực tiếp bằng require) thì không kiểm. */
+  /* Kiểm manifest như các file kia (index.html đặt window.AMP_VERSION
+     trước khi nạp file này). Không có manifest (chạy test trực tiếp bằng
+     require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
     try {
       if (typeof globalThis !== "undefined" && globalThis.AMP_VERSION) return globalThis.AMP_VERSION;
@@ -60,13 +39,21 @@
   })();
   var MANIFEST_MISMATCH = MANIFEST_VERSION !== null && MANIFEST_VERSION !== MILKDROP_VERSION;
 
+  /* ===== LINK THƯ VIỆN MILKDROP (CDN jsDelivr) — nạp động lúc chạy =====
+     Không có thẻ <script src> trong index.html: loader tạo thẻ script
+     động (defaultLoadScript) khi bật Milkdrop lần đầu (lazy, xem
+     ensureLibs). Lib KHÔNG đóng gói vào zip. Đã kiểm sống 03/11 (HTTP 200,
+     UMD thật: window.butterchurn / window.butterchurnPresets).
+     Preset mặc định: URL trước, lỗi thì tra kho preset đã nạp, lỗi nữa thì
+     preset nhúng sẵn FALLBACK_PRESET (đúng file JSON ở URL dưới, 3824 byte
+     minified). CHỈ fallback preset, KHÔNG fallback lib: CDN lib chết thì
+     Milkdrop không chạy được, vis AVS thường ở lại. */
   var BUTTERCHURN_CDN = "https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js";
   var PRESETS_CDN = "https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js";
   var DEFAULT_PRESET_NAME = "Zylot - Star Ornament";
   var DEFAULT_PRESET_URL = "https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/presets/converted/Zylot%20-%20Star%20Ornament.json";
-  /* Fallback: preset mặc định nhúng sẵn (đúng file JSON ở URL trên,
-     đã kiểm 03/11 — 3824 byte minified). Dùng khi fetch URL lỗi và tra
-     kho preset cũng lỗi. */
+  /* Preset mặc định nhúng sẵn (đúng file JSON ở URL trên). Dùng khi fetch
+     URL lỗi và tra kho preset cũng lỗi. */
   var FALLBACK_PRESET = {"baseVals":{"rating":0,"gammaadj":1,"decay":0.997,"echo_zoom":0.996629,"echo_orient":1,"wave_thick":1,"wave_brighten":0,"darken":1,"wave_a":0.001185,"wave_scale":0.01,"wave_smoothing":0.27,"wave_mystery":-0.38,"modwavealphastart":0.71,"modwavealphaend":1.3,"warpscale":1.331,"zoom":0.999514,"warp":0.01,"ob_size":0,"ob_r":0.01,"ob_a":1,"ib_size":0,"ib_r":1,"ib_g":1,"ib_b":1,"ib_a":1,"mv_x":64,"mv_y":48,"mv_l":0.85,"mv_r":0.4999,"mv_g":0.4999,"mv_b":0.4999,"mv_a":0},"shapes":[{"baseVals":{"enabled":1,"sides":3,"rad":0.34,"ang":0.53,"r":0.56,"g":0.36,"r2":0.9,"a2":0.5,"border_a":0},"init_eqs_str":"a.angle=0;a.bassspin=0;a.q1=0;a.q2=0;a.bassspin=0;a.angle=0;","frame_eqs_str":"a.ang=a.angle;a.bassspin=.00001<Math.abs(above(.05*a.bass,a.bassspin))?a.bassspin+.001:a.bassspin-.001;a.bassspin*=above(a.bassspin,0);a.angle+=a.bassspin;a.r=.3*a.bass;a.g=.3*a.treb;a.b=.3*a.mid;a.r2=.8+.2*Math.sin(1.2*a.time);a.g2=.8+.2*Math.sin(.9777*a.time);a.b2=.8+.2*Math.sin(.7005*a.time);a.border_a=1*above(a.bass+a.treb+a.mid,5);a.x=.5+a.q1;a.y=.5+a.q2;"},{"baseVals":{"enabled":1,"sides":100,"additive":1,"textured":1,"rad":0.108073,"g":1,"b":1,"r2":1,"b2":1,"a2":1,"border_a":0},"init_eqs_str":"a.bassspin=0;a.xpos=0;a.ypos=0;a.q1=0;a.q2=0;a.bassspin=0;a.xpos=.25;a.ypos=.25;","frame_eqs_str":"a.bassspin=.00001<Math.abs(above(.05*a.bass,a.bassspin))?a.bassspin+.001:a.bassspin-.001;a.bassspin*=above(a.bassspin,0);a.xpos+=a.bassspin;a.ypos+=a.bassspin;a.x=.5+a.q1+.13*Math.sin(a.xpos);a.y=.5+a.q2+.18*Math.cos(a.ypos);"},{"baseVals":{"enabled":1,"sides":29,"additive":1,"textured":1,"rad":0.105693,"g":1,"b":1,"r2":1,"b2":1,"a2":1,"border_a":0},"init_eqs_str":"a.bassspin=0;a.xpos=0;a.ypos=0;a.q1=0;a.q2=0;a.bassspin=0;a.xpos=2.3;a.ypos=2.3;","frame_eqs_str":"a.bassspin=.00001<Math.abs(above(.05*a.bass,a.bassspin))?a.bassspin+.001:a.bassspin-.001;a.bassspin*=above(a.bassspin,0);a.xpos+=a.bassspin;a.ypos+=a.bassspin;a.x=.5+a.q1+.13*Math.sin(a.xpos);a.y=.5+a.q2+.18*Math.cos(a.ypos);"},{"baseVals":{"enabled":1,"sides":100,"additive":1,"textured":1,"rad":0.091434,"g":1,"b":1,"r2":1,"b2":1,"a2":1,"border_a":0},"init_eqs_str":"a.bassspin=0;a.xpos=0;a.ypos=0;a.q1=0;a.q2=0;a.bassspin=0;a.xpos=4.5;a.ypos=4.5;","frame_eqs_str":"a.bassspin=.00001<Math.abs(above(.05*a.bass,a.bassspin))?a.bassspin+.001:a.bassspin-.001;a.bassspin*=above(a.bassspin,0);a.xpos+=a.bassspin;a.ypos+=a.bassspin;a.x=.5+a.q1+.13*Math.sin(a.xpos);a.y=.5+a.q2+.18*Math.cos(a.ypos);"}],"waves":[{"baseVals":{"enabled":0}},{"baseVals":{"enabled":0}},{"baseVals":{"enabled":0}},{"baseVals":{"enabled":0}}],"init_eqs_str":"a.xpos=0;a.yamptarg=0;a.ydir=0;a.q1=0;a.yaccel=0;a.xamptarg=0;a.xamp=0;a.xspeed=0;a.ypos=0;a.xaccel=0;a.att=0;a.vol=0;a.q2=0;a.yamp=0;a.xdir=0;a.yspeed=0;","frame_eqs_str":"a.warp=0;a.decay=.92;a.vol=div(a.bass+a.mid+a.att,6);a.xamptarg=.00001<Math.abs(equal(mod(a.frame,15),0))?Math.min(.5*a.vol*a.bass_att,.5):a.xamptarg;a.xamp+=.5*(a.xamptarg-a.xamp);a.xdir=.00001<Math.abs(above(Math.abs(a.xpos),a.xamp))?-sign(a.xpos):.00001<Math.abs(below(Math.abs(a.xspeed),.1))?2*above(a.xpos,0)-1:a.xdir;a.xaccel=a.xdir*a.xamp-a.xpos-.055*a.xspeed*below(Math.abs(a.xpos),a.xamp);a.xspeed=a.xspeed+a.xdir*a.xamp-a.xpos-.055*a.xspeed*below(Math.abs(a.xpos),a.xamp);\na.xpos+=.001*a.xspeed;a.yamptarg=.00001<Math.abs(equal(mod(a.frame,15),0))?Math.min(.3*a.vol*a.treb_att,.5):a.yamptarg;a.yamp+=.5*(a.yamptarg-a.yamp);a.ydir=.00001<Math.abs(above(Math.abs(a.ypos),a.yamp))?-sign(a.ypos):.00001<Math.abs(below(Math.abs(a.yspeed),.1))?2*above(a.ypos,0)-1:a.ydir;a.yaccel=a.ydir*a.yamp-a.ypos-.055*a.yspeed*below(Math.abs(a.ypos),a.yamp);a.yspeed=a.yspeed+a.ydir*a.yamp-a.ypos-.055*a.yspeed*below(Math.abs(a.ypos),a.yamp);a.ypos+=.001*a.yspeed;a.q1=a.ypos;a.q2=a.xpos;","pixel_eqs_str":"a.zoom+=a.q1*a.q2*2;a.rot=10+a.rad*a.treb*.1;","warp":"","comp":""};
 
   function createMilkdrop(opts) {
@@ -86,7 +73,7 @@
       presetName: "", presetSource: "", error: ""
     };
     var libPromise = null, canvas = null, wrapEl = null, visualizer = null;
-    var rafId = 0, presetLoaded = false;
+    var rafId = 0, presetLoaded = false, renderErrCount = 0;
 
     function requestAnim(fn) {
       try {
@@ -116,8 +103,7 @@
         parent.appendChild(s);
       });
     }
-    /* Nạp 2 lib UMD qua thẻ <script> lúc chạy (lazy — chỉ khi bật).
-       KHÔNG tải file về đóng gói vào zip. */
+    /* Nạp 2 lib UMD qua thẻ <script> lúc chạy (lazy — chỉ khi bật). */
     function ensureLibs() {
       if (state.libsLoaded) return Promise.resolve(true);
       if (libPromise) return libPromise;
@@ -145,6 +131,12 @@
     function ensureVisualizer() {
       if (visualizer) return visualizer;
       if (!canvas) return null;
+      /* v10.4 — canvas 0x0 (vung AVS chua co kich thuoc) thi dung lai
+         va bao ro thay vi tao visualizer hong roi de canvas den im lang. */
+      if (!canvas.width || !canvas.height) {
+        state.error = "milkdrop: canvas Milkdrop co 0 — chua co kich thuoc vung AVS (mo AVS roi bat lai Milkdrop)";
+        return null;
+      }
       var ctx = null;
       try { ctx = getAudioContext(); } catch (e) { ctx = null; }
       if (!ctx) return null;
@@ -217,6 +209,7 @@
       try {
         v.loadPreset(preset, transitionTime || 0);
         presetLoaded = true;
+        state.error = ""; /* v10.4: nap duoc thi xoa loi cu (vd "chua co AudioContext") de khoi bao loi cu tren banner */
         return true;
       } catch (e) { state.error = "milkdrop: loadPreset loi: " + (e && e.message ? e.message : e); return false; }
     }
@@ -229,7 +222,22 @@
     function loop() {
       rafId = 0;
       if (!state.enabled || !state.playing || !state.visible || !visualizer) return;
-      try { visualizer.render(); } catch (e) { /* bỏ qua */ }
+      try {
+        visualizer.render();
+        /* v10.4: ve lai duoc thi xoa loi render cu (khoi banner loi cu
+           sau khi hinh da chay lai). */
+        if (renderErrCount >= 3 && state.error.indexOf("milkdrop: render loi") === 0) state.error = "";
+        renderErrCount = 0;
+      } catch (e) {
+        /* v10.4 — render loi lien tiep thi bao ro (console + state.error
+           de index.html dua len banner) thay vi nuot im lang roi de
+           canvas den; loi don le thi bo qua (co the chi mat frame). */
+        renderErrCount++;
+        if (renderErrCount === 3) {
+          state.error = "milkdrop: render loi " + renderErrCount + " lan lien tiep: " + (e && e.message ? e.message : e);
+          status(state.error + " — hinh co the den.");
+        }
+      }
       rafId = requestAnim(loop);
     }
     function startLoop() {
@@ -243,20 +251,29 @@
     /* Bật Milkdrop: nạp lib (lazy) -> tạo visualizer -> nạp preset mặc
        định. Chưa có AudioContext (chưa phát nhạc lần nào) thì vẫn bật cờ
        nhưng chưa có visualizer — index.html gọi ensureReady() sau khi
-       phát nhạc để tạo nốt (xem ensureReady). */
+       phát nhạc để tạo nốt. */
     function enable() {
       state.enabled = true;
       state.error = "";
       return ensureLibs().then(function () {
         var v = ensureVisualizer();
         if (!v) {
-          state.error = "milkdrop: chua co AudioContext — bat nhac truoc roi bat lai Milkdrop (hoac doi 1 khung nhac)";
+          /* v10.4 — GIU loi cu the cua ensureVisualizer (vd canvas 0x0,
+             WebGL loi) thay vi ghi de bang "chua co AudioContext" chung
+             chung; chi dung thong bao chung khi khong co loi cu the. */
+          if (!state.error) state.error = "milkdrop: chua co AudioContext — Milkdrop se tu chay khi phat nhac (ensureReady)";
           status(state.error);
           return getState();
         }
         return loadDefaultPreset().then(function (preset) {
-          applyPreset(preset, 0);
-          status("Milkdrop: preset '" + state.presetName + "' (" + state.presetSource + ")" + (state.presetSource === "fallback" ? " — link preset tren mang loi, dung preset nhung san" : ""));
+          var ok = applyPreset(preset, 0);
+          if (!ok) {
+            /* v10.4 — preset nap khong duoc thi bao ro (truoc day chi
+               status() khi thanh cong, that bai thi im lang de canvas den). */
+            status("Milkdrop: khong nap duoc preset '" + state.presetName + "'" + (state.error ? " (" + state.error + ")" : "") + " — hinh co the den.");
+          } else {
+            status("Milkdrop: preset '" + state.presetName + "' (" + state.presetSource + ")" + (state.presetSource === "fallback" ? " — link preset tren mang loi, dung preset nhung san" : ""));
+          }
           startLoop();
           return getState();
         });
@@ -273,10 +290,10 @@
       if (canvas) { try { canvas.style.display = "none"; } catch (e) { /* bỏ qua */ } }
       return getState();
     }
-    /* Đợt v10.2 — AUDIT (đổi skin): bỏ visualizer đã cache (nó giữ ctx +
-       analyser của engine cũ — engine mới có ctx/analyser mới nên
+    /* AUDIT (đổi skin): bỏ visualizer đã cache (nó giữ ctx +
+       analyser của engine cũ; engine mới có ctx/analyser mới nên
        visualizer cũ sẽ không theo nhạc nữa). Gọi khi đổi skin, trước khi
-       bật lại Milkdrop để ensureVisualizer tạo mới với ctx/analyser mới. */
+       bật lại Milkdrop để ensureVisualizer tạo mới. */
     function reset() {
       stopLoop();
       visualizer = null;
@@ -381,7 +398,7 @@
       isEnabled: function () { return state.enabled; },
       setPlaying: setPlaying, setVisible: setVisible,
       setSize: setSize, syncSizeFromWrap: syncSizeFromWrap,
-      attachTo: attachTo, detach: detach, reset: reset, /* Đợt v10.2 — AUDIT: bỏ visualizer cũ khi đổi skin */ ensureReady: ensureReady,
+      attachTo: attachTo, detach: detach, reset: reset, /* AUDIT: bỏ visualizer cũ khi đổi skin */ ensureReady: ensureReady,
       loadPreset: loadPreset, loadDefaultPreset: loadDefaultPreset,
       resolvePreset: resolvePreset, getState: getState,
       getVisualizer: getVisualizer, getCanvas: getCanvas

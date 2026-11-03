@@ -1,44 +1,39 @@
 /* Amp v10 — metadata.js (đợt 5, 03/11: Metadata nhạc — đọc tag nhạc local).
    Lấy QUY ƯỚC từ Webamp fork (captbaritone/webamp v2.3.1), KHÔNG bê code:
-   - packages/webamp/js/fileUtils.ts — genMediaTags(file, musicMetadata):
-     parseBlob(file, {duration:true, skipPostHeaders:true}) với Blob/File;
-     genMediaDuration(url): thẻ <audio> tạm, đọc duration ở sự kiện
-     durationchange (Amp đã có sẵn đường này: probeLocalDuration ở
-     renderer.js, đợt L 9.8 — giữ nguyên, không làm lại).
-   - packages/webamp/js/actionCreators/files.ts — fetchMediaTags: lấy
-     metadata.common {artist, title, album, picture} + format
-     {numberOfChannels, bitrate, sampleRate}; file không có tag album
-     thì dùng tên thư mục chứa file làm album (fallbackAlbum); đọc tag
-     lỗi mà có fallbackAlbum thì vẫn giữ album thư mục.
-   - packages/webamp/js/types.ts — IMetadataApi: parseBlob(blob, options)
-     / fetchFromUrl(url, options) (music-metadata-browser) hoặc
-     parseWebStream (music-metadata Node). Fork nạp lib bằng bundler
-     (webamp.ts: `import * as musicMetadata from "music-metadata"` rồi
-     requireMusicMetadata() trả thẳng module đó); Amp không có build
-     step nên nạp lib qua CDN bằng dynamic import() (xem dưới).
-   - packages/webamp/js/reducers/tracks.ts — SET_MEDIA_TAGS: ghi
-     title/artist/album (+ kbps/khz từ bitrate/sampleRate) vào track.
-     Amp KHÔNG lấy KBPS/KHZ từ tag (đã chốt không làm ở đợt 5): bitrate/
-     sampleRate của tag chỉ lưu vào model (tagBitrate/tagSampleRate) mà
-     KHÔNG đưa lên viên KBPS/KHZ (vẫn tính như cũ ở songInfoValues).
+   - fileUtils.ts — genMediaTags(file, musicMetadata): parseBlob(file,
+     {duration:true, skipPostHeaders:true}); genMediaDuration(url): thẻ
+     <audio> tạm, đọc duration ở durationchange (Amp đã có sẵn đường này:
+     probeLocalDuration ở renderer.js — giữ nguyên, không làm lại).
+   - actionCreators/files.ts — fetchMediaTags: lấy metadata.common
+     {artist, title, album, picture} + format {numberOfChannels, bitrate,
+     sampleRate}; file không có tag album thì dùng tên thư mục chứa file
+     làm album (fallbackAlbum); đọc tag lỗi mà có fallbackAlbum thì vẫn
+     giữ album thư mục.
+   - types.ts — IMetadataApi: parseBlob(blob, options) / fetchFromUrl(url,
+     options) (music-metadata-browser) hoặc parseWebStream (Node). Fork
+     nạp lib bằng bundler; Amp không có build step nên nạp lib qua CDN
+     bằng dynamic import() (xem dưới).
+   - reducers/tracks.ts — SET_MEDIA_TAGS: ghi title/artist/album (+ kbps/
+     khz từ bitrate/sampleRate) vào track. Amp KHÔNG lấy KBPS/KHZ từ tag
+     (đã chốt): bitrate/sampleRate của tag chỉ lưu vào model
+     (tagBitrate/tagSampleRate) mà KHÔNG đưa lên viên KBPS/KHZ.
 
    ---------------------------------------------------------------------------
    CDN — ĐÃ KIỂM SỐNG 03/11 (curl, HTTP 200):
    - ĐƯỜNG CHÍNH (ESM): https://cdn.jsdelivr.net/npm/music-metadata-browser@2.5.11/+esm
-     (jsDelivr bundle ESM thật từ lib/index.js, exports parseBlob /
-     fetchFromUrl / parseBuffer; kéo theo music-metadata@7.14.0 core —
-     đủ parseBlob cho MP3/FLAC/OGG/M4A/WAV. Nạp bằng dynamic import(),
-     KHÔNG nạp bằng thẻ <script src> thường.)
+     (jsDelivr bundle ESM thật, exports parseBlob / fetchFromUrl /
+     parseBuffer; kéo theo music-metadata@7.14.0 core — đủ parseBlob cho
+     MP3/FLAC/OGG/M4A/WAV. Nạp bằng dynamic import(), KHÔNG nạp bằng thẻ
+     <script src> thường.)
    - DỰ PHÒNG (ESM): https://esm.sh/music-metadata-browser@2.5.11
      (HTTP 200, re-export parseBlob; dùng khi jsDelivr lỗi.)
-   - KHÔNG DÙNG: https://cdn.jsdelivr.net/npm/music-metadata-browser@2.5.11/lib/index.js
-     (HTTP 200 nhưng là CommonJS — `require("music-metadata/lib/core")`,
-     nạp bằng <script> thường sẽ lỗi `require is not defined`; chỉ dùng
-     được qua bundler hoặc qua bản +esm ở trên). music-metadata-browser
-     0.6.1 (bản fork đang dùng, lib/index.js) đã 404 trên cả 2 CDN.
-   - music-metadata@11.6.0/+esm cũng sống (200) nhưng là bản core Node
-     (parseBuffer/parseStream, không có parseBlob) nên không phải đường
-     chính; chỉ ghi đây để khỏi nhầm.
+   - KHÔNG DÙNG: .../music-metadata-browser@2.5.11/lib/index.js (HTTP 200
+     nhưng là CommonJS — `require("music-metadata/lib/core")`, nạp bằng
+     <script> thường sẽ lỗi `require is not defined`; chỉ dùng được qua
+     bundler hoặc qua bản +esm ở trên). Bản 0.6.1 (fork đang dùng) đã 404
+     trên cả 2 CDN. music-metadata@11.6.0/+esm cũng sống (200) nhưng là
+     bản core Node (parseBuffer/parseStream, không có parseBlob) nên không
+     phải đường chính.
    ---------------------------------------------------------------------------
    FALLBACK KHÔNG CẦN MẠNG (parser ID3/FLAC nhúng sẵn trong file này):
    - Lib CDN chết / offline / file là MP3 có tag ID3: parser nội bộ đọc
@@ -48,8 +43,8 @@
      lượng nên duration vẫn do thẻ <audio> probe (probeLocalDuration)
      hoặc duration của lib (nếu lib đọc được) — không bịa duration.
    - File không có tag nào: giữ nguyên tên file + thời lượng đã probe
-     bằng thẻ audio tạm (như v9.8); nghệ sĩ/album hiển thị "Không rõ"
-     (quy ước gom nhóm của Webamp fork cho radio/.wav không thẻ).
+     bằng thẻ audio tạm; nghệ sĩ/album hiển thị "Không rõ" (quy ước gom
+     nhóm của Webamp fork cho radio/.wav không thẻ).
    ---------------------------------------------------------------------------
    API: probeFile(file, opts) / normalizeMetadata(raw) /
    parseId3Buffer(buf) / parseFlacBuffer(buf) / applyMetadataToItem(item,
@@ -64,14 +59,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var METADATA_VERSION = "10.3";
-  var EXPECTED_METADATA_VERSION = "10.3";
+  var METADATA_VERSION = "10.4";
+  var EXPECTED_METADATA_VERSION = "10.4";
   if (METADATA_VERSION !== EXPECTED_METADATA_VERSION) {
     throw new Error("metadata.js: METADATA_VERSION (" + METADATA_VERSION + ") khac EXPECTED_METADATA_VERSION (" + EXPECTED_METADATA_VERSION + ") — ban mix, dung lai");
   }
-  /* Đợt v10.0: kiểm manifest như các file kia (index.html đặt
-     window.AMP_VERSION trước khi nạp file này). Không có manifest
-     (chạy test trực tiếp bằng require) thì không kiểm. */
+  /* Kiểm manifest như các file kia (index.html đặt window.AMP_VERSION
+     trước khi nạp file này). Không có manifest (chạy test trực tiếp bằng
+     require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
     try {
       if (typeof globalThis !== "undefined" && globalThis.AMP_VERSION) return globalThis.AMP_VERSION;
@@ -367,19 +362,15 @@
      lib thiếu hoặc khi lib không nạp được; 3) không tag nào thì trả
      hasTags=false, caller giữ tên file + duration đã probe bằng thẻ
      audio. KHÔNG throw — lỗi nào cũng trả meta rỗng source "none". */
-  /* v10.3 — DOC TAG NHANH (chi hieu nang, KHONG doi parser ID3/FLAC):
-     Cu: probeFile CHO lib CDN (dynamic import music-metadata) xong moi
-     chay parser noi bo — mang cham (dien thoai 8KB/s) thi import treo
-     hang chuc giay, tag ve muon, ML thay "Khong ro" lau; lai doc TOAN
-     BO file bang arrayBuffer cho parser noi bo du lib da du tag (105
-     file x vai MB = hang tram MB doc thua) — 1 trong cac nguyen nhan
-     may lag khi nap thu muc.
-     Nay: chay SONG SONG — parser noi bo chi doc lat cat dau file
-     (256KB, du cho ID3v2/FLAC) + 128 byte cuoi (ID3v1); lib CDN chi de
-     lap cho thieu (M4A/OGG/WMA ma parser noi bo khong ho tro) + lay
-     duration; lib qua han (opts.libTimeoutMs, mac dinh 10s) thi tra
-     ngay ket qua noi bo, khong cho import. Ket qua gop giong cu (lib
-     thang, noi bo lap cho trong). */
+  /* ĐỌC TAG NHANH (chỉ hiệu năng, KHÔNG đổi parser ID3/FLAC): chạy SONG
+     SONG — parser nội bộ chỉ đọc lát cắt đầu file (256KB, đủ cho
+     ID3v2/FLAC) + 128 byte cuối (ID3v1); lib CDN chỉ để lấp chỗ thiếu
+     (M4A/OGG/WMA mà parser nội bộ không hỗ trợ) + lấy duration; lib quá
+     hạn (opts.libTimeoutMs, mặc định 10s) thì trả ngay kết quả nội bộ,
+     không chờ import. Kết quả gộp như cũ (lib thắng, nội bộ lấp chỗ
+     trống). (Trước đây: chờ lib xong mới chạy parser nội bộ, lại đọc
+     TOÀN BỘ file — mạng chậm thì tag về muộn, 105 file x vài MB thì
+     máy lag khi nạp thư mục.) */
   var TAG_HEAD_BYTES = 262144;
   var LIB_TIMEOUT_MS_DEFAULT = 10000;
   function readLocalTags(file, opts) {
@@ -499,6 +490,10 @@
     }
     if (meta.bitrate) set("tagBitrate", meta.bitrate);
     if (meta.sampleRate) set("tagSampleRate", meta.sampleRate);
+    /* v10.4 — SO KENH CUA NGUON (Webamp: numberOfChannels): luu vao item
+       de chi bao stereo/mono dung so kenh that thay vi chi do tin hieu
+       (xem updateChannelsIndicator). 1 kenh = mono, >=2 = stereo. */
+    if (meta.channels) set("channels", meta.channels);
     if (meta.source) set("metaSource", meta.source);
     if (meta.status) set("metaStatus", meta.status);
     else if (meta.hasTags) set("metaStatus", "ok");

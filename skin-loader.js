@@ -1,13 +1,11 @@
 /* =====================================================================
-   Amp v9 — skin-loader.js (VIẾT MỚI TỪ ĐẦU, đợt A)
-   Loader skin Winamp Modern (.wal/.zip) theo SPEC-skin-sim §1.
-   Không copy code v7.4/v8; chỉ giữ các công thức đã chứng minh đúng
-   (V8-BUGS.md) — NGOẠI TRỪ contentH (xem ghi chú ở frameOffsetFor):
-   công thức cũ contentH = layoutH - frameOffsetY SAI (đo lại 3/11/2026
-   từ Winamp thật: display/seek/playbuttons đều thấp hơn Amp đúng 18px;
-   main phải ở y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-     - snapadjustbottom + drawerRestY ghi vào model layout.
-   Version: LOADER_VERSION = "10.3". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Amp v9 — skin-loader.js: loader skin Winamp Modern (.wal/.zip) theo
+   SPEC-skin-sim §1. Chỉ giữ các công thức đã chứng minh đúng — NGOẠI TRỪ
+   contentH (xem ghi chú ở frameOffsetFor): công thức cũ
+   contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
+   display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
+   y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
+   Version: LOADER_VERSION = "10.4". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Chạy được cả trình duyệt (window) lẫn Node (module.exports, dùng với
    jsdom trong test). Không dùng Blob khi đọc file trong zip (tránh lỗi
@@ -19,20 +17,17 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.3";
-  var EXPECTED_LOADER_VERSION = "10.3";
-  /* ĐỢT v10.1 (việc 3: Classic parser) — loader đổi: nhánh Classic
-     (.wsz, không có skin.xml) nay parse thật bằng AmpClassic
+  var LOADER_VERSION = "10.4";
+  var EXPECTED_LOADER_VERSION = "10.4";
+  /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
-     cửa sổ chính 275×116) thay vì trả resolve rỗng; asset resolver
-     (fileURL/imgSize) dời lên trước nhánh Classic để resolve Classic
-     cũng dùng được URL thật. Bump 10.0 -> 10.1 ở mọi file (xem README
-     mục "Đổi version"). */
-  /* ĐỢT F — version manifest duy nhất: index.html đặt window.AMP_VERSION
-     = "10.0" TRƯỚC khi nạp file này. File đọc manifest để tự kiểm: nếu
-     manifest có mà khác version của file thì MANIFEST_MISMATCH = true để
-     trang báo "bản mix" thay vì vẽ sai trong im lặng (bài học v7.4/v8).
-     Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
+     cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
+     trước nhánh Classic để resolve Classic cũng dùng được URL thật. */
+  /* Version manifest duy nhất: index.html đặt window.AMP_VERSION TRƯỚC
+     khi nạp file này. File đọc manifest để tự kiểm: nếu manifest có mà
+     khác version của file thì MANIFEST_MISMATCH = true để trang báo
+     "bản mix" thay vì vẽ sai trong im lặng (bài học v7.4/v8). Không có
+     manifest (chạy test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
     try {
       if (typeof globalThis !== "undefined" && globalThis.AMP_VERSION) return globalThis.AMP_VERSION;
@@ -41,16 +36,7 @@
     return null;
   })();
   var MANIFEST_MISMATCH = MANIFEST_VERSION !== null && MANIFEST_VERSION !== LOADER_VERSION;
-  /* ĐỢT B (9.1): loader đổi để phục vụ tab Color Themes — thêm
-     `gammagroup` vào từng bitmap (vd "Backgrounds") và gom `gammasets`
-     (44 preset từ color-presets.xml) ra top-level của resolve.
-     Theo quy tắc bất biến (mỗi lần đổi loader phải bump version) nên
-     bump 9 -> 9.1 ở mọi file (loader, renderer, index.html, test). */
-  /* ĐỢT D (9.2): loader đổi để suy `embeddedAvs` thành OBJECT từ model
-     (trước đây chỉ boolean !!groupdefs["AVSGroup"]) + nhận skin Classic
-     (.wsz, không có skin.xml) thành resolve kind:"classic" với
-     embeddedAvs=null thay vì throw. Bump 9.1 -> 9.2 ở mọi file. */
-  /* Khóa cache model (ĐỢT F): tên skin + version loader VÀ version code vẽ
+  /* Khóa cache model: tên skin + version loader VÀ version code vẽ
      (manifest window.AMP_VERSION — bằng version renderer khi nạp qua
      index.html; không có manifest thì rơi về LOADER_VERSION). V9 CHƯA
      cache model vào IndexedDB — loadSkinFile luôn đọc mới (fromCache=false)
@@ -142,9 +128,9 @@
 
   /* ---------------- loader chính ---------------- */
   async function loadSkinFile(file, opts) {
-    /* ĐỢT F: kiểm EXPECTED_LOADER_VERSION ngay khi nạp, TRƯỚC mọi đọc
-       cache (hiện chưa có cache, nhưng kiểm trước để đợt sau thêm cache
-       không quên — loader cũ không được đọc model của nó như thể đúng). */
+    /* Kiểm EXPECTED_LOADER_VERSION ngay khi nạp, TRƯỚC mọi đọc cache
+       (hiện chưa có cache, nhưng kiểm trước để đợt sau thêm cache không
+       quên — loader cũ không được đọc model của nó như thể đúng). */
     if (LOADER_VERSION !== EXPECTED_LOADER_VERSION) {
       throw new Error("skin-loader.js: LOADER_VERSION (" + LOADER_VERSION + ") khac EXPECTED_LOADER_VERSION (" + EXPECTED_LOADER_VERSION + ") — ban mix, dung lai");
     }
@@ -181,20 +167,17 @@
       if (!real) return null;
       return await zip.file(real).async("string");
     }
-    /* Asset resolver — Đợt v10.1 dời lên ĐÂY (trước nhánh Classic) để
-       cả 2 nhánh (Modern + Classic) dùng chung: trước đây chỉ nhánh
-       Modern có fileURL/imgSize thật, nhánh Classic trả stub null nên
-       renderer không lấy được URL của BMP. imgSize đo bằng header PNG
-       trước (chạy cả jsdom), chỉ dùng Image cho ảnh không phải PNG và
-       khi có trình duyệt thật. */
+    /* Asset resolver — đặt ở ĐÂY (trước nhánh Classic) để cả 2 nhánh
+       (Modern + Classic) dùng chung: nhánh Classic cũng cần URL thật
+       của BMP. imgSize đo bằng header PNG trước (chạy cả jsdom), chỉ
+       dùng Image cho ảnh không phải PNG và khi có trình duyệt thật. */
     var urlCache = new Map(), sizeCache = new Map();
-    /* v10.3 — MIME cho Blob của file trong zip: trước đây
-       `new Blob([ab])` không có type — blob: URL không có content-type
-       thì trình duyệt (đặc biệt Chrome trên điện thoại) chỉ còn đoán
-       theo nội dung, có lúc không nhận ra ảnh BMP của skin Classic
-       (DOM7009 / ảnh không hiện, cửa sổ trắng trơn dù sprite đã vẽ).
-       Gán type theo đuôi file (.bmp/.png/.jpg/.gif/.cur) để ảnh chắc
-       chắn giải mã được; đuôi lạ thì để trống như cũ. */
+    /* MIME cho Blob của file trong zip: `new Blob([ab])` không có type —
+       blob: URL không có content-type thì trình duyệt (đặc biệt Chrome
+       trên điện thoại) chỉ còn đoán theo nội dung, có lúc không nhận ra
+       ảnh BMP của skin Classic (ảnh không hiện, cửa sổ trắng trơn dù
+       sprite đã vẽ). Gán type theo đuôi file (.bmp/.png/.jpg/.gif/.cur)
+       để ảnh chắc chắn giải mã được; đuôi lạ thì để trống như cũ. */
     var MIME_BY_EXT = {
       bmp: "image/bmp", png: "image/png", jpg: "image/jpeg",
       jpeg: "image/jpeg", gif: "image/gif", cur: "image/x-icon",
@@ -256,16 +239,16 @@
 
     var skinXmlText = await readText("skin.xml");
     if (!skinXmlText) {
-      /* ĐỢT v10.1 — skin Classic (.wsz, vd base-2.91.wsz): không có
-         skin.xml (chỉ có BMP/CUR/TXT của Winamp 2) nên không có model
-         Modern nào (không groupdef/layout/bitmap XML). KHÔNG throw:
-         parse thật bằng AmpClassic (classic.js — chuyển từ parser của
-         Webamp fork: viscolor.txt, pledit.txt, region.txt, genex.bmp,
-         bảng tọa độ sprite, hình học cửa sổ chính 275×116) rồi trả
-         resolve kind:"classic" với `classic` đính kèm để renderer vẽ
-         cửa sổ chính Classic từ BMP. Không có classic.js (vd test cũ
-         chỉ nạp skin-loader.js) thì classic=null và renderer về đường
-         cũ: chỉ cửa sổ Video/Hiệu ứng rời, không vẽ cửa sổ chính. */
+      /* Skin Classic (.wsz, vd base-2.91.wsz): không có skin.xml (chỉ có
+         BMP/CUR/TXT của Winamp 2) nên không có model Modern nào (không
+         groupdef/layout/bitmap XML). KHÔNG throw: parse thật bằng
+         AmpClassic (classic.js: viscolor.txt, pledit.txt, region.txt,
+         genex.bmp, bảng tọa độ sprite, hình học cửa sổ chính 275×116)
+         rồi trả resolve kind:"classic" với `classic` đính kèm để
+         renderer vẽ cửa sổ chính Classic từ BMP. Không có classic.js
+         (vd test cũ chỉ nạp skin-loader.js) thì classic=null và renderer
+         về đường cũ: chỉ cửa sổ Video/Hiệu ứng rời, không vẽ cửa sổ
+         chính. */
       report.notes.push("skin Classic (.wsz): không có skin.xml — vẽ cửa sổ chính từ BMP (classic.js) + cửa sổ Video/Hiệu ứng rời (không có vùng AVS nhúng)");
       var classicMaki = names.filter(function (n) { return n.toLowerCase().endsWith(".maki"); })
         .map(function (n) {
@@ -380,7 +363,7 @@
         if (!bid || !bf || bitmaps[bid]) continue;
         var rootRel = normPath("", bf);
         var entry = { file: findPath(rootRel) ? rootRel : (findPath(normPath(dirOf(path), bf)) || rootRel) };
-        /* ĐỢT B: gammagroup của bitmap (vd "Backgrounds") — tab Color Themes
+        /* gammagroup của bitmap (vd "Backgrounds") — tab Color Themes
            áp filter theo từng nhóm, không áp chung toàn stage. */
         var gg = blist[b].getAttribute("gammagroup");
         if (gg) entry.gammagroup = gg;
@@ -465,12 +448,12 @@
       }
       return "";
     }
-    /* ĐỢT C — layout nằm TRỰC TIẾP trong <container> thì container là tổ
-       tiên gần nhất (nhiều skin gom nhiều container vào 1 file, hoặc
+    /* Layout nằm TRỰC TIẾP trong <container> thì container là tổ tiên
+       gần nhất (nhiều skin gom nhiều container vào 1 file, hoặc
        <container><layout> inline). Trước đây chỉ có đồ thị include +
        fallback dc[0] (container ĐẦU TIÊN trong file) nên mọi layout
        trong file nhiều container đều bị gán nhầm về container đầu, layout
-       sau trùng khóa thì mất hẳn (probe S6: Pledit|normal biến mất). */
+       sau trùng khóa thì mất hẳn. */
     function containerAncestor(layEl) {
       var p = layEl ? layEl.parentNode : null;
       while (p) {
@@ -502,10 +485,9 @@
       return 0;
     }
     var layouts = {}, layoutList = [], layoutOrder = 0;
-    /* ĐỢT C — tra layout không phân biệt hoa/thường (Winamp không phân
-       biệt hoa/thường ở id; skin ghi Main/Normal thì tra main/normal vẫn
-       thấy — trước đây tra đúng chữ nên ném lỗi "không tìm được layout",
-       probe S2). Trả entry hoặc null; KHÔNG fallback trần sang container
+    /* Tra layout không phân biệt hoa/thường (Winamp không phân biệt
+       hoa/thường ở id; skin ghi Main/Normal thì tra main/normal vẫn
+       thấy). Trả entry hoặc null; KHÔNG fallback trần sang container
        khác (xem renderer.resolveLayout). */
     function findLayout(container, layoutId) {
       var k = lowerId(container) + "|" + lowerId(layoutId);
@@ -540,14 +522,14 @@
             el: llist[l], container: container, layoutId: lid,
             key: key, order: layoutOrder++,
             w: LW, h: LH,
-            /* Đợt A (9.9, việc 6 — resize): giới hạn co giãn của layout,
-               đọc từ XML (không gán cứng số của skin 566). Skin 566:
-               main|normal min 354×280 (= đúng w/h → cố định, như Winamp
-               thật: cửa sổ chính không kéo được); Pledit min 354×164
-               (w 436 → kéo rộng được, cao ≥164); MLibrary min 354×164
-               (790×349 → kéo được cả 2 chiều); Video min 354×164
-               (354×280 → kéo cao được). Không có maximum_* trong XML
-               566 → null (renderer tự kẹp theo giới hạn chung). */
+            /* Giới hạn co giãn của layout, đọc từ XML (không gán cứng số
+               của skin 566). Skin 566: main|normal min 354×280 (= đúng
+               w/h → cố định, như Winamp thật: cửa sổ chính không kéo
+               được); Pledit min 354×164 (w 436 → kéo rộng được, cao
+               ≥164); MLibrary min 354×164 (790×349 → kéo được cả 2
+               chiều); Video min 354×164 (354×280 → kéo cao được). Không
+               có maximum_* trong XML 566 → null (renderer tự kẹp theo
+               giới hạn chung). */
             minW: intAttr(llist[l], "minimum_w", 0) || null,
             minH: intAttr(llist[l], "minimum_h", 0) || null,
             maxW: intAttr(llist[l], "maximum_w", 0) || null,
@@ -565,15 +547,15 @@
              cũ tra "MLibrary|normal"). KHÔNG còn alias trần layouts[lid]:
              alias đó từng làm renderLayout("main","normal") vẽ nhầm layout
              của container khác (vd Pledit 436×164) khi main thiếu layout,
-             và làm renderStacked vẽ main 2 lần (probe S8 + stacked S1). */
+             và làm renderStacked vẽ main 2 lần. */
           layouts[key] = entry;
           if (origKey !== key) layouts[origKey] = entry;
           layoutList.push(entry);
         }
       }
     }
-    /* ĐỢT C — layout đầu tiên (theo thứ tự XML) trong 1 container, dùng
-       cho fallback cùng container (ngăn kéo/AVS nhúng suy từ layout main
+    /* Layout đầu tiên (theo thứ tự XML) trong 1 container, dùng cho
+       fallback cùng container (ngăn kéo/AVS nhúng suy từ layout main
        khi main chỉ có layout khác 'normal', vd chỉ có 'shade'). */
     function firstLayoutInContainer(container) {
       var lc = lowerId(container), best = null;
@@ -685,9 +667,6 @@
       })
       .sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
 
-    /* Asset resolver đã dời lên trước nhánh Classic (Đợt v10.1) để cả 2
-       nhánh dùng chung fileURL/imgSize; ở đây chỉ còn resolveImageRef +
-       bitmapInfo (cần `bitmaps` của nhánh Modern). */
     function resolveImageRef(ref) {
       if (!ref) return null;
       if (bitmaps[ref]) return bitmaps[ref].file;
@@ -707,9 +686,9 @@
       return null;
     }
 
-    /* ĐỢT B: gom gammasets ra top-level (tab Color Themes cần danh sách
-       44 preset + từng gammagroup {id, value, gray, boost}). Nguồn duy
-       nhất là color-presets.xml; first-wins theo id nếu nhiều file có
+    /* Gom gammasets ra top-level (tab Color Themes cần danh sách 44
+       preset + từng gammagroup {id, value, gray, boost}). Nguồn duy nhất
+       là color-presets.xml; first-wins theo id nếu nhiều file có
        gammaset trùng id. `gray`/`boost` chỉ ghi nhận, chưa áp (xem
        renderer.applyColorTheme: chỉ áp `value` theo công thức
        1+v/4096 kẹp [0.4,1.6]). */
@@ -721,17 +700,17 @@
       }
     }
 
-    /* ĐỢT D — suy embeddedAvs từ model lúc nạp (SPEC §2.2: model KHÔNG có
-       cờ embeddedAvs, v9 tự suy). Skin Modern có vùng nhúng khi và chỉ khi:
+    /* Suy embeddedAvs từ model lúc nạp (SPEC §2.2: model KHÔNG có cờ
+       embeddedAvs, v9 tự suy). Skin Modern có vùng nhúng khi và chỉ khi:
        (a) có groupdef "AVSGroup", (b) tìm được instance của nó trong một
        groupdef khác (vị trí tuyệt đối = vị trí instance trong content +
        frameOffsetY), (c) bên trong AVSGroup có instance "video.group"
        (vùng vẽ thật). Cao AVS = snapadjustbottom (116 với skin 566) —
-       KHÔNG có thuộc tính XML nào ghi trực tiếp 116 (VERIFIED-NUMBERS.md
-       §3c: số 116 duy nhất trong XML là snapadjustbottom của ngăn kéo;
-       nhất quán với dải trên 21 + video 69 + dải dưới 26 = 116).
-       Skin không thỏa (vd Classic .wsz) → null, renderer đi cửa sổ rời.
-       Kết quả với winampmodern566.wal: {x:0, y:35, w:354, h:116,
+       KHÔNG có thuộc tính XML nào ghi trực tiếp 116 (số 116 duy nhất
+       trong XML là snapadjustbottom của ngăn kéo; nhất quán với dải trên
+       21 + video 69 + dải dưới 26 = 116). Skin không thỏa (vd Classic
+       .wsz) → null, renderer đi cửa sổ rời. Kết quả với
+       winampmodern566.wal: {x:0, y:35, w:354, h:116,
        videoRect:{x:4, y:21, w:346, h:69}}. */
     function resolveRelPos(el, attr, parent) {
       var v = intAttr(el, attr, 0);

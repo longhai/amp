@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<!-- Đợt G — color-scheme: dark: trang này là trang TỐI (nền #141414) nhưng
+<!-- color-scheme: dark: trang này là trang TỐI (nền #141414) nhưng
      vẽ skin Winamp SÁNG (menubar RGB ~236, chữ đen). Chrome trên Android
      khi bật dark mode sẽ "force-dark" trang không khai báo scheme: nó đảo
      ngược ảnh sáng → menubar thành nền tối chữ sáng (vệt đen đo được trên
@@ -13,16 +13,16 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.3 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.4 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  /* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN (skin Winamp): không tiêu đề,
+  /* màn hình CHỈ HIỆN GIAO DIỆN (skin Winamp): không tiêu đề,
      không dòng mô tả/version, không hàng nút HTML, không chữ hướng dẫn.
      Chỉ còn: cửa sổ skin (#stage) + 1 nút menu nhỏ ⋯ ở góc dưới-phải
      (nạp skin / thêm nhạc / zoom) + banner đỏ chỉ hiện khi lỗi. */
   html,body{margin:0;padding:0;background:#141414;color:#ccc;font-family:Verdana,Arial,sans-serif;}
-  /* Đợt 9.5 (lỗi 3+4): body padding 0 — trước đây padding:8px đẩy toàn
+  /* body padding 0 — trước đây padding:8px đẩy toàn
      bộ stage sang phải 8px (trái hở, phải bị cắt: cửa sổ chính 354px
      tới x=362 trên viewport 360px; playlist 436px cắt 84px). Giờ các
      cửa sổ sát mép trái, cửa sổ chính vừa khít viewport 360px.
@@ -32,7 +32,7 @@
      stage đổi cao (mở ngăn kéo) rồi mờ đi lúc nghỉ. Ẩn thanh cuộn nhưng
      vẫn giữ overflow-x:auto nên vẫn vuốt ngang được để xem playlist. */
   body{text-align:center;padding:0;}
-  /* Đợt 9.5 (lỗi 6): stage/wrap co giãn chiều cao MƯỢT (250ms ease, khớp
+  /* stage/wrap co giãn chiều cao MƯỢT (250ms ease, khớp
      DRAWER_ANIM_MS) để đáy stage bám đáy ngăn kéo lúc trượt ra/vào —
      không còn khoản nền đen #000 lộ ra dưới ngăn kéo trong lúc trượt
      (trước đây stage nhảy ngay lên 280px lúc mở, ngăn kéo trượt sau
@@ -49,7 +49,7 @@
   .stage .txt{position:absolute;overflow:hidden;white-space:nowrap;pointer-events:none;line-height:1;}
   .stage .txt .glyph{display:inline-block;vertical-align:top;background-repeat:no-repeat;}
   .stage .ticker{position:absolute;overflow:hidden;white-space:nowrap;pointer-events:none;}
-  .stage .ticker .inner{display:inline-block;white-space:nowrap;will-change:transform;}
+  .stage .ticker .txt{will-change:transform;}
   .stage .vis{position:absolute;pointer-events:none;}
   .stage .rect{position:absolute;pointer-events:none;}
   .stage .pl-list{position:absolute;overflow-y:auto;overflow-x:hidden;font-family:Arial,sans-serif;pointer-events:auto;}
@@ -94,7 +94,7 @@
      tay làm cách duy nhất để nạp skin. Quy tắc [hidden] còn lại cho
      #menu-pop và #btn-reopen. */
   #menu-pop[hidden],#btn-reopen[hidden],#maki-panel[hidden]{display:none;}
-  /* Đợt 7 (03/11): bảng xem MAKI — nền sáng như menu ⋯, giữa màn hình,
+  /* bảng xem MAKI — nền sáng như menu ⋯, giữa màn hình,
      cuộn trong khi cần; quy tắc [hidden] ở trên (đặt SAU display) để
      thuộc tính hidden thật sự ẩn panel (bài học panel chọn skin đợt 4). */
   #maki-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:55;
@@ -129,7 +129,7 @@
   <button data-act="milkdrop">Milkdrop: Tắt</button>
   <button data-act="maki">Xem script MAKI…</button>
 </div>
-<!-- Đợt 7 (03/11, giai đoạn a: chỉ ĐỌC/inspect MAKI, không chạy): bảng xem
+<!-- bảng xem
      script MAKI của skin đang nạp — liệt kê file .maki + method ẩn/hiện.
      Chỉ hiện khi bấm mục "Xem script MAKI…" trong menu ⋯; không thêm
      chrome thường trực (màn hình vẫn chỉ hiện skin khi đóng panel). -->
@@ -140,86 +140,37 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.3" là nguồn sự thật, đặt TRƯỚC
-   mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js /
-   classic.js / milkdrop.js / metadata.js đọc window.AMP_VERSION lúc nạp để tự
-   kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và
-   DỪNG + báo "bản mix" nếu lệch 1 file.
-   Đổi version thì đổi CHỖ NÀY + 8 hằng version trong 8 file JS + ?v=
-   trên 8 thẻ script.
-   Đợt 4 (03/11): thêm milkdrop.js (Milkdrop/butterchurn, file thứ 7) —
-   Đợt 5 (03/11): thêm metadata.js (đọc tag nhạc local, file thứ 8) —
-   nạp TRƯỚC renderer.js để renderer tiêm qua opts.metadata /
-   window.AmpMetadata lúc tạo (như eqf.js); lib music-metadata chỉ
-   nạp lười qua dynamic import() khi thêm file nhạc lần đầu.
-   Đợt 5 (03/11, GỠ chọn skin từ kho): BỎ LUÔN skin-browser.js +
-   panel #skin-panel + mục menu "Chọn skin từ kho…" theo chốt của Hải
-   (chạy trên mạng không nạp trực tiếp skin từ kho vào được mà phải
-   tải về đưa lên nên cửa sổ đó vô dụng; lúc test danh sách trong
-   panel cũng đang trống). Chỉ giữ "Nạp skin .wal/.wsz/.zip…" chọn file
-   tay làm cách duy nhất để nạp skin. Số file JS còn 8 (đúng số
-   hằng version ở trên).
-   Đợt 6 (03/11: Media Session API + hotkeys — lấy từ mediaSession.ts /
-   hotkeys.ts của fork, gỡ khỏi Redux, nối vào renderer.js): KHÔNG thêm
-   file JS mới, không đổi loader → GIỮ "10.1". Listener phím tắt cũ
-   (chỉ Space, đợt E) thay bằng delegate sang renderer.handleHotkey.
-   KHÔNG đổi loader nên GIỮ "10.1".
-   Đợt 7 (03/11, giai đoạn a: MAKI parser — chỉ ĐỌC/inspect, không chạy):
-   thêm maki.js (MAKI_VERSION 10.1, port parser.ts/MakiFile.ts/constants.ts
-   + bảng GUID/arity từ objectData của fork) + mục menu ⋯ "Xem script
-   MAKI…" + panel #maki-panel (chỉ xem, không chạy). KHÔNG đổi loader →
-   GIỮ "10.1". Số file JS nay là 8. Giai đoạn b (interpreter thật nối vào
-   renderer) để sau — xem README mục Đợt 7.
-   Đợt v10.1 (việc 3: Classic skin parser — CÓ đổi loader nên bump
-   10.0 → 10.1): loader parse thật skin Classic (.wsz) bằng classic.js
-   mới (chuyển từ parser của Webamp fork: viscolor/pledit/region/genex
-   + bảng tọa độ sprite + hình học cửa sổ chính 275×116); renderer vẽ
-   được cửa sổ chính Classic + shade 275×14, nút bấm được (transport/
-   seek/volume/balance/EQ/PL/shade/minimize/close/clutter/about).
-   Đợt v10.0: 9.9 → 10.0 (tích hợp Webamp fork đợt 1: winamp-eqf; sửa
-   display/beat theo XML; vis AVS kiểu Webamp; zoom/fit + cân dọc; thêm
-   nhạc 1 bài/thư mục; viên KBPS/KHZ; kéo resize mượt + tay nắm thấy
-   được; Fit tính lại khi mở/đóng/tách/gắn cửa sổ).
-   Đợt v10.0 (việc 2: chọn skin từ kho Webamp — skin-browser.js):
-   ĐÃ GỠ HẲN ở đợt 5 (03/11, xem ghi chú manifest trên) — không còn
-   panel #skin-panel, không còn menu "Chọn skin từ kho…", chỉ giữ
-   "Nạp skin .wal/.wsz/.zip…" chọn file tay.
-   Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
-   Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
-   Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
-   sửa lệch phải + lằn ngang đáy ngăn kéo lúc trượt = thanh cuộn #stage-wrap).
-   Đợt J: 9.5 → 9.6 (6 điểm 3/11: chữ titlebar căn giữa + dời streak; nút X
-   góc phải hiện lại; shadow ngăn kéo vẽ dưới tab; RepeatDisplay vẽ theo
-   state; menu nền sáng + chống cắt; nền stage lót texture skin).
-   Đợt K: 9.6 → 9.7 (3 điểm 3/11: chỉ báo stereo/mono; font songinfo vẽ nguyên
-   bản không đảo alpha; vis vẽ lại vạch mẫu khi analyser im + cột trắng theo
-   XML; VIDEO/VIS KHÔNG thêm — XML 566 không có chữ đó; sửa self-check 17→35).
-   Đợt L: 9.7 → 9.8 (3/11: TV360 qua vmttv nghe tiếng không thấy hình —
-   isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
-   + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
-   thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "10.3";
+/* VERSION MANIFEST DUY NHẤT: "10.4" là nguồn sự thật, đặt TRƯỚC mọi
+   file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
+   renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
+   (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
+   báo "bản mix" nếu lệch 1 file. Đổi version thì đổi CHỖ NÀY + 8 hằng
+   version trong 8 file JS + ?v= trên 8 thẻ script.
+   Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
+   tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
+   đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
+window.AMP_VERSION = "10.4";
 </script>
-<script src="classic.js?v=10.3"></script>
-<script src="skin-loader.js?v=10.3"></script>
-<script src="audio.js?v=10.3"></script>
-<script src="eqf.js?v=10.3"></script>
-<script src="milkdrop.js?v=10.3"></script>
-<script src="metadata.js?v=10.3"></script>
-<script src="maki.js?v=10.3"></script>
-<script src="renderer.js?v=10.3"></script>
+<script src="classic.js?v=10.4"></script>
+<script src="skin-loader.js?v=10.4"></script>
+<script src="audio.js?v=10.4"></script>
+<script src="eqf.js?v=10.4"></script>
+<!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn KHÔNG có
+     thẻ <script src> ở đây: loader nạp ĐỘNG từ CDN jsDelivr khi bật
+     Milkdrop lần đầu (lazy) — xem 3 link ở ĐẦU milkdrop.js
+     (BUTTERCHURN_CDN / PRESETS_CDN / DEFAULT_PRESET_URL). -->
+<script src="milkdrop.js?v=10.4"></script>
+<script src="metadata.js?v=10.4"></script>
+<script src="maki.js?v=10.4"></script>
+<script src="renderer.js?v=10.4"></script>
 <script>
 "use strict";
-/* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.3" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
-   trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
-   "9.2" (audio.js là file mới, cùng version 9.2).
-   Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
-   ngay trước 6 file JS); mỗi file tự đối chiếu manifest lúc nạp
-   (MANIFEST_MISMATCH) để file cũ trên host tự tố mình.
-   Đợt G (9.3): shade mode (layout main|shade 354×25), sửa lằn đen menubar
-   (meta color-scheme: dark chống Chrome force-dark), tab ngăn kéo ẩn khi
-   đóng, ngăn kéo trượt bằng CSS transition (renderer.toggleDrawerAnimated). */
+/* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
+   VERSION = "10.4" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
+   window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
+   tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
+   host tự tố mình. */
 /* BẮT BUỘC: bind rõ từng phần tử theo id ngay đầu script — không dựa vào
    biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
 var $ = function (s) { return document.querySelector(s); };
@@ -227,26 +178,26 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.3";
-var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
+var VERSION = "10.4";
+var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
-/* Đợt 4 (03/11): crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
+/* crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
    crossfadeMs: 0 = tắt, mặc định 2000 (2s); milkdropOn: mặc định TẮT
    (tốn GPU/pin — bật từ menu ⋯ khi cần). */
 var crossfadeMs = 2000;
-var milkdropOn = false, milkdropCtl = null;
+var milkdropOn = false, milkdropCtl = null, milkdropLastErrorShown = "";
 try { var _xf = parseInt(localStorage.getItem("amp9-xfade-ms") || "2000", 10); if (isFinite(_xf) && _xf >= 0 && _xf <= 10000) crossfadeMs = _xf; } catch (e) { /* bỏ qua */ }
 try { milkdropOn = localStorage.getItem("amp9-milkdrop-v1") === "1"; } catch (e) { milkdropOn = false; }
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
-var shadeMode = false; /* đợt G: shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
-var playlistOpen = false; /* đợt C: playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
-/* Đợt A (9.9, việc 1): Media Library mặc định đóng; mở bằng nút ML trong
+var shadeMode = false; /* shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
+var playlistOpen = false; /* playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
+/* Media Library mặc định đóng; mở bằng nút ML trong
    skin, menu View, hoặc nút X trên titlebar ML để đóng. */
-/* Đợt A (9.9, việc 6): kích thước cửa sổ đã kéo (playlist/ML/video rời),
+/* kích thước cửa sổ đã kéo (playlist/ML/video rời),
    lưu localStorage "amp9-winsize-v9", khôi phục khi nạp trang. */
 var mlOpen = false;
 
-/* Đợt G — màn hình CHỈ HIỆN GIAO DIỆN: không còn dòng version thường
+/* màn hình CHỈ HIỆN GIAO DIỆN: không còn dòng version thường
    trực trên màn hình. Thông báo thường → console (im lặng trên màn
    hình); chỉ LỖI mới hiện banner đỏ #status (version lệch, không nạp
    được skin...). Self-check KHÔNG còn banner (đợt 9.5: bỏ theo yêu cầu
@@ -263,7 +214,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.3 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.4 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -273,7 +224,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.3 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.4 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -286,7 +237,7 @@ function checkVersions() {
   if (!window.AmpMetadata || window.AmpMetadata.METADATA_VERSION !== VERSION) bad.push("metadata.js v" + (window.AmpMetadata ? window.AmpMetadata.METADATA_VERSION : "?"));
   if (!window.AmpMaki || window.AmpMaki.MAKI_VERSION !== VERSION) bad.push("maki.js v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?"));
   if (window.AmpSkinLoader && window.AmpSkinLoader.LOADER_VERSION !== window.AmpSkinLoader.EXPECTED_LOADER_VERSION) bad.push("loader lệch EXPECTED_LOADER_VERSION");
-  /* Đợt F — mỗi file tự đối chiếu với manifest lúc nạp (MANIFEST_MISMATCH):
+  /* mỗi file tự đối chiếu với manifest lúc nạp (MANIFEST_MISMATCH):
      file cũ trên host/cache sẽ tự tố mình dù hằng VERSION trong trang đã mới. */
   if (window.AmpSkinLoader && window.AmpSkinLoader.MANIFEST_MISMATCH) bad.push("skin-loader.js v" + window.AmpSkinLoader.LOADER_VERSION + " (manifest v" + VERSION + ")");
   if (window.AmpAudio && window.AmpAudio.MANIFEST_MISMATCH) bad.push("audio.js v" + window.AmpAudio.AUDIO_VERSION + " (manifest v" + VERSION + ")");
@@ -302,7 +253,7 @@ function checkVersions() {
   }
   return true;
 }
-/* Đợt E — lưu state phát (playing/current/repeat/shuffle/volume/EQ) vào
+/* lưu state phát (playing/current/repeat/shuffle/volume/EQ) vào
    localStorage, debounce 300ms vì kéo slider gọi liên tục. */
 var savePlayTimer = 0;
 function savePlaybackState(st) {
@@ -328,7 +279,7 @@ function ensureJSZip() {
     document.head.appendChild(s);
   });
 }
-/* Đợt G — chỉ 2 chế độ zoom: "1" (cỡ gốc) và "fit" (Vừa màn hình).
+/* chỉ 2 chế độ zoom: "1" (cỡ gốc) và "fit" (Vừa màn hình).
    Đợt 9.5 (lỗi 3+4): fit được phép THU NHỎ dưới 1x để vừa màn hình
    (trước đây max(1,s) chặn lại nên playlist 436px trên viewport 360px
    luôn bị cắt góc phải); availW lấy đủ chiều rộng cha, không trừ 24px
@@ -347,7 +298,7 @@ function setZoom(mode) {
   var s = 1;
   if (mode === "fit") {
     var availW = Math.max(200, stageWrap.parentElement.clientWidth);
-    /* Đợt v10.0 (việc 4: zoom/fit — 15:05/15:24/15:31/15:32): availH
+    /* availH
        chỉ trừ 8px mép. Số 340 cũ bóp chết chiều cao: trên điện thoại
        availH ≈ 320 < chồng main+playlist 325 nên Fit thu nhỏ oan
        xuống 0.63–0.90 dù chiều rộng đã vừa; mở/đóng/tách/gắn cửa sổ
@@ -359,7 +310,7 @@ function setZoom(mode) {
   stage.style.transform = "scale(" + s + ")";
   stageWrap.style.width = "100%";
   stageWrap.style.height = Math.round(LH * s) + "px";
-  /* Đợt v10.0 (việc 4): cân đều theo chiều dọc trên màn rộng (PC):
+  /* cân đều theo chiều dọc trên màn rộng (PC):
      chồng cửa sổ nằm giữa viewport (giống hành vi restack cân đều của
      Webamp fork khi ẩn/hiện cửa sổ); điện thoại (<700px) giữ sát đỉnh
      như cũ. margin-top có transition cùng height (CSS) nên lúc mở/đóng
@@ -367,7 +318,7 @@ function setZoom(mode) {
   var mt = 0;
   if (window.innerWidth >= 700) mt = Math.max(0, Math.round((window.innerHeight - LH * s) / 2));
   stageWrap.style.marginTop = mt + "px";
-  /* Đợt 9.5 (lỗi 4): margin 0 khi stage (đã scale) gần lấp đầy wrap
+  /* margin 0 khi stage (đã scale) gần lấp đầy wrap
      (trong 1px) — trước đây chỉ khi ">" nên trường hợp vừa khít
      (LW*s == clientWidth, vd 354×1.017=360) vẫn giữ "0 auto" (3px mỗi
      bên), cộng scale khiến mép phải tràn 3px ra ngoài wrap. */
@@ -380,11 +331,11 @@ function setZoom(mode) {
     if (z1) z1.classList.toggle("on", mode === "1");
     if (zf) zf.classList.toggle("on", mode === "fit");
   }
-  /* Đợt 4: nhãn crossfade/Milkdrop chỉ cập nhật khi MỞ menu (toggleMenu
+  /* nhãn crossfade/Milkdrop chỉ cập nhật khi MỞ menu (toggleMenu
      gọi markMenuChecks) — không gọi ở đây để setZoom trích độc lập được
      cho test (zoom-fit-test eval riêng hàm này). */
 }
-/* Đợt 4 (03/11) — mục Crossfade + Milkdrop trong menu ⋯. */
+/* mục Crossfade + Milkdrop trong menu ⋯. */
 function xfadeLabel(ms) { return ms <= 0 ? "Tắt" : (ms / 1000) + "s"; }
 function markMenuChecks() {
   if (!menuPop) return;
@@ -414,14 +365,57 @@ function ensureMilkdropCtl() {
   return milkdropCtl;
 }
 /* Đồng bộ Milkdrop với trạng thái AVS sau mỗi lần render: chỉ chạy vòng
-   render khi AVS đang mở ở chế độ vis; cỡ canvas theo hộp AVS hiện tại. */
+   render khi AVS đang mở ở chế độ vis; cỡ canvas theo hộp AVS hiện tại.
+   Đồng bộ cả trạng thái PHÁT từ engine — nếu không, bật Milkdrop khi
+   nhạc ĐANG phát thì vòng render không bao giờ chạy (setPlaying(true)
+   chỉ bắn khi trạng thái phát ĐỔI, mà nhạc đã phát từ trước khi tạo
+   milkdropCtl): visualizer + preset đã nạp mà canvas vẫn đen. */
 function syncMilkdrop() {
   if (!milkdropCtl || !milkdropOn || !renderer) return;
   try {
-    var st = renderer.getAvsState ? renderer.getAvsState() : null;
-    milkdropCtl.setVisible(!!(st && st.open && st.mode === "vis"));
+    var eng = null;
+    try { eng = audioEngine && audioEngine.getState ? audioEngine.getState() : null; } catch (e) { eng = null; }
+    if (eng) milkdropCtl.setPlaying(!!eng.playing);
+    /* v10.4 — CHO GAY MILKDROP DEN (anh dien thoai that 22:05: Milkdrop
+       BAT ✓ + nhac phat + EQ bat ma vung AVS den thui, khong bao loi):
+       renderer (applyMilkdropVisibility) HIEN canvas Milkdrop khi AVS
+       mo + khong co hinh that — KE CA che do "video" (mac dinh) — nhung
+       syncMilkdrop cu chi cho vong render chay khi mode === "vis".
+       Canvas hien ma loop khong chay, lai them setVisible(false) an
+       canvas di sau khi renderer vua hien (ten kenh cung an theo vi
+       syncAvsName tuong canvas dang hien) = vung AVS den hoan toan,
+       khong mot loi nao. Nay: vong render chay DUNG khi canvas dang
+       hien theo renderer (getMilkdropState().shown), khong theo mode
+       nua. Thieu getMilkdropState (test cu) thi roi ve dieu kien cu. */
+    var mdShown = null;
+    try {
+      var gmd = renderer.getMilkdropState ? renderer.getMilkdropState() : null;
+      if (gmd) mdShown = !!gmd.shown;
+    } catch (e) { mdShown = null; }
+    if (mdShown === null) {
+      var st = renderer.getAvsState ? renderer.getAvsState() : null;
+      mdShown = !!(st && st.open && st.mode === "vis");
+    }
+    milkdropCtl.setVisible(mdShown);
     milkdropCtl.syncSizeFromWrap();
-    milkdropCtl.ensureReady();
+    var er = milkdropCtl.ensureReady();
+    /* v10.4 — loi Milkdrop ton tai (CDN/WebGL/preset/canvas) phai HIEN
+       banner do chu khong chi ghi console (xem reportMilkdropError). */
+    if (er && er.then) er.then(function () { reportMilkdropError(); });
+    reportMilkdropError();
+  } catch (e) { /* bỏ qua */ }
+}
+/* v10.4 — bao loi Milkdrop ton tai len banner do #status (moi loi chi
+   bao 1 lan; het loi thi reset de loi sau bao lai duoc). */
+function reportMilkdropError() {
+  if (!milkdropCtl || !milkdropOn) return;
+  try {
+    var ms = milkdropCtl.getState ? milkdropCtl.getState() : null;
+    if (!ms) return;
+    if (!ms.error) { milkdropLastErrorShown = ""; return; }
+    if (ms.error === milkdropLastErrorShown) return;
+    milkdropLastErrorShown = ms.error;
+    setStatus("Milkdrop: " + ms.error + ".", true);
   } catch (e) { /* bỏ qua */ }
 }
 async function toggleMilkdrop() {
@@ -442,12 +436,19 @@ async function toggleMilkdrop() {
   var canvas = ctl.attachTo(wrap);
   if (renderer && renderer.setMilkdropCanvas) renderer.setMilkdropCanvas(canvas);
   try {
-    await ctl.enable();
+    var mdState = await ctl.enable();
+    /* enable() có thể xong mà chưa có visualizer (chưa có AudioContext):
+       khi đó Milkdrop vẫn BẬT để ensureReady() tự tạo nốt khi phát nhạc,
+       nhưng phải báo RÕ ra banner đỏ chứ không để AVS đen im lặng. */
+    if (mdState && !mdState.visualizerReady && mdState.error) {
+      milkdropLastErrorShown = mdState.error;
+      setStatus("Milkdrop: " + mdState.error + ".", true);
+    }
   } catch (e) {
     milkdropOn = false;
     try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e2) { /* bỏ qua */ }
     if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
-    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vùng AVS để đen (v10.3).", true);
+    setStatus("Không bật được Milkdrop: " + (e && e.message ? e.message : e) + " — vùng AVS để đen (v10.4).", true);
     markMenuChecks();
     return false;
   }
@@ -458,7 +459,7 @@ async function toggleMilkdrop() {
   markMenuChecks();
   return true;
 }
-/* Đợt B (9.9) — "Animate Video/Vis Drawer" tắt thì AVS mở/đóng TỨC THÌ
+/* "Animate Video/Vis Drawer" tắt thì AVS mở/đóng TỨC THÌ
    (không trượt theo transition height 250ms của .stage/#stage-wrap).
    Theo dõi trạng thái AVS + ngăn kéo lần render trước: chỉ tắt transition
    khi LẦN NÀY chỉ đổi AVS (không đổi ngăn kéo) — mở ngăn kéo vẫn trượt
@@ -476,7 +477,7 @@ async function renderCurrent() {
   var instantAvs = avsAnimOff && avsChanged && !drawerChanged;
   if (instantAvs) { stage.style.transition = "none"; stageWrap.style.transition = "none"; }
   try {
-  /* Đợt C: playlist mở thì xếp chồng Player + Playlist (stage rộng 436);
+  /* playlist mở thì xếp chồng Player + Playlist (stage rộng 436);
      đóng thì chỉ cửa sổ chính (354). Tổng cao = playerH + playlistH:
      ngăn kéo đóng 156+164=320 (đỉnh ngăn kéo lộ 13px), ngăn kéo mở
      259+164=423.
@@ -495,13 +496,13 @@ async function renderCurrent() {
   }
   setZoom(zoom);
   checkDrawer();
-  syncMilkdrop(); /* Đợt 4: Milkdrop theo trạng thái AVS sau mỗi render */
+  syncMilkdrop(); /* Milkdrop theo trạng thái AVS sau mỗi render */
   } finally {
     prevAvsOpenAnim = avsNow; prevDrawerOpenAnim = drawerOpen;
     if (instantAvs) setTimeout(function () { stage.style.transition = ""; stageWrap.style.transition = ""; }, 60);
   }
 }
-/* Đợt G — chuyển normal<->shade (nút winshade trong skin / bấm đúp nền
+/* chuyển normal<->shade (nút winshade trong skin / bấm đúp nền
    shade). Lưu localStorage để tải lại trang giữ nguyên chế độ. Khi sang
    shade thì ẩn ngăn kéo + vùng AVS nhúng (chỉ còn thanh bar 25px);
    avsState được giữ nguyên nên về normal thì AVS hiện lại như cũ. */
@@ -510,14 +511,14 @@ function setShadeMode(open) {
   try { localStorage.setItem("amp9-shade-v9", shadeMode ? "1" : "0"); } catch (e) { /* private mode */ }
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
 }
-/* Đợt C: mở/đóng playlist (nút PL trong skin, menu View, nút đóng X của
+/* mở/đóng playlist (nút PL trong skin, menu View, nút đóng X của
    cửa sổ Playlist). Đóng/mở thì các cửa sổ xếp lại theo đúng thứ tự
    chồng (main → drawer → playlist). */
 function setPlaylistOpen(open) {
   playlistOpen = !!open;
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
 }
-/* Đợt A (9.9, việc 1): mở/đóng Media Library (nút ML trong skin, menu
+/* mở/đóng Media Library (nút ML trong skin, menu
    View → Media Library, nút X trên titlebar ML). Skin không có ML
    (vd Classic .wsz) thì báo rõ, không mở cửa sổ trống. */
 function setMlOpen(open) {
@@ -528,7 +529,7 @@ function setMlOpen(open) {
   mlOpen = !!open;
   renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); });
 }
-/* Đợt A (9.9, việc 6): kéo đổi kích thước cửa sổ xong → lưu localStorage
+/* kéo đổi kích thước cửa sổ xong → lưu localStorage
    để lần nạp trang sau giữ nguyên (theo từng cửa sổ). */
 function saveWinSizes(sizes) {
   try { localStorage.setItem("amp9-winsize-v9", JSON.stringify(sizes || {})); } catch (e) { /* private mode */ }
@@ -550,7 +551,7 @@ function loadWinSizes() {
 function checkDrawer() {
   if (!renderer) return;
   var errs = [];
-  /* Đợt G — shadeMode: không có ngăn kéo trong DOM (runDrawerSelfCheck
+  /* shadeMode: không có ngăn kéo trong DOM (runDrawerSelfCheck
      báo "không thấy ngăn kéo") và AVS nhúng bị ẩn theo thiết kế dù
      avsState đang mở — cả hai đều là false positive, bỏ qua. Self-check
      tiếng vẫn chạy (engine độc lập với layout). */
@@ -562,10 +563,10 @@ function checkDrawer() {
     try { errs = errs.concat(renderer.runAvsSelfCheck(stage) || []); } catch (e) { errs.push("self-check AVS loi: " + (e.message || e)); }
   }
   try { errs = errs.concat(renderer.runAudioSelfCheck() || []); } catch (e) { errs.push("self-check tieng loi: " + (e.message || e)); }
-  /* Đợt 9.5: chỉ ghi console, không hiện banner (đã gỡ #drawer-check). */
+  /* chỉ ghi console, không hiện banner (đã gỡ #drawer-check). */
   if (errs.length && window.console && console.warn) console.warn("[Amp] SELF-CHECK: " + errs.join(" | "));
 }
-/* Đợt G — mở/đóng ngăn kéo TRƯỢT MƯỢT bằng CSS transition trên transform
+/* mở/đóng ngăn kéo TRƯỢT MƯỢT bằng CSS transition trên transform
    (renderer.toggleDrawerAnimated): mở trượt xuống, đóng trượt lên, ~250ms.
    Vị trí cuối luôn do renderLayout đặt thẳng bằng `top` nên không kẹt
    giữa chừng (bấm liên tục: lần sau hủy timer lần trước, nội suy từ vị
@@ -613,7 +614,7 @@ function toggleDrawer(open) {
     }
   }, 50);
 }
-/* Đợt D (9.9) — MINIMIZE: web không thu nhỏ cửa sổ thật như Winamp
+/* MINIMIZE: web không thu nhỏ cửa sổ thật như Winamp
    desktop (không có taskbar/cửa sổ hệ thống); Amp ẩn giao diện + nút ⋯,
    hiện nút "Mở lại Amp", GIỮ TIẾNG đang phát — chung đường với nút X
    của cửa sổ chính (onPlayerClose). Bấm "Mở lại Amp" thì hiện lại. */
@@ -625,7 +626,7 @@ function hideUi() {
 }
 async function bootSkin(file, name) {
   setStatus("Đang mở " + name + " …");
-  /* Đợt C (9.9) — GIỮ SKIN CŨ khi skin mới nạp lỗi: chụp lại toàn bộ trạng
+  /* GIỮ SKIN CŨ khi skin mới nạp lỗi: chụp lại toàn bộ trạng
      thái đang chạy (model + renderer + engine + DOM stage) TRƯỚC khi thay
      bằng skin mới. Lỗi ở bất cứ bước nào (zip hỏng, không có layout chính
      dùng được, render lỗi) thì trả lại y nguyên + báo rõ, KHÔNG để trang
@@ -640,10 +641,10 @@ async function bootSkin(file, name) {
     var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
     SKIN = loaded.skin; RES = loaded.resolve;
     renderer = window.AmpRenderer.createRenderer(RES, document, {
-      /* Đợt v10.1 (Classic): truyền tường minh lib classic.js để renderer
+      /* truyền tường minh lib classic.js để renderer
          vẽ cửa sổ chính .wsz (không dựa vào fallback globalThis). */
       Classic: window.AmpClassic || null,
-      /* Đợt 5 (03/11: metadata nhạc): truyền tường minh lib metadata.js
+      /* truyền tường minh lib metadata.js
          để renderer đọc tag file local (không dựa vào fallback global). */
       metadata: window.AmpMetadata || null,
       /* v10.3 — tien trinh doc tag thu muc local: chi ghi console (man
@@ -655,54 +656,59 @@ async function bootSkin(file, name) {
         setStatus(st.running ? ("Đang đọc tag " + st.done + "/" + st.total + " bài…")
           : ("Đã đọc tag xong: " + st.done + "/" + st.total + " bài."));
       },
-      /* Đợt G — onRerender TRẢ VỀ promise của renderCurrent để
+      /* onRerender TRẢ VỀ promise của renderCurrent để
          toggleDrawerAnimated chờ vẽ xong mới bắt đầu trượt. */
       onRerender: function () { return renderCurrent().catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
       onDrawerToggle: function (open) { toggleDrawer(open); },
-      /* Đợt G — nút winshade trong skin (SWITCH param=shade/normal) /
+      /* nút winshade trong skin (SWITCH param=shade/normal) /
          bấm đúp nền shade: chuyển chế độ + lưu localStorage. */
       onShadeToggle: function (open) { setShadeMode(open); },
-      /* Đợt C: nút PL trong skin / menu View / nút đóng X của playlist. */
+      /* nút PL trong skin / menu View / nút đóng X của playlist. */
       onPlaylistToggle: function (open) {
         if (open === undefined) setPlaylistOpen(!playlistOpen);
         else setPlaylistOpen(!!open);
       },
-      /* Đợt A (9.9, việc 1): nút ML trong skin / menu View / nút đóng X
+      /* nút ML trong skin / menu View / nút đóng X
          của cửa sổ ML. */
       onMlToggle: function (open) {
         if (open === undefined) setMlOpen(!mlOpen);
         else setMlOpen(!!open);
       },
       isMlOpen: function () { return mlOpen; },
-      /* Đợt A (9.9, việc 6): kéo đổi kích thước cửa sổ xong → lưu. */
+      /* kéo đổi kích thước cửa sổ xong → lưu. */
       onWinSizeChange: function (sizes) { saveWinSizes(sizes); },
       /* v9.6 (Điểm 2): nút X của cửa sổ chính — web không "thoát app"
          như Winamp thật: ẩn giao diện + nút ⋯, hiện nút "Mở lại Amp"
          (không dừng tiếng; bấm nút mở lại thì giao diện hiện lại). */
       onPlayerClose: function () { hideUi(); },
-      /* Đợt D (9.9) — MINIMIZE (nút thu nhỏ cửa sổ chính + shade):
+      /* MINIMIZE (nút thu nhỏ cửa sổ chính + shade):
          cùng đường hideUi với nút X (ghi rõ ở trên: không phải minimize
          của desktop, chỉ ẩn giao diện + giữ tiếng). */
       onMinimize: function () { hideUi(); },
-      /* Đợt D (9.9) — Preferences "Nạp skin…" / menu File "Nạp skin…":
+      /* Preferences "Nạp skin…" / menu File "Nạp skin…":
          mở hộp chọn file .wal/.wsz của trang (giống mục "skin" của
          menu ⋯ và kéo-thả file vào trang). */
       onOpenSkinPicker: function () { fileInput.click(); },
-      /* Đợt D (9.9) — Preferences "Zoom": 1x / Vừa màn hình (giống
+      /* Preferences "Zoom": 1x / Vừa màn hình (giống
          menu ⋯; chỉ 2 chế độ này, theo chốt 3/11). */
       onZoom: function (mode) { setZoom(mode); },
-      /* Đợt v10.1 — nút D trên clutter bar Classic cần biết zoom hiện
+      /* nút D trên clutter bar Classic cần biết zoom hiện
          tại để đổi 1x/fit + sáng đèn khi đang fit. */
       isZoomFit: function () { return zoom === "fit"; },
-      /* Đợt D (9.9) — Preferences / menu Options "Thu gọn (Shade)":
+      /* Preferences / menu Options "Thu gọn (Shade)":
          đọc trạng thái shade hiện tại để đánh dấu ✓ và đảo trạng thái. */
       isShadeMode: function () { return shadeMode; },
-      /* Đợt D (9.9) — About: tên/phiên bản/tác giả của skin đang nạp
+      /* v10.4 — menu Vis/Video trong renderer cũng bật/tắt được Milkdrop
+         (cùng đường toggleMilkdrop với menu ⋯; trạng thái đọc từ
+         milkdropOn để đánh ✓). */
+      onMilkdropToggle: function () { toggleMilkdrop(); },
+      isMilkdropOn: function () { return milkdropOn; },
+      /* About: tên/phiên bản/tác giả của skin đang nạp
          (SKIN do loader trả về; đổi skin thì bootSkin tạo renderer mới
          với SKIN mới). */
       skinInfo: SKIN,
       isPlaylistOpen: function () { return playlistOpen; },
-      /* Đợt C: menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
+      /* menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
          thư mục rồi đặt làm dữ liệu playlist (41 kênh). */
       onReloadRadio: async function () {
         try {
@@ -714,15 +720,15 @@ async function bootSkin(file, name) {
           }
         } catch (e) { setStatus("Không nạp lại được radio.m3u: " + (e.message || e), true); }
       },
-      /* Đợt D — đường (d) restore: lưu state AVS (mở/chế độ/tách rời/
+      /* đường (d) restore: lưu state AVS (mở/chế độ/tách rời/
          scale) mỗi khi đổi, để lần nạp trang sau mở lại đúng trạng thái. */
       onAvsChange: function (st) {
         try { localStorage.setItem("amp9-avs-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
       },
-      /* Đợt E — lưu state phát (playing/current/repeat/shuffle/volume/EQ)
+      /* lưu state phát (playing/current/repeat/shuffle/volume/EQ)
          mỗi khi đổi, để lần nạp trang sau khôi phục (trừ file local). */
       onPlaybackChange: function (st) { savePlaybackState(st); },
-      /* Đợt B (9.9) — lưu cfg Options (Show Menus / Animate / Detach /
+      /* lưu cfg Options (Show Menus / Animate / Detach /
          ticker / visbutton...) mỗi khi đổi, để lần nạp trang sau khôi
          phục (localStorage "amp9-cfg-v9"; không gồm Shuffle/Repeat/EQ
          vì đã có trong state phát). */
@@ -730,14 +736,14 @@ async function bootSkin(file, name) {
         try { localStorage.setItem("amp9-cfg-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
       }
     });
-    /* Đợt B (9.9) — khôi phục cfg Options đã lưu TRƯỚC lần render đầu
+    /* khôi phục cfg Options đã lưu TRƯỚC lần render đầu
        (ghi đè mặc định trong renderer; EQ/Shuffle/Repeat khôi sau qua
        state phát, không xung đột vì 2 key khác nhau). */
     try {
       var savedCfg = JSON.parse(localStorage.getItem("amp9-cfg-v9") || "null");
       if (savedCfg) renderer.restoreCfgState(savedCfg);
     } catch (e) { /* state lưu hỏng thì dùng mặc định */ }
-    /* Đợt E — tạo audio engine SAU renderer (engine cần getVideoEl/
+    /* tạo audio engine SAU renderer (engine cần getVideoEl/
        isVideoItem của renderer), rồi gắn vào renderer. */
     if (window.AmpAudio) {
       audioEngine = window.AmpAudio.createAudioEngine({
@@ -748,14 +754,14 @@ async function bootSkin(file, name) {
         onTimeUpdate: function (t, dur, seekable) { renderer.onAudioTimeUpdate(t, dur, seekable); },
         onEnded: function () { renderer.onAudioEnded(); },
         onError: function (info) { renderer.onAudioError(info); },
-        onEqFallback: function (info) { renderer.onAudioEqFallback(info); }, /* Đợt v10.2 — bật EQ gặp đài không CORS: engine tự về native, báo rõ */
-        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* đợt F: phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } },
+        onEqFallback: function (info) { renderer.onAudioEqFallback(info); }, /* bật EQ gặp đài không CORS: engine tự về native, báo rõ */
+        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } },
         onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
       });
       renderer.setAudioEngine(audioEngine);
-      /* Đợt 4: áp thời gian crossfade đã lưu (mặc định 2s). */
+      /* áp thời gian crossfade đã lưu (mặc định 2s). */
       if (audioEngine.setCrossfade) audioEngine.setCrossfade(crossfadeMs);
-      /* Đợt v10.2 — AUDIT (đổi skin): hủy engine cũ hẳn. Trước đây engine
+      /* AUDIT (đổi skin): hủy engine cũ hẳn. Trước đây engine
          cũ không bị dừng → thẻ audio cũ (không nằm trong DOM) vẫn phát
          tiếp → chồng tiếng với engine mới + rò AudioContext. Hủy SAU khi
          engine mới tạo xong để nếu tạo mới lỗi thì catch vẫn khôi phục
@@ -764,26 +770,26 @@ async function bootSkin(file, name) {
         try { prevSkin.audioEngine.destroy(); } catch (e) { /* bỏ qua */ }
       }
     }
-    /* Đợt D — restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
+    /* restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
     try {
       var savedAvs = JSON.parse(localStorage.getItem("amp9-avs-v9") || "null");
       if (savedAvs) renderer.restoreAvsState(savedAvs);
     } catch (e) { /* state lưu hỏng thì mở mặc định (đóng) */ }
-    /* Đợt A (9.9, việc 6): khôi phục kích thước cửa sổ đã kéo TRƯỚC lần
+    /* khôi phục kích thước cửa sổ đã kéo TRƯỚC lần
        render đầu (size sai/không còn đúng XML thì restoreWinSizes kẹp
        lại theo minimum/maximum trong XML, hỏng thì về mặc định). */
     try {
       var savedSizes = loadWinSizes();
       if (savedSizes) renderer.restoreWinSizes(savedSizes);
     } catch (e) { /* state lưu hỏng thì dùng kích thước mặc định */ }
-    /* Đợt G — khôi phục shadeMode đã lưu TRƯỚC lần render đầu (mặc định
+    /* khôi phục shadeMode đã lưu TRƯỚC lần render đầu (mặc định
        normal). Shade vẽ layout main|shade 354×25, không ngăn kéo/AVS. */
     try { shadeMode = localStorage.getItem("amp9-shade-v9") === "1"; } catch (e) { shadeMode = false; }
     var finalH = shadeMode
       ? await renderer.renderLayout("main", "shade", "WINAMP", {}, stage)
       : await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
     checkDrawer();
-    /* Đợt C: nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
+    /* nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
        (41 kênh, giữ tên + thứ tự gốc). Không có file thì playlist
        trống, vẫn vẽ được. */
     var playlistInfo = "Playlist: (trống) — chưa thấy radio.m3u cùng thư mục";
@@ -798,7 +804,7 @@ async function bootSkin(file, name) {
           + ") · tổng thời gian " + Math.floor(pst.total / 60) + ":" + String(pst.total % 60).padStart(2, "0");
       }
     } catch (e) { /* giữ playlist trống */ }
-    /* Đợt E — khôi phục state phát đã lưu (volume/EQ/repeat/shuffle/
+    /* khôi phục state phát đã lưu (volume/EQ/repeat/shuffle/
        mục đang chọn). Không tự phát lại. */
     try {
       var savedPlay = loadPlaybackState();
@@ -836,7 +842,7 @@ async function bootSkin(file, name) {
     if (window.console && console.info) console.info("[Amp]\n" + lines.join("\n"));
     logVersion("skin: " + (SKIN.name || name));
     setZoom(zoom);
-    /* Đợt 4: khôi phục Milkdrop đã bật ở lần trước (nạp lib lazy).
+    /* khôi phục Milkdrop đã bật ở lần trước (nạp lib lazy).
        Đợt v10.2 — AUDIT: trước đây gọi toggleMilkdrop() khi milkdropOn=true
        thì TẮT luôn Milkdrop sau mỗi lần đổi skin (toggle đảo trạng thái),
        trái ý "khôi phục". Sửa: tắt → reset visualizer (nó giữ ctx/analyser
@@ -857,7 +863,7 @@ async function bootSkin(file, name) {
       setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause; thêm phím tắt ở menu Help → Hướng dẫn nhanh). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
     }
   } catch (e) {
-    /* Đợt C — khôi phục skin cũ đang chạy (nếu có). Chưa từng nạp skin nào
+    /* khôi phục skin cũ đang chạy (nếu có). Chưa từng nạp skin nào
        thành công thì không có gì để khôi phục, chỉ báo lỗi như trước. */
     if (prevSkin.renderer) {
       RES = prevSkin.RES; SKIN = prevSkin.SKIN; renderer = prevSkin.renderer;
@@ -874,7 +880,7 @@ async function bootSkin(file, name) {
     }
   }
 }
-/* Đợt G — menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
+/* menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
    Chứa những thứ skin không làm được: nạp skin .wal/.wsz/.zip (chọn file),
    thêm nhạc local, đổi zoom 1x/fit. Mọi chức năng khác (ngăn kéo,
    playlist, Video/Vis) dùng qua chính skin: nút trong skin + menu View
@@ -924,7 +930,7 @@ function wireMenu() {
     else if (act === "maki") { openMakiPanel(); }
     closeMenu();
   });
-  /* Đợt 7 (03/11) — đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.
+  /* đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.
      Bỏ qua cú chạm mở panel trong 250ms (cú chạm mở nổi bọt lên document
      SAU khi open() chạy — bài học panel chọn skin đợt 4). */
   var makiCloseBtn = document.getElementById("maki-close");
@@ -942,7 +948,7 @@ function wireMenu() {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") closeMakiPanel();
   });
-  /* Đợt 6 (03/11) — phím tắt: renderer.handleHotkey nhận mọi phím
+  /* phím tắt: renderer.handleHotkey nhận mọi phím
      (Space, mũi tên, N/P, M, L, S, X/C/V…), tự bỏ qua khi focus trong
      ô nhập hoặc bấm kèm Ctrl/Alt/Meta, tự preventDefault khi đã xử lý.
      Đăng ký 1 lần ở đây (như phím Space đợt E) để đổi skin không đăng
@@ -965,7 +971,7 @@ function wireMenu() {
   });
 }
 wireMenu();
-/* Đợt 7 (03/11, giai đoạn a) — bảng "Xem script MAKI…": CHỈ XEM, không
+/* bảng "Xem script MAKI…": CHỈ XEM, không
    chạy code MAKI. Đọc file .maki của skin đang nạp từ zip (RES.zip do
    loader giữ), parse + inspect bằng window.AmpMaki rồi vẽ bảng tóm tắt:
    mỗi file 1 dòng (lệnh/call/binding/ẩn-hiện/gán text) + <details> mở
@@ -1051,7 +1057,7 @@ async function openMakiPanel() {
     makiBody.textContent = "Không đọc được script MAKI: " + (e && e.message ? e.message : e);
   }
 }
-/* Đợt 5 (03/11): openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
+/* openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
    ghi chú manifest trên) — nạp skin chỉ còn file tay (menu ⋯
    "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
    Panel MAKI ở trên (#maki-panel) là panel XEM script, không phải panel

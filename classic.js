@@ -1,33 +1,24 @@
 /* =====================================================================
-   Amp v10.1 — classic.js (ĐỢT v10.1, việc 3: Classic skin parser)
-   Chuyển parser skin Classic (.wsz, Winamp 2) của Webamp fork
-   (captbaritone/webamp v2.3.1) sang JS thuần cho Amp, KHÔNG bê Redux/
-   React — chỉ lấy dữ liệu định dạng + hàm thuần, rồi vẽ bằng renderer
-   của Amp (div + background-image, như Modern).
+   Amp v10.1 — classic.js: parser skin Classic (.wsz, Winamp 2).
+   Chuyển parser của Webamp fork (captbaritone/webamp v2.3.1) sang JS
+   thuần cho Amp, KHÔNG bê Redux/React — chỉ lấy dữ liệu định dạng +
+   hàm thuần, rồi vẽ bằng renderer của Amp (div + background-image).
 
-   Nguồn fork (đọc kỹ trước khi chuyển — xem ghi chú từng mục):
-   - packages/webamp/js/skinParser.js — giải .wsz: viscolor.txt,
-     pledit.txt, genex (đọc pixel genex.bmp), region.txt, cắt sprite
-     từ BMP theo bảng tọa độ, con trỏ .cur.
-   - packages/webamp/js/skinParserUtils.ts — getFileFromZip (không phân
-     biệt hoa/thường, file trùng tên thì file SAU thắng), getPlaylistStyle
-     (đọc pledit.txt), getGenExColors (đọc 22 màu ở hàng y=0 của genex.bmp,
-     x=48,50,...,90), getSpriteUrisFromImg (cắt sprite bằng canvas).
-   - packages/webamp/js/skinSprites.ts — BẢNG TỌA ĐỘ sprite của định dạng
-     Winamp 2 (không phải số của skin 566: mọi skin Classic dùng chung
-     bảng này; skin chỉ đổi ẢNH trong BMP). CLASSIC_SPRITES dưới đây là
-     bản sao y hệt (trừ khối GENEX đã bị fork comment vì không hỗ trợ ML).
-   - packages/webamp/js/regionParser.ts — region.txt (INI) -> đa giác
-     theo section [Normal]/[WindowShade]/[Equalizer].
-   - packages/webamp/js/components/MainWindow/*.tsx + css/main-window.css
-     — HÌNH HỌC cửa sổ chính 275×116 (vị trí mọi nút/hiển thị) + công
-     thức nền volume/balance (MainVolume.tsx, MainBalance.tsx) + chữ
-     marquee 5×6 (Marquee.tsx, Character.tsx) + vis 76×16 (Vis.tsx).
-   - packages/webamp/js/utils.ts — parseIni, parseViscolors.
-   - packages/webamp/js/baseSkin.json — 24 màu vis mặc định + playlistStyle
-     mặc định (dùng khi skin thiếu viscolor.txt / pledit.txt).
-   - packages/webamp/js/skinSelectors.ts — digits lấy từ NUMS_EX khi có
-     (DIGIT_0_EX), không thì NUMBERS; dấu trừ tương tự.
+   Nguồn fork (xem ghi chú từng mục):
+   - skinParser.js — giải .wsz: viscolor.txt, pledit.txt, genex (đọc
+     pixel genex.bmp), region.txt, cắt sprite từ BMP, con trỏ .cur.
+   - skinParserUtils.ts — getFileFromZip (không phân biệt hoa/thường,
+     file trùng tên thì file SAU thắng), getPlaylistStyle, getGenExColors
+     (22 màu hàng y=0 của genex.bmp, x=48,50,...,90), getSpriteUrisFromImg.
+   - skinSprites.ts — BẢNG TỌA ĐỘ sprite của định dạng Winamp 2 (mọi skin
+     Classic dùng chung bảng này; skin chỉ đổi ẢNH trong BMP).
+     CLASSIC_SPRITES là bản sao y hệt (trừ khối GENEX fork đã comment).
+   - regionParser.ts — region.txt (INI) -> đa giác [Normal]/[WindowShade]/[Equalizer].
+   - components/MainWindow/*.tsx + css/main-window.css — HÌNH HỌC cửa sổ
+     chính 275×116 + công thức nền volume/balance + chữ marquee 5×6 + vis 76×16.
+   - utils.ts — parseIni, parseViscolors. baseSkin.json — 24 màu vis +
+     playlistStyle mặc định (dùng khi skin thiếu viscolor.txt/pledit.txt).
+   - skinSelectors.ts — digits lấy từ NUMS_EX khi có, không thì NUMBERS.
 
    KHÔNG lấy từ fork: vis FFTNullsoft, Options, KBPS/KHZ đo, media engine,
    playlist/m3u, React/Redux, SkinEngine_WAL, server skin-database.
@@ -46,8 +37,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var CLASSIC_VERSION = "10.3";
-  var EXPECTED_CLASSIC_VERSION = "10.3";
+  var CLASSIC_VERSION = "10.4";
+  var EXPECTED_CLASSIC_VERSION = "10.4";
   /* Manifest duy nhất window.AMP_VERSION (đặt ở index.html TRƯỚC khi nạp
      file này) — lệch thì MANIFEST_MISMATCH = true để trang báo "bản mix".
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -677,14 +668,13 @@
       if (opts.findPath) return opts.findPath(p);
       return lowerMap[String(p).toLowerCase()] || null;
     }
-    /* v10.3 — file .txt trong THƯ MỤC CON (skin 3DNow của Webamp để
-       hết trong "3DNow/viscolor.txt", "3DNow/PLEDIT.TXT"...): findPath
-       của loader chỉ tra đúng đường dẫn nên trả null, parser rơi về
-       màu/pledit MẶC ĐỊNH (vis xám, playlist xanh lá) dù skin có file
-       thật. Tra cứu theo basename (file sau thắng, giống sheet): chỉ
-       dùng khi findPath không thấy — tránh đụng 2 file cùng tên ở 2
-       thư mục khác nhau của skin Modern (ở đây chỉ dùng cho .wsz,
-       nơi mỗi tên txt chỉ có 1 bản). */
+    /* File .txt trong THƯ MỤC CON (skin 3DNow để hết trong
+       "3DNow/viscolor.txt", "3DNow/PLEDIT.TXT"...): findPath của loader
+       chỉ tra đúng đường dẫn nên trả null, parser rơi về màu/pledit
+       MẶC ĐỊNH dù skin có file thật. Tra cứu theo basename (file sau
+       thắng, giống sheet): chỉ dùng khi findPath không thấy — tránh đụng
+       2 file cùng tên ở 2 thư mục khác nhau của skin Modern (ở đây chỉ
+       dùng cho .wsz, nơi mỗi tên txt chỉ có 1 bản). */
     function findByBasename(p) {
       var base = String(p).toLowerCase().split("/").pop();
       var hits = names.filter(function (n) {
@@ -737,9 +727,9 @@
     }
     /* genex.bmp: 22 màu hàng y=0 — KHÔNG nằm trong bảng sprite (fork
        comment khối GENEX vì không hỗ trợ ML) nên tìm riêng file. Chỉ
-       đọc được khi có Image + canvas (trình duyệt thật). jsdom/test
-       không có canvas 2d -> null, cửa sổ chính không cần màu này (chỉ
-       tô hộp thoại ML). */
+       đọc được khi có Image + canvas (trình duyệt thật); jsdom/test
+       không có canvas 2d -> null (chỉ tô hộp thoại ML, cửa sổ chính
+       không cần màu này). */
     var genExColors = null;
     var genexFile = findFile("GENEX", "(png|bmp)");
     var genexUrl = null;
@@ -771,8 +761,8 @@
       sheets: sheets,
       hasNumsEx: !!sheets.NUMS_EX,
       genexFile: genexFile,
-      /* v10.3: đường dẫn .txt thật đã đọc (để test/debug biết file có
-         nằm trong thư mục con không — vd "3DNow/viscolor.txt"). */
+      /* Đường dẫn .txt thật đã đọc (để test/debug biết file có nằm trong
+         thư mục con không — vd "3DNow/viscolor.txt"). */
       textFiles: textFiles,
       files: names.slice().sort(),
       cursors: cursors

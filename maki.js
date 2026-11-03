@@ -1,9 +1,8 @@
 /* Amp v10.1 — maki.js (đợt 7, giai đoạn a: ĐỌC/INSPECT script MAKI — KHÔNG chạy code MAKI).
    Chuyển tay từ parser MAKI của Webamp fork (captbaritone/webamp v2.3.1,
    packages/webamp-modern/src/maki/{parser.ts, MakiFile.ts, constants.ts,
-   objects.ts + objectData/*.json} — đã đọc kỹ, xem ghi chú định dạng dưới)
-   sang JS thuần, không build step. Chạy được cả trình duyệt
-   (window.AmpMaki) lẫn Node (module.exports, dùng với jsdom).
+   objects.ts + objectData/*.json}) sang JS thuần, không build step.
+   Chạy được cả trình duyệt (window.AmpMaki) lẫn Node (module.exports).
 
    ---------------------------------------------------------------------------
    ĐỊNH DẠNG FILE .maki (theo maki-bytecode.md của fork — đã kiểm bằng
@@ -30,8 +29,7 @@
      0xFFFF0000..0xFFFF000F (16 bit thấp = số đối số — 566: KHÔNG có cái
      nào); sau strangeCall (0x70) có 1 byte = số đối số (566: 2828 lệnh
      dùng 0x70, toàn bộ đều có byte này). Opcode lạ -> throw (fork cũng
-     throw "Unknown opcode"); 566 không có opcode lạ (đã kiểm: chỉ 32
-     opcode trong bảng COMMANDS).
+     throw "Unknown opcode"); 566 không có opcode lạ (chỉ 32 opcode).
    - Hết code mà còn byte thừa: file biên dịch với /debug có thêm 2 mục
      filepaths + line numbers — thử đọc lướt, không đọc được thì chỉ ghi
      warning (không throw): inspect vẫn dùng được phần trước.
@@ -66,8 +64,8 @@
      KHÔNG khôi phục được từ inspect tuyến tính — chỉ liệt kê lệnh
      show/hide đã gặp, để giai đoạn b (interpreter) xử lý sau.
    - KHÔNG LÀM Ở ĐÂY (giai đoạn b, để sau): chạy code MAKI thật — cần
-     ~70 class GUI + UIRoot + interpreter/stack VM của fork (interpreter.ts,
-     virtualMachine.js, skin/makiClasses/*). File này CHỈ ĐỌC.
+     ~70 class GUI + UIRoot + interpreter/stack VM của fork. File này
+     CHỈ ĐỌC.
    ---------------------------------------------------------------------------
    API: parseMaki(buf, id) / inspectMaki(parsed) / inspectSkinFiles(files)
    / formatGuid(rawHex) / COMMANDS. Lỗi đọc: throw Error (id file kèm theo).
@@ -80,8 +78,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MAKI_VERSION = "10.3";
-  var EXPECTED_MAKI_VERSION = "10.3";
+  var MAKI_VERSION = "10.4";
+  var EXPECTED_MAKI_VERSION = "10.4";
   if (MAKI_VERSION !== EXPECTED_MAKI_VERSION) {
     throw new Error("maki.js: MAKI_VERSION (" + MAKI_VERSION + ") khac EXPECTED_MAKI_VERSION (" + EXPECTED_MAKI_VERSION + ") — ban mix, dung lai");
   }

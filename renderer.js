@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.3";
-  var EXPECTED_RENDERER_VERSION = "10.3";
+  var RENDERER_VERSION = "10.4";
+  var EXPECTED_RENDERER_VERSION = "10.4";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -386,6 +386,8 @@
     var onZoom = opts.onZoom || null; /* Đợt D: Preferences → Zoom 1x / Vừa màn hình */
     var isZoomFit = opts.isZoomFit || null; /* Đợt v10.1: nút D clutter Classic cần biết zoom hiện tại */
     var isShadeMode = opts.isShadeMode || null; /* Đợt D: nút shade (shadeeq/shadect) cần biết đang ở shade để về normal trước khi mở ngăn kéo */
+    var onMilkdropToggle = opts.onMilkdropToggle || null; /* v10.4: menu Vis/Video → bật/tắt Milkdrop (index.html toggleMilkdrop — cùng đường với menu ⋯) */
+    var isMilkdropOn = opts.isMilkdropOn || null; /* v10.4: tick ✓ mục Milkdrop trong menu Vis/Video */
     var skinInfo = opts.skinInfo || null; /* Đợt D: bảng About — tên/tác giả/version skin (index.html đưa SKIN từ loader) */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
@@ -1897,6 +1899,21 @@
     }
     function updateChannelsIndicator() {
       if (!demo.playing) { setChannelsState("none"); refreshClassicMain(); return; }
+      /* v10.4 — UU TIEN SO KENH CUA NGUON (nhu Webamp: numberOfChannels):
+         file local co tag channels (metadata.js probe -> item.channels)
+         thi 1 kenh = mono, >=2 kenh = stereo, khoi can do tin hieu.
+         Stream/radio khong co metadata kenh thi roi xuong do tin hieu
+         L/R (audio.js — nhieu cua so + do lai, khong chot vinh vien).
+         Chuan kiem cuoi (22:23, sua lai): Da Nang = stereo that (2 kenh,
+         ffprobe) phai hien STEREO ON DINH. VOV1 KHONG phai chuan mono —
+         anh doi chung 22:23: VOV1 hien STEREO o ca 2 ben (co the HE-AAC
+         v2 parametric stereo: header ghi 1 kenh nhung giai ma ra stereo)
+         nen hien stereo cho VOV1 la DUNG. */
+      var cur = playlistState.items[playlistState.current];
+      var known = cur ? (cur.numberOfChannels != null ? cur.numberOfChannels : cur.channels) : null;
+      known = (known != null && isFinite(Number(known))) ? Number(known) : null;
+      if (known === 1) { setChannelsState("mono"); refreshClassicMain(); return; }
+      if (known >= 2) { setChannelsState("stereo"); refreshClassicMain(); return; }
       var m = null;
       try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
       if (m) { setChannelsState(m); refreshClassicMain(); return; }
@@ -2166,6 +2183,8 @@
         if (meta.artist && item.artist !== meta.artist) { item.artist = meta.artist; changed = true; }
         if (meta.album && item.album !== meta.album) { item.album = meta.album; changed = true; }
         if (meta.duration && (item.len === null || item.len === undefined)) { item.len = Math.round(meta.duration); changed = true; }
+        /* v10.4 — so kenh cua nguon (nhu metadata.js): 1 = mono, >=2 = stereo. */
+        if (meta.channels && item.channels !== meta.channels) { item.channels = meta.channels; changed = true; }
         if (meta.source) item.metaSource = meta.source;
         if (meta.status) item.metaStatus = meta.status;
       }
@@ -2429,11 +2448,29 @@
       }
       return g;
     }
+    /* v10.4 — TIM THEO NGHE SI/ALBUM (nguoi dung: tim nghe si khong
+       thay): o tim playlist truoc day chi khop item.name. Nay khop ca
+       ten + nghe si + album (qua metadataDisplayArtist/Album — tag ID3
+       hoac suy tu thu muc), khong phan biet hoa/thuong + khong phan
+       biet dau (bo dau ca tu khoa lan du lieu bang stripDiacritics,
+       vd go "hoang oanh" ra "Hoàng Oanh"). "Không rõ" (khong co tag)
+       khong dua vao chuoi khop de go "khong ro" khoi ra tat ca. Dung
+       chung cho o tim playlist (playlistFiltered) + o tim ML
+       (mlFilteredItems). */
+    function itemSearchHaystack(it) {
+      var a = metadataDisplayArtist(it); if (a === "Không rõ") a = "";
+      var al = metadataDisplayAlbum(it); if (al === "Không rõ") al = "";
+      return stripDiacritics(((it && it.name) || "") + " " + a + " " + al).toLowerCase();
+    }
+    function itemMatchesSearch(it, fNorm) {
+      if (!fNorm) return true;
+      return itemSearchHaystack(it).indexOf(fNorm) >= 0;
+    }
     function playlistFiltered() {
       var out = [];
-      var f = (playlistState.filter || "").toLowerCase();
+      var f = stripDiacritics((playlistState.filter || "").toLowerCase());
       for (var i = 0; i < playlistState.items.length; i++) {
-        if (!f || playlistState.items[i].name.toLowerCase().indexOf(f) >= 0) out.push({ item: playlistState.items[i], idx: i });
+        if (itemMatchesSearch(playlistState.items[i], f)) out.push({ item: playlistState.items[i], idx: i });
       }
       return out;
     }
@@ -3240,7 +3277,7 @@
     /* Đợt A (9.9, việc 1 — Media Library): nội dung mô phỏng trong khung
        XML của MLibrary (xem renderMlContent). mlFilter: nút cây đang
        chọn ("all"|"audio"|"video"|"radio"|"current"). */
-    var mlListDiv = null, mlTreeDiv = null, mlFilter = "all", mlSelected = -1;
+    var mlListDiv = null, mlTreeDiv = null, mlSearchInput = null, mlFilter = "all", mlFilterText = "", mlSelected = -1;
     /* Đợt A (9.9, việc 6 — resize): kích thước cửa sổ đã kéo (theo
        container: "Pledit"|"MLibrary"|"Video"|"Vis"), ghi đè w/h của
        layout lúc render. Trống = dùng đúng w/h trong XML. Lưu qua
@@ -4582,11 +4619,14 @@
       } catch (e) { /* bỏ qua */ }
       return 1024;
     }
-    function isMlCompact() { return viewportWidth() < 560; }
-    function mlColDefs() {
-      if (!isMlCompact()) return ML_COL_DEFS;
-      return [ML_COL_DEFS[0], ML_COL_DEFS[1], ML_COL_DEFS[4]];
-    }
+    /* v10.4 — ML TRO LAI DUNG THIET KE WINAMP (nguoi dung 22:05): HUY
+       che do gon <560px cua v10.3 (chi So/Ten/Thoi luong, cay thanh dai
+       ngang 18px, cua so kep 360px). ML LUON ve du cay trai + 4 cot
+       Ten/Nghe si/Album/Thoi luong o moi co man hinh; tren dien thoai
+       thi BANG cuon ngang (hang min-width ML_MIN_TABLE_W, list
+       overflow-x auto) thay vi giau cot. */
+    var ML_MIN_TABLE_W = 480; /* 30 (So) + ~150 (Ten) + 110 (Nghe si) + 120 (Album) + 48 (Thoi luong) + khe 6px */
+    function mlColDefs() { return ML_COL_DEFS; }
     function listColSpan(def, text, isFirst) {
       var sp = document.createElement("span");
       sp.className = def.cls;
@@ -4768,9 +4808,12 @@
       var nodes = mlTreeNodes(), node = null;
       for (var i = 0; i < nodes.length; i++) if (!nodes[i].header && nodes[i].key === mlFilter) { node = nodes[i]; break; }
       if (!node) node = nodes[3]; /* "all" — nút mặc định */
+      /* v10.4 — o tim ML: loc them theo ten/nghe si/album (khong dau),
+         nhu o tim playlist; ket hop voi nut cay (Audio/Video/Radio...). */
+      var f = stripDiacritics((mlFilterText || "").toLowerCase());
       var out = [];
       for (var j = 0; j < playlistState.items.length; j++) {
-        if (node.match(playlistState.items[j])) out.push({ item: playlistState.items[j], idx: j });
+        if (node.match(playlistState.items[j]) && itemMatchesSearch(playlistState.items[j], f)) out.push({ item: playlistState.items[j], idx: j });
       }
       return out;
     }
@@ -4783,23 +4826,16 @@
       if (!listDiv || !document || !document.createElement) return null;
       var old = null;
       try { old = listDiv.querySelector(".ml-header"); } catch (e) { old = null; }
-      var compact = isMlCompact();
-      /* v10.3: header vẽ lại khi đổi chế độ gọn/rộng (số cột khác nhau)
-         — không giữ header cũ lệch cột với hàng mới. */
-      if (old) {
-        if (old._mlCompact === compact) return old;
-        if (old.parentElement) old.parentElement.removeChild(old);
-      }
+      if (old) return old;
       var head = document.createElement("div");
       head.className = "ml-header";
       head.style.display = "flex";
+      head.style.minWidth = ML_MIN_TABLE_W + "px"; /* v10.4: header rong bang hang de cuon ngang cung bang */
       head.style.fontWeight = "bold";
       head.style.borderBottom = "1px solid #6788c9";
       head.style.padding = "2px 0";
-      head._mlCompact = compact;
-      /* v10.3: header dung CHUNG mlColDefs() voi hang du lieu (ke ca o
-         so trong dau tien) — header va hang thang cot nhau, ca che do
-         gon (chi So/Ten/Thoi luong). */
+      /* v10.4: header dung CHUNG mlColDefs() voi hang du lieu — du 4 cot
+         + so dau tien, header va hang thang cot nhau. */
       var defs = mlColDefs();
       for (var i = 0; i < defs.length; i++) {
         head.appendChild(listColSpan(defs[i], defs[i].label, i === 0));
@@ -4843,19 +4879,17 @@
             row.style.fontWeight = "bold";
           }
           row.style.display = "flex";
-          /* v10.3: hang ML dung CHUNG mlColDefs() voi header — so rieng,
-             ten tu tag title (playlist + ticker van dung ten file), Nghe
-             si/Album tu tag (khong tag thi "Khong ro" theo quy uoc fork),
-             thoi luong co dinh 48px can phai. Che do gon chi ve So/Ten/
-             Thoi luong (Nghe si/Album an — du lieu van trong model). */
+          row.style.minWidth = ML_MIN_TABLE_W + "px"; /* v10.4: hang rong toi thieu de bang cuon ngang tren dien thoai thay vi giau cot */
+          /* v10.4: hang ML LUON du 4 cot (dung CHUNG mlColDefs() voi
+             header) — So, Ten tu tag title (playlist + ticker van dung
+             ten file), Nghe si/Album tu tag (khong tag thi "Khong ro"
+             theo quy uoc fork), thoi luong co dinh 48px can phai. */
           var defs = mlColDefs();
           row.appendChild(listColSpan(defs[0], (rec.idx + 1) + ".", true));
           row.appendChild(listColSpan(defs[1], metadataDisplayName(rec.item), false));
-          if (defs.length > 3) {
-            row.appendChild(listColSpan(defs[2], metadataDisplayArtist(rec.item), false));
-            row.appendChild(listColSpan(defs[3], metadataDisplayAlbum(rec.item), false));
-          }
-          row.appendChild(listColSpan(defs[defs.length - 1], playlistRowLabel(rec.item), false));
+          row.appendChild(listColSpan(defs[2], metadataDisplayArtist(rec.item), false));
+          row.appendChild(listColSpan(defs[3], metadataDisplayAlbum(rec.item), false));
+          row.appendChild(listColSpan(defs[4], playlistRowLabel(rec.item), false));
           row.dataset.idx = String(rec.idx);
           row.onclick = function () { mlSelected = rec.idx; refreshMlRows(); };
           row.ondblclick = function () { playPlaylistItem(rec.idx); };
@@ -4922,6 +4956,9 @@
       try { top = mlListDiv.scrollTop || 0; } catch (e) { top = 0; }
       buildMlRows(mlListDiv);
       try { mlListDiv.scrollTop = top; } catch (e) { /* bỏ qua */ }
+      /* v10.4: giu o tim ML dong bo voi tu khoa hien tai (nhu o tim
+         playlist trong refreshPlaylistRows). */
+      if (mlSearchInput && mlSearchInput.value !== mlFilterText) mlSearchInput.value = mlFilterText;
       /* Vẽ lại cây (số lượng mỗi nút đổi khi thêm/xóa mục). */
       if (mlTreeDiv) buildMlTree(mlTreeDiv);
     }
@@ -4938,9 +4975,6 @@
           row.style.overflow = "hidden";
           row.style.textOverflow = "ellipsis";
           row.style.cursor = "default";
-          /* v10.3: che do gon — cay thanh dai ngang, moi nut la 1 muc
-             flex co dinh (khong co gian, khong xuong dong). */
-          if (isMlCompact()) { row.style.flex = "0 0 auto"; row.style.alignSelf = "center"; }
           if (node.header) {
             row.style.fontWeight = "bold";
             row.style.paddingTop = "4px";
@@ -4967,13 +5001,21 @@
       refreshMlRows();
       return mlFilter;
     }
+    /* v10.4 — o tim ML: dat tu khoa tim (ten/nghe si/album, khong dau)
+       roi loc lai danh sach; dung cho test + co the noi nut sau. */
+    function setMlSearch(text) {
+      mlFilterText = String(text == null ? "" : text);
+      if (mlSearchInput) mlSearchInput.value = mlFilterText;
+      refreshMlRows();
+      return mlFilterText;
+    }
     function getMlState() {
       return {
-        filter: mlFilter, selected: mlSelected,
+        filter: mlFilter, search: mlFilterText, selected: mlSelected,
         hasWindow: !!mlListDiv, count: mlFilteredItems().length,
         total: playlistState.items.length,
         columns: ML_COLUMNS.slice(),
-        compact: isMlCompact(),
+        compact: false, /* v10.4: khong con che do gon — ML luon du thiet ke Winamp */
         visibleColumns: mlColDefs().map(function (d) { return d.key; })
       };
     }
@@ -4983,19 +5025,18 @@
     /* Vẽ ruột ML vào đúng hộp <component> trong dummy group (x=6,y=5,
        w=-12 relatw=1, h=-50 relath=1 theo XML — 778×299 với skin 566,
        tính từ model lúc chạy, không gán cứng): cây trái 170px + danh
-       sách phải co giãn. v10.3 — che do gon (viewport < 560px): xep doc
-       (cay thanh dai ngang 18px tren dau, cuon ngang rieng; list day
-       du rong ben duoi), chi hien cot So/Ten/Thoi luong. */
+       sách phải co giãn. v10.4 — DUNG THIET KE WINAMP: cay LUON ben
+       trai, bang LUON du 4 cot; o tim o dau bang (tim ten/nghe si/
+       album, khong dau); bang cuon ngang (overflow-x auto + hang
+       min-width) tren dien thoai thay vi giau cot nhu v10.3. */
     function renderMlContent(el, parentEl, parentW, parentH, x, y) {
       var w = relSize(el, "w", parentW), h = relSize(el, "h", parentH);
-      var compact = isMlCompact();
       var div = document.createElement("div");
       div.className = "ml-content";
       div.dataset.mlContent = "1";
       div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = w + "px"; div.style.height = h + "px";
       div.style.display = "flex";
-      if (compact) div.style.flexDirection = "column";
       div.style.background = colorOf("wasabi.list.background");
       div.style.color = colorOf("wasabi.list.text");
       div.style.fontSize = "11px";
@@ -5004,36 +5045,47 @@
       var treeW = Math.min(170, Math.max(120, Math.floor(w * 0.22)));
       var tree = document.createElement("div");
       tree.className = "ml-tree";
-      if (compact) {
-        tree.style.flex = "0 0 auto";
-        tree.style.height = "18px";
-        tree.style.display = "flex";
-        tree.style.overflowX = "auto";
-        tree.style.overflowY = "hidden";
-        tree.style.borderBottom = "1px solid #6788c9";
-      } else {
-        tree.style.flex = "0 0 " + treeW + "px";
-        tree.style.height = "100%";
-        tree.style.overflowY = "auto";
-        tree.style.overflowX = "hidden";
-        tree.style.borderRight = "1px solid #6788c9";
-      }
+      tree.style.flex = "0 0 " + treeW + "px";
+      tree.style.height = "100%";
+      tree.style.overflowY = "auto";
+      tree.style.overflowX = "hidden";
+      tree.style.borderRight = "1px solid #6788c9";
       tree.style.boxSizing = "border-box";
       div.appendChild(tree);
+      /* Cot phai: o tim tren dau + bang ben duoi (bang cuon doc +
+         cuon ngang rieng, cay trai khong bi cuon theo). */
+      var listWrap = document.createElement("div");
+      listWrap.className = "ml-listwrap";
+      listWrap.style.flex = "1 1 auto";
+      listWrap.style.minWidth = "0";
+      listWrap.style.height = "100%";
+      listWrap.style.display = "flex";
+      listWrap.style.flexDirection = "column";
+      var search = document.createElement("input");
+      search.type = "text";
+      search.className = "ml-search";
+      search.placeholder = "Tìm tên/nghệ sĩ/album…";
+      search.value = mlFilterText;
+      search.style.flex = "0 0 auto";
+      search.style.margin = "2px";
+      search.style.font = "11px Arial, sans-serif";
+      search.addEventListener("input", function () { mlFilterText = search.value || ""; refreshMlRows(); });
+      listWrap.appendChild(search);
       var list = document.createElement("div");
       list.className = "ml-list";
       list.dataset.mlList = "1";
       list.style.flex = "1 1 auto";
       list.style.minWidth = "0";
-      list.style.height = compact ? "auto" : "100%";
+      list.style.minHeight = "0";
       list.style.overflowY = "auto";
-      list.style.overflowX = "hidden";
+      list.style.overflowX = "auto"; /* v10.4: bang cuon ngang tren dien thoai */
       /* v10.3: cuon gan het dot hang da ve thi ve them dot tiep ngay. */
       try {
         list.addEventListener("scroll", function () { mlEnsureRowsForScroll(); });
       } catch (e) { /* jsdom cu */ }
-      div.appendChild(list);
-      mlTreeDiv = tree; mlListDiv = list;
+      listWrap.appendChild(list);
+      div.appendChild(listWrap);
+      mlTreeDiv = tree; mlListDiv = list; mlSearchInput = search;
       buildMlTree(tree);
       buildMlRows(list);
       parentEl.appendChild(div);
@@ -5502,6 +5554,36 @@
         box.style.maxHeight = Math.max(40, stageH - 8) + "px";
         box.style.overflowY = "auto";
       }
+      /* v10.4 — TRAN NGANG (nguoi dung 22:09: menu Video/Vis mo gan mep
+         phai thi tran ra ngoai stage, chi thay mep trai cac muc): truoc
+         day chi xu ly tran DOC. Nay kep them trai: menu mo sang TRAI
+         khi khong du cho ben phai (left = min(anchorLeft, stageW -
+         menuW), kep >= 0). Dung cho MOI popup qua day (menu Video/Vis,
+         File/Play/Options/View/Help, chuot phai playlist/trackmenu,
+         Add/Manage/Misc, trackinfo, preferences). */
+      var stageW = parseInt(T.style.width || "0", 10) || 0;
+      if (!stageW) { try { stageW = Math.round(T.getBoundingClientRect().width); } catch (e) { stageW = 0; } }
+      if (stageW > 0) {
+        var menuW = 0;
+        try { menuW = box.offsetWidth || 0; } catch (e) { menuW = 0; }
+        if (!menuW) {
+          /* jsdom khong do duoc offsetWidth: uoc theo dong dai nhat
+             (11px Arial ~7px/ky tu + padding 20px + vien 2px). */
+          var maxLen = 0;
+          try {
+            var pRows = box.querySelectorAll ? box.querySelectorAll("div") : [];
+            for (var ri = 0; ri < pRows.length; ri++) {
+              var L = (pRows[ri].textContent || "").length;
+              if (L > maxLen) maxLen = L;
+            }
+          } catch (e) { maxLen = 0; }
+          menuW = maxLen > 0 ? maxLen * 7 + 22 : 120;
+        }
+        var left = parseInt(box.style.left || "0", 10) || 0;
+        if (left + menuW > stageW) left = Math.max(0, stageW - menuW);
+        if (left < 0) left = 0;
+        box.style.left = left + "px";
+      }
     }
 
     /* Menu preset EQ (nút PRESETS): đường cong tự định nghĩa, xem EQ_PRESETS. */
@@ -5781,7 +5863,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.3 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.4 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -5939,6 +6021,16 @@
        Winamp thật mở menu Options của cửa sổ Video/Vis. Mục nào làm được
        thì nối thật; mục Winamp có mà Amp chưa làm (vd "Video Capture…")
        thì KHÔNG đưa vào — không đưa mục giả. */
+    /* v10.4 — mục Milkdrop dùng chung cho menu Vis + Video: chỉ đưa vào
+       khi index.html nối callback (không đưa mục giả); nhãn có trạng thái
+       Bật/Tắt + ✓ khi bật, như mục "Milkdrop" trong menu ⋯. Người dùng
+       tìm hiệu ứng ở menu Vis theo bản năng nên phải thấy ngay ở đây. */
+    function milkdropMenuItem() {
+      if (!onMilkdropToggle) return null;
+      var on = false;
+      try { on = !!(isMilkdropOn && isMilkdropOn()); } catch (e) { on = false; }
+      return { label: (on ? "✓ " : "") + "Milkdrop: " + (on ? "Bật" : "Tắt"), action: function () { onMilkdropToggle(); } };
+    }
     function videoMenuItems() {
       var items = [
         { label: (avsState.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình", action: function () { setKeepAspect(!avsState.keepAspect); } },
@@ -5949,17 +6041,26 @@
         { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs("video"); detachAvs(); } } },
         { label: "Đóng Video", action: function () { closeAvs(); } }
       ];
+      var md = milkdropMenuItem();
+      if (md) items.splice(1, 0, md); /* ngay sau "Giữ tỉ lệ khung hình" */
       return items;
     }
     function visMenuItems() {
-      return [
-        { label: "Hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
-        { label: "Hiệu ứng sau", action: function () { cycleVisVariant(1); } },
-        { label: (avsState.visRandom ? "✓ " : "") + "Hiệu ứng ngẫu nhiên", action: function () { avsState.visRandom = !avsState.visRandom; persistAvs(); } },
+      /* v10.4: "Hiệu ứng trước/sau" CHỈ đổi màu cột vis (cycleVisVariant
+         đổi visVariant 0..2 = 3 màu trong VIS_VARIANTS), KHÔNG phải hiệu
+         ứng Milkdrop — đổi tên thành "Màu hiệu ứng ..." cho khỏi lẫn.
+         Mục Milkdrop thật nằm ngay sau 2 mục đổi màu. */
+      var items = [
+        { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
+        { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
+        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { avsState.visRandom = !avsState.visRandom; persistAvs(); } },
         { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
         { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs("vis"); detachAvs(); } } },
         { label: "Đóng Hiệu ứng", action: function () { closeAvs(); } }
       ];
+      var md = milkdropMenuItem();
+      if (md) items.splice(2, 0, md); /* ngay sau 2 mục đổi màu cột */
+      return items;
     }
 
     /* ---------- đợt D (9.9): thông tin bài / menu bài (trackinfo/trackmenu) ----------
@@ -6198,8 +6299,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.3 — Winamp Modern",
-        "Phiên bản Amp: 10.3 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.4 — Winamp Modern",
+        "Phiên bản Amp: 10.4 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -6295,16 +6396,19 @@
           return;
         }
         if (display === "songname" || tag === "songticker") {
-          /* Đợt v10.2 — gán đúng class CSS (.stage .ticker + .inner trong
-             index.html: overflow:hidden + nowrap + will-change) để chữ
-             cuộn bị cắt ở mép hộp display như Winamp thật; trước đây div
-             ngoài không class, holder class "ticker-inner" nên CSS không
-             khớp, chữ tràn ra khỏi màn hình. */
+          /* v10.4 — BO WRAPPER .inner (nguyen nhan goc ticker trang):
+             .txt nam trong <div class="inner"> (inline-block rong) thi
+             tren trinh duyet that vi tri tinh cua .txt (absolute khong
+             top/left) roi xuong ~1 baseline (~13-16px) so voi dinh hop
+             .ticker cao 23px, glyph 22px bi overflow:hidden cat gan het
+             — dung anh nguoi dung (ticker trong, chi vet mo o day).
+             Nay .txt la con TRUC TIEP cua hop .ticker da position nhu
+             moi chu bitmap khac (dong ho/KBPS/PLTime) nen vi tri tinh
+             = (0,0); rec.holder tro toi chinh .txt (setTickerText thay
+             the .txt cu bang .txt moi) de stepTicker/syncTickerAnim/
+             getTickerState khong doi. CSS .stage .ticker .inner bo theo. */
           div.className = "ticker";
-          var holder = document.createElement("div");
-          holder.className = "inner";
-          div.appendChild(holder);
-          var rec = { div: div, holder: holder, fontId: fontId, boxW: w, color: color, showlen: el.getAttribute("showlen") === "1", offset: 0, textW: 0 };
+          var rec = { div: div, holder: null, fontId: fontId, boxW: w, color: color, showlen: el.getAttribute("showlen") === "1", offset: 0, textW: 0 };
           tickerEls.push(rec);
           await setTickerText(rec);
           /* Đợt D (9.9) — trackinfo/trackmenu theo XML (Songticker có
@@ -6400,8 +6504,12 @@
       }
       var tdiv = await makeBitmapText(rec.fontId, text, rec.boxW, "left", color);
       if (rec._tickerSeq !== myTickerSeq) return; /* lan goi moi hon da thang */
-      rec.holder.innerHTML = "";
-      rec.holder.appendChild(tdiv);
+      /* v10.4 — rec.holder LA .txt (con truc tiep cua hop .ticker): thay
+         the .txt cu bang .txt moi thay vi append long nhau; lan dau
+         holder null thi append thang vao hop. */
+      if (rec.holder && rec.holder.parentElement === rec.div) rec.div.replaceChild(tdiv, rec.holder);
+      else rec.div.appendChild(tdiv);
+      rec.holder = tdiv;
       rec.textW = tdiv._textW || 0;
       rec.offset = 0;
       /* Đợt B (9.9): đổi chữ thì cuộn lại từ đầu + đồng bộ vòng ticker
@@ -7331,7 +7439,12 @@
       var hasPic = avsState.mode === "video" && avsVideoHasPic !== false;
       avsMedia.video.style.display = hasPic ? "" : "none";
       avsMedia.canvas.style.display = "none";
-      syncAvsName();
+      /* v10.4 — video xuat hien/bien mat giua chung (loadedmetadata/
+         loadstart) thi canvas Milkdrop phai an/hien theo ngay, khong
+         doi lan render sau (keo khong thi canvas Milkdrop den van che
+         mat video that vua ve). applyMilkdropVisibility tu goi
+         syncAvsName() o cuoi. */
+      applyMilkdropVisibility();
       return false;
     }
     function attachAvsMedia(parentEl, rect) {
@@ -7360,13 +7473,14 @@
        thay canvas vis thường khi Milkdrop bật + AVS đang ở chế độ vis;
        các trường hợp còn lại thì canvas Milkdrop ẩn, vis thường theo mode
        như cũ. Gọi sau mỗi lần gắn wrap + khi bật/tắt Milkdrop. */
-    var milkdropActive = false, milkdropCanvas = null;
+    var milkdropActive = false, milkdropCanvas = null, milkdropShown = false;
     function applyMilkdropVisibility() {
       /* v10.3: Milkdrop hien khi bat + co canvas + AVS mo + KHONG co video
          that dang hien (ke ca che do video: kenh audio chua tung co hinh
          thi video an nen Milkdrop duoc hien, nhu Winamp/Webamp; kenh co
          hinh that thi video giu man hinh). */
       var showMd = !!(milkdropActive && milkdropCanvas && avsState.open && !avsVideoActuallyShowing());
+      milkdropShown = showMd; /* v10.4: index.html syncMilkdrop chay vong render theo co nay (xem getMilkdropState) */
       try {
         if (milkdropCanvas) milkdropCanvas.style.display = showMd ? "" : "none";
         /* Đợt v10.2 — canvas vis hiện khi mode "vis" HOẶC fallback video-mode
@@ -7387,7 +7501,7 @@
       if (milkdropActive) drawVisStatic(); /* vẽ lại khung vis thường lần cuối cho khỏi dính hình cũ khi tắt */
       return { active: milkdropActive, shown: shown };
     }
-    function getMilkdropState() { return { active: milkdropActive, hasCanvas: !!milkdropCanvas }; }
+    function getMilkdropState() { return { active: milkdropActive, hasCanvas: !!milkdropCanvas, shown: milkdropShown }; }
     function attachEmbeddedAvsMedia(T) {
       var vg = null;
       try { vg = T.querySelector('[data-gid="video.group"]'); } catch (e) { vg = null; }
@@ -9155,15 +9269,11 @@
         var cOv = clampWinSize(container, layoutId, sizeOv.w, sizeOv.h);
         if (cOv) { LW = cOv.w; LH = cOv.h; }
       }
-      /* v10.3 — sizeOverride (renderStacked ép ML gọn về bằng stage thay
-         vì 790px XML) + kẹp ML compact về viewport (XML min 354 vẫn
-         thắng khi viewport < 354 — ghi README). */
+      /* sizeOverride: co che chung de ep kich thuoc cua so khi can
+         (hien ML khong dung nua — v10.4 tra ML ve kich thuoc rieng). */
       if (opts && opts.sizeOverride) {
         var cOv2 = clampWinSize(container, layoutId, opts.sizeOverride.w, opts.sizeOverride.h);
         if (cOv2) { LW = cOv2.w; LH = cOv2.h; }
-      }
-      if (lowerStr(container) === "mlibrary" && isMlCompact()) {
-        LW = Math.min(LW, Math.max(viewportWidth(), 354));
       }
       T.style.width = LW + "px"; T.style.height = LH + "px";
       /* renderStacked truyền playerDiv/plDiv đã đặt _absY (plDiv = playerH):
@@ -9402,12 +9512,16 @@
       var stackedSeen = new Set(); /* Đợt C: chống vẽ trùng xuyên các lượt player/playlist/ML */
       var plWH = showPl ? effectiveLayoutWH("Pledit", "normal") : null;
       var mlWH = showMl ? effectiveLayoutWH("MLibrary", "normal") : null;
-      /* v10.3 — ML compact: stage KHÔNG lấy rộng 790px của ML; cửa sổ ML
-         tự kẹp về bằng màn hình trong renderLayoutInner (sizeOverride). */
-      var mlCompact = showMl && isMlCompact();
+      /* v10.4 (sua lai) — ML dung thiet ke Winamp: cua so ML GIU kich
+         thuoc rieng (mac dinh 790px XML, keo duoc nhu moi cua so) va
+         stage mo rong theo ML nhu moi cua so khac; KHONG kep ML ve
+         bang stage (viec ep o ban nhap v10.4 lam hong keo resize ML:
+         keo rong hon stage thi bi ep ve, onWinSizeChange luu sai).
+         Tren dien thoai bang ML cuon ngang ben trong (minWidth 480px)
+         khi cua so hep hon bang; cot khong bi giau. */
       var stageW = mainWHStacked ? mainWHStacked.w : 354;
       if (plWH) stageW = Math.max(stageW, plWH.w);
-      if (mlWH && !mlCompact) stageW = Math.max(stageW, mlWH.w);
+      if (mlWH) stageW = Math.max(stageW, mlWH.w);
       T.innerHTML = "";
       T.style.width = stageW + "px";
       T._absX = 0; T._absY = 0;
@@ -9486,7 +9600,7 @@
         mlDiv.style.position = "absolute"; mlDiv.style.left = "0px"; mlDiv.style.top = totalH + "px";
         mlDiv._absX = 0; mlDiv._absY = totalH;
         T.appendChild(mlDiv);
-        mlH = await renderLayoutInner("MLibrary", "normal", "MEDIA LIBRARY", { applyTheme: false, noDetached: true, _seenGroups: stackedSeen, sizeOverride: mlCompact ? { w: stageW, h: mlWH.h } : null }, mlDiv);
+        mlH = await renderLayoutInner("MLibrary", "normal", "MEDIA LIBRARY", { applyTheme: false, noDetached: true, _seenGroups: stackedSeen }, mlDiv);
         visCanvases = savedRegs2.vis.concat(visCanvases);
         statusEls = savedRegs2.status.concat(statusEls);
         tickerEls = savedRegs2.ticker.concat(tickerEls);
@@ -9731,10 +9845,10 @@
       clearPlaylistSelection: clearPlaylistSelection,
       getTimerMode: getTimerMode, setTimerMode: setTimerMode, toggleTimerMode: toggleTimerMode,
       timerDisplayText: timerDisplayText, currentTrackDuration: currentTrackDuration,
-      hasMediaLibrary: hasMediaLibrary, setMlFilter: setMlFilter, getMlState: getMlState,
+      hasMediaLibrary: hasMediaLibrary, setMlFilter: setMlFilter, setMlSearch: setMlSearch, getMlState: getMlState,
       refreshMlRows: refreshMlRows,
-      /* Đợt v10.3 — ML gọn trên điện thoại. */
-      isMlCompact: isMlCompact, viewportWidth: viewportWidth, mlColDefs: mlColDefs,
+      /* Đợt v10.4 — ML luon du thiet ke Winamp (khong con che do gon). */
+      viewportWidth: viewportWidth, mlColDefs: mlColDefs,
       getWinSizes: getWinSizes, restoreWinSizes: restoreWinSizes, setWinSize: setWinSize,
       clampWinSize: clampWinSize, isLayoutResizable: isLayoutResizable, layoutMinMax: layoutMinMax,
       effectiveLayoutWH: effectiveLayoutWH, detachedWinSize: detachedWinSize,

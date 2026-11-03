@@ -1,11 +1,11 @@
-/* Amp v10 — eqf.js (đợt v10.0, việc 1: winamp-eqf — đọc/ghi preset EQ .eqf/.q1).
+/* Amp v10 — eqf.js: đọc/ghi preset EQ .eqf/.q1.
    Chuyển tay từ winamp-eqf của Webamp fork (captbaritone/webamp v2.3.1,
    packages/winamp-eqf/src/{parser,creator,constants,types}.ts — thuần TS,
    không dependency) sang JS thuần, không build step. Chạy được cả trình
    duyệt (window.AmpEqf) lẫn Node (module.exports, dùng với jsdom).
 
    ---------------------------------------------------------------------------
-   ĐỊNH DẠNG FILE (đã kiểm bằng file mẫu thật trong fork — xem cuối file):
+   ĐỊNH DẠNG FILE (đã kiểm bằng file mẫu thật trong fork):
    - 27 byte header ASCII: "Winamp EQ library file v1.1"
    - 4 byte: 0x1A + "!--"  (tổng tiền tố 31 byte)
    - Mỗi preset 268 byte: 257 byte tên (Latin-1, kết thúc NUL, đệm 0) +
@@ -13,33 +13,26 @@
    - Thứ tự 11 giá trị: hz60, hz170, hz310, hz600, hz1000, hz3000, hz6000,
      hz12000, hz14000, hz16000, preamp. Thang 1..64, 33 = phẳng (0 dB),
      64 = +12 dB, 1 = −12 dB. File .q1 (vd winamp.q1) cùng định dạng này.
+     (winamp.q1 thật: 4587 byte = 31 + 17×268; max/min/midline.EQF đã
+     kiểm bằng Python 03/11.)
    ---------------------------------------------------------------------------
    CÁCH MAP SANG AMP (ghi rõ để preset mang qua lại được với Winamp PC):
    - Map THEO THỨ TỰ tần số tăng dần (không theo nhãn Hz tuyệt đối):
      hz60→eq1, hz170→eq2, hz310→eq3, hz600→eq4, hz1000→eq5, hz3000→eq6,
      hz6000→eq7, hz12000→eq8, hz14000→eq9, hz16000→eq10, preamp→preamp.
      Lý do: dải EQ của Amp là 31.5/63/125/250/500/1K/2K/4K/8K/16K Hz
-     (audio.js EQ_FREQS) — khác tâm tần Winamp (60/170/310/600/1K/3K/6K/
-     12K/14K/16K) nhưng cùng 10 dải + preamp, cùng thứ tự. Map theo vị trí
-     giữ đúng hình dáng đường cong EQ; map theo nhãn Hz gần nhất sẽ lệch
-     vị trí dải (vd hz170 của Winamp rơi vào giữa eq2/eq3 của Amp).
+     (audio.js EQ_FREQS) — khác tâm tần Winamp nhưng cùng 10 dải +
+     preamp, cùng thứ tự. Map theo vị trí giữ đúng hình dáng đường cong
+     EQ; map theo nhãn Hz gần nhất sẽ lệch vị trí dải.
    - Thang giá trị: KHÔNG dùng map tuyến tính 1..64 → 0..100 của Webamp
      (normalizeEqBand: phẳng 33 → 50.8, lệch 0 dB). Amp dùng map dB-CHÍNH
      XÁC: 33 = 0 dB đúng, 64 = +12 dB, 1 = −12 dB; dB = (v−33)×12/31 khi
      v≥33, (v−33)×12/32 khi v≤33 (bù cho thang không đối xứng 32 dưới /
      31 trên); frac Amp = (dB+12)/24, 0.5 = 0 dB đúng. Round-trip
-     frac→eqf→frac sai số ≤ nửa bước (≈0.2 dB), chấp nhận được; preset
-     Winamp mở trong Amp và preset Amp lưu ra mở trong Winamp đều giữ
-     đúng 0 dB / ±12 dB ở 2 đầu.
+     frac→eqf→frac sai số ≤ nửa bước (≈0.2 dB), chấp nhận được.
    - Tên preset: Latin-1 (1 byte/ký tự). Khi ghi, ký tự >U+00FF thành "?";
      tên dài hơn 257 ký tự thì cắt. Khi đọc, byte nào cũng giữ nguyên
      (Latin-1 → JS string qua fromCharCode).
-   ---------------------------------------------------------------------------
-   KIỂM CHỨNG ĐỊNH DẠNG (file mẫu thật, packages/winamp-eqf/sample_data):
-   - winamp.q1: 4587 byte = 31 + 17×268, 17 preset (Classical…Techno).
-   - winamp_sample.q1: 1103 byte = 31 + 4×268, 4 preset (Normal/Clear/
-     Alex/Tare). max.EQF: 10 dải = 64, preamp = 33. min.EQF: 10 dải = 1,
-     preamp = 33. midline.EQF: tất cả = 33. (Kiểm bằng Python 03/11.)
    ---------------------------------------------------------------------------
    API: parseEqf(buf) / createEqf(data) / eqfValueToDb / dbToEqfValue /
    eqfValueToFrac / fracToEqfValue / eqfPresetToAmpFracs /
@@ -51,14 +44,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var EQF_VERSION = "10.3";
-  var EXPECTED_EQF_VERSION = "10.3";
+  var EQF_VERSION = "10.4";
+  var EXPECTED_EQF_VERSION = "10.4";
   if (EQF_VERSION !== EXPECTED_EQF_VERSION) {
     throw new Error("eqf.js: EQF_VERSION (" + EQF_VERSION + ") khac EXPECTED_EQF_VERSION (" + EXPECTED_EQF_VERSION + ") — ban mix, dung lai");
   }
-  /* Đợt v10.0: kiểm manifest như 3 file kia (index.html đặt
-     window.AMP_VERSION trước khi nạp file này). Không có manifest
-     (chạy test trực tiếp bằng require) thì không kiểm. */
+  /* Kiểm manifest như các file kia (index.html đặt window.AMP_VERSION
+     trước khi nạp file này). Không có manifest (chạy test trực tiếp bằng
+     require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
     try {
       if (typeof globalThis !== "undefined" && globalThis.AMP_VERSION) return globalThis.AMP_VERSION;
