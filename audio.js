@@ -69,8 +69,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.1";
-  var EXPECTED_AUDIO_VERSION = "10.1";
+  var AUDIO_VERSION = "10.2";
+  var EXPECTED_AUDIO_VERSION = "10.2";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -90,10 +90,23 @@
   var ERROR_RECHECK_MS = 3000;    /* lỗi lần đầu: thử lại sau 3s chống báo oan */
   var CROSSFADE_DEFAULT_MS = 2000; /* Đợt 4: crossfade mặc định 2s (0 = tắt) */
   var CROSSFADE_STEP_MS = 100; /* Đợt 4: bước ramp gain 100ms */
-  var ANALYSER_FFT_SIZE = 64;
+  var ANALYSER_FFT_SIZE = 1024; /* Đợt v10.2 — như Webamp (fftSize 1024):
+     sóng lấy 1024 mẫu time-domain (trước đây 64 mẫu nên sóng phẳng),
+     BAR có 512 bin tần số để map log (trước đây 32 bin, map thô). */
+  /* Đợt v10.2 — limiter chống clip (lựa chọn của Amp, KHÔNG phải từ
+     Webamp — Webamp không có limiter): chỉ bóp các đỉnh vượt ngưỡng,
+     mức thường gần như không chạm tới. */
+  var LIMITER_THRESHOLD_DB = -3, LIMITER_KNEE_DB = 3, LIMITER_RATIO = 20;
+  var LIMITER_ATTACK = 0.002, LIMITER_RELEASE = 0.1;
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
   function fracToDb(frac) { return clamp01(frac) * 24 - 12; }
+  /* Đợt v10.2 — gain preamp đúng dB, như Webamp (js/media/index.ts
+     setPreamp: gain = 10^(dB/20)): frac 0.5 (0 dB) -> gain 1.0,
+     frac 1.0 (+12 dB) -> 3.98, frac 0 (-12 dB) -> 0.25. Trước đây Amp
+     gán gain = frac nên 0 dB chỉ còn 0.5 = -6 dB: EQ phẳng đã nhỏ hơn
+     Webamp 6 dB, đẩy hết cỡ vẫn không bằng Webamp mặc định. */
+  function preampGain(frac) { return Math.pow(10, fracToDb(frac) / 20); }
   /* Đợt L (9.8): URL HLS không nhất thiết có đuôi .m3u8 — proxy TV vmttv
      (https://vmttv.dpdns.org/tv360/?id=N) redirect 302 tới master HLS
      tv360.vn nhưng URL gốc không có .m3u8. Trước đây isHlsUrl trả false
@@ -130,6 +143,7 @@
     var onTimeUpdate = opts.onTimeUpdate || null;     /* (t, duration|null, seekable|null) */
     var onEnded = opts.onEnded || null;               /* () */
     var onError = opts.onError || null;               /* ({item, reason}) */
+    var onEqFallback = opts.onEqFallback || null;     /* Đợt v10.2 — ({item, reason:"cors"}): bật EQ mà đài không có CORS -> engine tự rơi về phát native, renderer báo rõ + đồng bộ nút EQ về off */
     var onPlayingChange = opts.onPlayingChange || null; /* (playing) */
     var onAnalyser = opts.onAnalyser || null;         /* (analyser) — renderer.setAvsAnalyser */
     var getVideoEl = opts.getVideoEl || null;         /* () -> <video> của renderer */
@@ -191,6 +205,19 @@
     var retried = false, hlsTried = false, pendingSeek = null;
     var eqValues = { preamp: 0.5, bands: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] };
     var destroyed = false;
+    var limiter = null; /* Đợt v10.2 — DynamicsCompressor chống clip (xem hằng LIMITER_*). */
+    /* Đợt v10.2 — fallback CORS khi bật EQ: đài không trả
+       Access-Control-Allow-Origin thì nạp với crossOrigin=anonymous lỗi
+       ngay (không có metadata, không tạo được source) — trước đây thử
+       lại 1 lần rồi báo kênh lỗi + lặng luôn. Giờ tự rơi về phát native
+       (tắt EQ) + báo rõ lý do qua onEqFallback. */
+    var eqFallbackTried = false;
+    /* Đợt v10.2 — watchdog radio lặng (xem watchdogTick): kiểm tra mỗi 5s
+       khi đang phát; currentTime đứng yên quá 10s thì nối lại src, tối đa
+       3 lần rồi báo lỗi hẳn. */
+    var watchdogTimer = null, wdLastTime = -1, wdStallSince = 0, wdRecoveries = 0;
+    var WD_TICK_MS = 5000, WD_STALL_MS = 10000, WD_MAX_RECOVERIES = 3;
+    var resumeHandlersWired = false; /* Đợt v10.2 — handler resume khi chạm/phím (như Webamp) */
 
     /* ---------- CORS ---------- */
     function pageOrigin() {
@@ -231,11 +258,14 @@
       } catch (e) { graphUnavailable = true; return false; }
       try {
         preamp = ctx.createGain();
-        preamp.gain.value = clamp01(eqValues.preamp);
+        preamp.gain.value = preampGain(eqValues.preamp);
         bandNodes = [];
         for (var i = 0; i < EQ_FREQS.length; i++) {
           var b = ctx.createBiquadFilter();
-          b.type = "peaking";
+          /* Đợt v10.2 — như Webamp (js/media/index.ts): dải đầu lowshelf,
+             dải cuối highshelf, 8 dải giữa peaking (tần số + Q giữ
+             nguyên của Amp). */
+          b.type = (i === 0) ? "lowshelf" : (i === EQ_FREQS.length - 1) ? "highshelf" : "peaking";
           b.frequency.value = EQ_FREQS[i];
           b.Q.value = EQ_Q;
           b.gain.value = fracToDb(eqValues.bands[i]);
@@ -243,9 +273,24 @@
         }
         master = ctx.createGain();
         master.gain.value = volume;
+        /* Đợt v10.2 — limiter chống clip (lựa chọn của Amp, KHÔNG phải từ
+           Webamp): DynamicsCompressor sau master, trước panner/analyser.
+           Ngưỡng -3 dB, tỉ lệ 20:1 nên mức thường gần như không chạm tới;
+           chỉ bóp các đỉnh vượt 0 dBFS khi preset boost + đài to (chống
+           rè/bể tiếng khi kéo volume lên max). */
+        try {
+          if (ctx.createDynamicsCompressor) {
+            limiter = ctx.createDynamicsCompressor();
+            limiter.threshold.value = LIMITER_THRESHOLD_DB;
+            limiter.knee.value = LIMITER_KNEE_DB;
+            limiter.ratio.value = LIMITER_RATIO;
+            limiter.attack.value = LIMITER_ATTACK;
+            limiter.release.value = LIMITER_RELEASE;
+          }
+        } catch (e) { limiter = null; }
         analyser = ctx.createAnalyser();
         analyser.fftSize = ANALYSER_FFT_SIZE;
-        try { analyser.smoothingTimeConstant = 0.8; } catch (e) { /* stub */ }
+        try { analyser.smoothingTimeConstant = 0.0; } catch (e) { /* stub */ }
         /* Đợt D (9.9) — StereoPannerNode cho PAN (xem ghi chú ở đầu graph):
            có thì chèn giữa master và analyser, không có thì nối thẳng như cũ. */
         try {
@@ -255,15 +300,24 @@
           }
         } catch (e) { panner = null; }
         /* Nối chuỗi (chưa có nguồn vào): preamp -> 10 biquad -> master
-           -> [panner] -> analyser -> destination. */
+           -> [limiter] -> [panner] -> analyser -> destination. */
         var head = preamp;
         for (var j = 0; j < bandNodes.length; j++) { head.connect(bandNodes[j]); head = bandNodes[j]; }
         head.connect(master);
-        if (panner) { master.connect(panner); panner.connect(analyser); }
-        else master.connect(analyser);
+        if (limiter) { master.connect(limiter); head = limiter; } else head = master;
+        if (panner) { head.connect(panner); panner.connect(analyser); }
+        else head.connect(analyser);
         analyser.connect(ctx.destination);
       } catch (e) { graphUnavailable = true; return false; }
       graphBuilt = true;
+      /* Đợt v10.2 — ctx bị treo giữa chừng (vd. Android treo khi khóa màn
+         hình / tab nền): tự resume ngay khi state đổi, không đợi người
+         dùng bấm phát. */
+      try {
+        if (ctx) ctx.onstatechange = function () {
+          try { if (ctx.state === "suspended" && playing && ctx.resume) ctx.resume(); } catch (e) { /* bỏ qua */ }
+        };
+      } catch (e) { /* stub */ }
       /* Đăng ký analyser với renderer ngay: chưa có nguồn thì vis đọc 0
          (đứng yên) — đúng hành vi "EQ tắt -> vis đứng yên". */
       if (onAnalyser) { try { onAnalyser(analyser); } catch (e) { /* bỏ qua */ } }
@@ -422,11 +476,18 @@
       if (st) {
         eqValues.preamp = clamp01(st.preamp !== undefined ? st.preamp : 0.5);
         var b = st.bands || [];
-        for (var i = 0; i < 10; i++) eqValues.bands[i] = clamp01(b[i] !== undefined ? b[i] : 0.5);
+        /* Đợt v10.2 — SỬA LỆCH DẢI: getEqState() của renderer trả bands
+           11 phần tử [preamp, eq1..eq10] (bands[0] = preamp), còn
+           resume()/eqf trả 10 phần tử [eq1..eq10]. Trước đây đọc thẳng
+           b[i] nên dải 1 ăn giá trị preamp, eq10 không bao giờ được áp
+           (preset lệch hẳn 1 dải). Chuẩn hóa: 11 phần tử thì bỏ phần
+           tử đầu, 10 phần tử thì dùng thẳng. */
+        var off = (b.length === 11) ? 1 : 0;
+        for (var i = 0; i < 10; i++) eqValues.bands[i] = clamp01(b[i + off] !== undefined ? b[i + off] : 0.5);
       }
       if (!graphBuilt) return;
       try {
-        if (preamp) preamp.gain.value = clamp01(eqValues.preamp);
+        if (preamp) preamp.gain.value = preampGain(eqValues.preamp);
         for (var j = 0; j < bandNodes.length; j++) bandNodes[j].gain.value = fracToDb(eqValues.bands[j]);
       } catch (e) { /* stub */ }
     }
@@ -439,6 +500,18 @@
       if (crossfadeActive || (pendingXfade && currentEl === pendingXfade.toEl)) {
         if (graphBuilt && master) {
           try { master.gain.value = volume; } catch (e) { /* stub */ }
+        }
+        /* Đợt v10.2 — crossfade đang CHỜ (thẻ mới chưa phát, ramp chưa
+           chạy): thẻ CŨ vẫn đang hát ở volume cũ, còn slider đã đổi —
+           cập nhật luôn thẻ cũ để kéo volume có tác dụng ngay. Trước đây
+           applyVolume trả sớm nên kéo volume lúc này không đổi tiếng gì
+           (bar hiện 100% mà tiếng vẫn mức cũ — đúng như người dùng báo
+           18:40/18:43: load lại mới hết vì engine mới không còn pending).
+           Lúc ramp ĐANG chạy thì không chạm (ramp giữ volume từng thẻ;
+           finishXfade áp lại volume mới). Thẻ mới lấy toTarget lúc bắt
+           đầu ramp nên đã đúng volume hiện tại, không cần sửa. */
+        if (!crossfadeActive && pendingXfade && pendingXfade.fromEl) {
+          try { pendingXfade.fromEl.volume = elTargetVolume(pendingXfade.fromEl); } catch (e) { /* stub */ }
         }
         return;
       }
@@ -478,6 +551,10 @@
         el.addEventListener("error", onMediaErrorEv);
         el.addEventListener("loadedmetadata", onMetaEv);
         el.addEventListener("pause", onPauseEv);
+        /* Đợt v10.2 — watchdog: hết buffer giữa chừng (stalled/waiting)
+           thì ghi dấu; không có sự kiện này thì thẻ chết im cũng không ai biết. */
+        el.addEventListener("stalled", onStalledEv);
+        el.addEventListener("waiting", onStalledEv);
         el._ampWired = true;
       } catch (e) { /* phần tử stub */ }
       return el;
@@ -610,7 +687,11 @@
     /* Thẻ mới cho chế độ native khi thẻ cũ đã bị "bắt" bởi graph
        (EQ đã từng bật + URL cross-origin): thẻ mới chưa có source nên
        phát native lại được, tiếng không câm. */
-    function freshElement(kind) {
+    /* Thay thẻ media bằng thẻ mới (không source, không crossOrigin).
+       Đợt v10.2 — elToReplace: thay đúng thẻ đang phát (có thể là
+       audioElB sau crossfade), không chỉ thẻ chính audioEl; gọi không
+       kèm tham số thì giữ hành vi cũ (thay audioEl). */
+    function freshElement(kind, elToReplace) {
       detachHls();
       if (kind === "video") {
         var oldV = lastVideoEl;
@@ -619,7 +700,12 @@
         lastVideoEl = null; videoSrc = null; videoSrcEl = null;
         return getVideo();
       }
-      var oldA = audioEl;
+      var oldA = elToReplace || audioEl;
+      if (oldA === audioElB) {
+        if (oldA) { pauseEl(oldA); clearSrc(oldA); }
+        audioElB = null; audioSrcB = null; audioSrcElB = null;
+        return getAudioB();
+      }
       if (oldA) { pauseEl(oldA); clearSrc(oldA); }
       audioEl = null; audioSrc = null; audioSrcEl = null;
       return getAudio();
@@ -689,7 +775,18 @@
               if (seq === loadSeq && currentEl) { try { currentEl.play(); } catch (e) { /* bỏ qua */ } }
             });
             if (Hls.Events.ERROR) hls.on(Hls.Events.ERROR, function (ev, data) {
-              if (data && data.fatal) handleLoadFailure("hls");
+              if (!data || !data.fatal) return;
+              /* Đợt v10.2 — như Webamp fork (elementSource.ts): lỗi mạng
+                 nghiêm trọng giữa chừng thì thử tải lại (startLoad), lỗi
+                 media thì recoverMediaError — chỉ khi không hồi được mới
+                 báo lỗi hẳn. Trước đây lỗi fatal nào cũng bỏ luôn sau
+                 1 lần thử lại. */
+              try {
+                var ET = Hls.ErrorTypes || {};
+                if (data.type === ET.NETWORK_ERROR && hls.startLoad) { hls.startLoad(); return; }
+                if (data.type === ET.MEDIA_ERROR && hls.recoverMediaError) { hls.recoverMediaError(); return; }
+              } catch (e) { /* rơi xuống báo lỗi */ }
+              handleLoadFailure("hls");
             });
           }
           /* HLS cũng có thể treo (không manifest): hẹn giờ như native. */
@@ -759,7 +856,7 @@
       /* EQ tắt + thẻ đã có source + URL cross-origin -> thẻ mới (xem đầu file).
          Đường này không crossfade được (thẻ mới thay luôn thẻ đang dùng). */
       if (!eqOn && sourceExistsForEl(el) && isCrossOrigin(item.url)) {
-        el = freshElement(currentKind);
+        el = freshElement(currentKind, el); /* Đợt v10.2 — thay đúng thẻ el (có thể là B) */
         if (!el) { handleLoadFailure("no-element"); return { ok: false, reason: "no-element" }; }
         xfadeEl = null;
         /* Thẻ mới thay luôn thẻ đang dùng: dừng thẻ cũ (trước đó chưa
@@ -794,7 +891,7 @@
       /* Thử lại (sau lỗi 3s) phải GIỮ retried=true để lỗi lần 2 là lỗi
          cuối (không thử lại vô hạn). Chỉ lần nạp do người dùng bấm mới
          reset retried. */
-      if (!opts2.keepRetried) retried = false;
+      if (!opts2.keepRetried) { retried = false; eqFallbackTried = false; /* Đợt v10.2 — lần bấm mới được thử fallback CORS lại */ }
       hlsTried = false;
       loadState = "loading";
       setCrossOrigin(el, eqOn);
@@ -826,6 +923,25 @@
         }, errorRecheckMs);
         return;
       }
+      /* Đợt v10.2 — FALLBACK CORS (hướng chẩn đoán chính 18:30): bật EQ
+         mà đài không có CORS thì lần nạp với crossOrigin=anonymous lỗi
+         ngay, thử lại sau 3s cũng lỗi. Đài vẫn phát tốt ở chế độ native
+         (EQ off) nên KHÔNG được báo kênh lỗi + lặng luôn — tự tắt EQ,
+         nạp lại native (không crossOrigin) + báo rõ qua onEqFallback để
+         renderer hiện lý do và đồng bộ nút EQ về off. Chỉ thử fallback
+         1 lần / lần bấm (eqFallbackTried); native mà cũng lỗi thì rơi
+         xuống đường lỗi thường bên dưới. Áp dụng cả khi phát lần đầu
+         với EQ bật lẫn khi bật EQ giữa chừng (setEqOn), và cả kênh video
+         (TV360 qua vmttv cũng chỉ xem được khi EQ tắt — HLS.js đã thử
+         trước rồi mới tới đây). Đặt SAU lần thử lại để lỗi mạng thoáng
+         qua vẫn có cơ hội hồi bằng EQ (chống báo oan). */
+      if (currentCrossOrigin === "anonymous" && !eqFallbackTried) {
+        eqFallbackTried = true;
+        eqOn = false;
+        if (onEqFallback) { try { onEqFallback({ item: currentItem, reason: "cors" }); } catch (e) { /* bỏ qua */ } }
+        loadAndPlay(currentItem, { userInitiated: false, keepRetried: true });
+        return;
+      }
       loadState = "error";
       playing = false;
       if (onPlayingChange) { try { onPlayingChange(false); } catch (e) { /* bỏ qua */ } }
@@ -837,10 +953,18 @@
       var el = (ev && (ev.target || ev.currentTarget)) || currentEl;
       return el === currentEl ? el : null;
     }
+    /* Đợt v10.2 — watchdog: thẻ báo stalled/waiting (hết buffer giữa
+       chừng) thì ghi dấu thời gian; watchdog nối lại nếu kẹt quá lâu. */
+    function onStalledEv(ev) {
+      var el = currentEventEl(ev);
+      if (!el) return;
+      if (playing && !wdStallSince) wdStallSince = Date.now();
+    }
     function onPlayingEv(ev) {
       var el = currentEventEl(ev);
       if (!el) return;
       clearTimers();
+      wdStallSince = 0; wdRecoveries = 0; /* Đợt v10.2 — phát lại được thì hết kẹt */
       playing = true;
       markElPlaying(el); /* Đợt 4 */
       loadState = "playing";
@@ -852,6 +976,7 @@
       var el = currentEventEl(ev);
       if (!el) return;
       clearTimers(); /* có timeupdate = đang phát thật */
+      wdStallSince = 0; /* Đợt v10.2 — thời gian chạy = không kẹt */
       markElPlaying(el); /* Đợt 4 */
       if (!playing) {
         playing = true;
@@ -906,11 +1031,113 @@
       handleLoadFailure("native-error");
     }
 
+    /* ---------- watchdog radio lặng (đợt v10.2) ----------
+       Triệu chứng trên điện thoại thật: nghe radio 1 hồi thì lặng hẳn,
+       chỉ báo stereo/mono biến mất; tắt EQ cũng không cứu được; load lại
+       trang thì có tiếng rồi lại lặng; cùng đài/máy/mạng, Webamp không bị.
+       Ba cơ chế đều khớp mọi manh mối — watchdog kiểm tra cả ba mỗi 5s:
+       (1) AudioContext bị treo (suspended) giữa chừng — vd. Android treo
+           khi khóa màn hình / tab nền; EQ-off cũng không cứu vì source
+           đã tạo thì bypass vẫn đi qua ctx (routeSource nối thẳng
+           destination của ctx đang treo). -> resume().
+       (2) Thẻ media bị tạm dừng (mất audio focus...) mà cờ playing vẫn
+           true. -> play() lại.
+       (3) Stream đứt giữa chừng: thẻ không pause nhưng currentTime đứng
+           yên quá 10s (hết buffer, Icecast reset kết nối) — không có sự
+           kiện error nào. -> nạp lại src, tối đa 3 lần rồi báo lỗi hẳn
+           để người dùng bấm phát lại. Ở yên kênh, không tự nhảy kênh dưới.
+       Webamp không bị vì: direct mode dùng thẻ mới KHÔNG qua
+       MediaElementSource (miễn nhiễm ctx treo), và constructor đăng ký
+       handler resume khi chạm/click/phím (Amp trước đây không có).
+       Watchdog chỉ chạy khi đang phát; tiến triển (currentTime chạy)
+       thì reset bộ đếm. */
+    function watchdogTick() {
+      if (destroyed || !playing || !currentEl || !currentItem) return;
+      try {
+        if (ctx && ctx.state === "suspended" && ctx.resume) ctx.resume();
+      } catch (e) { /* bỏ qua */ }
+      var paused = false;
+      try { paused = !!currentEl.paused; } catch (e) { paused = false; }
+      if (paused) {
+        try {
+          var pp = currentEl.play();
+          if (pp && pp.catch) pp.catch(function () { /* autoplay chặn */ });
+        } catch (e) { /* bỏ qua */ }
+        return;
+      }
+      var t = 0;
+      try { t = currentEl.currentTime || 0; } catch (e) { t = 0; }
+      if (wdLastTime < 0) { wdLastTime = t; wdStallSince = 0; return; }
+      if (Math.abs(t - wdLastTime) < 0.01) {
+        if (!wdStallSince) wdStallSince = Date.now();
+        if (Date.now() - wdStallSince >= WD_STALL_MS) {
+          wdStallSince = 0;
+          wdRecoveries++;
+          if (wdRecoveries > WD_MAX_RECOVERIES) {
+            wdLastTime = -1;
+            loadState = "error"; playing = false;
+            if (onPlayingChange) { try { onPlayingChange(false); } catch (e) { /* bỏ qua */ } }
+            if (onError) { try { onError({ item: currentItem, reason: "watchdog-stall" }); } catch (e) { /* bỏ qua */ } }
+            return;
+          }
+          /* Nối lại src (giữ retried để lỗi lần nữa là lỗi cuối). */
+          loadAndPlay(currentItem, { userInitiated: false, keepRetried: true });
+          wdLastTime = -1;
+        }
+      } else {
+        wdLastTime = t; wdStallSince = 0; wdRecoveries = 0;
+      }
+    }
+    function startWatchdog() {
+      if (watchdogTimer) return;
+      try {
+        watchdogTimer = setInterval(watchdogTick, WD_TICK_MS);
+        /* Node/jsdom: unref để test không bị kẹt event loop. */
+        if (watchdogTimer && typeof watchdogTimer.unref === "function") watchdogTimer.unref();
+      } catch (e) { watchdogTimer = null; }
+    }
+    function stopWatchdog() {
+      if (watchdogTimer) { try { clearInterval(watchdogTimer); } catch (e) { /* bỏ qua */ } watchdogTimer = null; }
+      wdLastTime = -1; wdStallSince = 0;
+    }
+    /* Đợt v10.2 — như Webamp (media/index.ts constructor): bất kỳ lần
+       chạm/click/bấm phím nào cũng thử resume ctx đang treo (người dùng
+       chạm vào điện thoại là tiếng về, không cần bấm phát lại). Gắn 1 lần
+       cho cả engine; visibilitychange: quay lại trang thì resume + phát
+       tiếp nếu đang phát mà thẻ dừng. */
+    function wireResumeHandlers() {
+      if (resumeHandlersWired || !doc || !doc.addEventListener) return;
+      resumeHandlersWired = true;
+      var tryResume = function () {
+        try {
+          if (ctx && ctx.state === "suspended" && playing && ctx.resume) ctx.resume();
+        } catch (e) { /* bỏ qua */ }
+      };
+      try {
+        doc.addEventListener("touchend", tryResume, false);
+        doc.addEventListener("click", tryResume, false);
+        doc.addEventListener("keydown", tryResume, false);
+        doc.addEventListener("visibilitychange", function () {
+          try {
+            if (doc.hidden) return;
+            tryResume();
+            if (playing && currentEl && currentEl.paused) {
+              var p2 = currentEl.play();
+              if (p2 && p2.catch) p2.catch(function () { /* autoplay chặn */ });
+            }
+          } catch (e) { /* bỏ qua */ }
+        }, false);
+      } catch (e) { /* môi trường test thiếu addEventListener */ }
+    }
+
     /* ---------- API công khai ---------- */
     function playItem(item, eqState) {
       if (!item || !item.url) return { ok: false, reason: "no-url" }; /* muc khong co link nhac */
+      if (destroyed) return { ok: false, reason: "destroyed" }; /* Đợt v10.2 — AUDIT: engine đã hủy (đổi skin) thì không phát lại */
       if (eqState) { eqOn = !!eqState.on; applyEqValues(eqState); }
       ensureGraph();
+      wireResumeHandlers(); /* Đợt v10.2 — chạm/phím nào cũng resume ctx treo */
+      startWatchdog(); /* Đợt v10.2 — theo dõi lặng tiếng khi đang phát */
       if (ctx && ctx.state === "suspended" && ctx.resume) {
         try { ctx.resume(); } catch (e) { /* bỏ qua */ }
       }
@@ -927,6 +1154,8 @@
       if (!currentEl) return { ok: false, reason: "nothing" };
       if (loadState === "error" && currentItem) return playItem(currentItem, { on: eqOn, preamp: eqValues.preamp, bands: eqValues.bands.slice() });
       ensureGraph();
+      wireResumeHandlers(); /* Đợt v10.2 */
+      startWatchdog(); /* Đợt v10.2 */
       if (ctx && ctx.state === "suspended" && ctx.resume) {
         try { ctx.resume(); } catch (e) { /* bỏ qua */ }
       }
@@ -958,6 +1187,25 @@
       }
       return true;
     }
+    /* Đợt v10.2 — AUDIT (đổi skin): hủy engine cũ hẳn. bootSkin tạo engine
+       mới mỗi lần đổi skin mà trước đây không dừng engine cũ → thẻ audio
+       cũ (không nằm trong DOM) vẫn phát tiếp → chồng tiếng với engine mới,
+       watchdog/HLS/timer cũ chạy mãi, AudioContext cũ không đóng → đổi
+       skin nhiều lần chạm giới hạn số ctx của Chrome. Dừng watchdog, dừng
+       phát (cả 2 thẻ A/B + video), xóa src, hủy HLS, đánh dấu destroyed
+       để callback async cũ bỏ qua, đóng ctx (nếu có). */
+    function destroy() {
+      destroyed = true;
+      stopWatchdog();
+      try { stop(); } catch (e) { /* bỏ qua */ }
+      try { if (audioEl) { pauseEl(audioEl); clearSrc(audioEl); } } catch (e) { /* bỏ qua */ }
+      try { if (audioElB) { pauseEl(audioElB); clearSrc(audioElB); } } catch (e) { /* bỏ qua */ }
+      try { var v = lastVideoEl; if (v) { pauseEl(v); clearSrc(v); } } catch (e) { /* bỏ qua */ }
+      try { detachHls(); } catch (e) { /* bỏ qua */ }
+      try { if (ctx && typeof ctx.close === "function") ctx.close(); } catch (e) { /* bỏ qua */ }
+      playing = false;
+      return true;
+    }
     function seekTo(t) {
       if (!currentEl) return false;
       if (!canSeekTo(currentEl, t)) return false;
@@ -983,7 +1231,7 @@
     function setPreamp(frac) {
       eqValues.preamp = clamp01(frac);
       if (graphBuilt && preamp) {
-        try { preamp.gain.value = clamp01(eqValues.preamp); } catch (e) { /* stub */ }
+        try { preamp.gain.value = preampGain(eqValues.preamp); } catch (e) { /* stub */ }
       }
       return eqValues.preamp;
     }
@@ -1016,7 +1264,46 @@
       if (!graphBuilt) ensureGraph();
       if (!currentEl || !currentItem) { applyRouting(); return { changed: true, reloaded: false }; }
       if (!on) {
-        if (sourceExistsForEl(currentEl)) { applyRouting(); return { changed: true, reloaded: false }; }
+        if (sourceExistsForEl(currentEl)) {
+          /* Đợt v10.2 — NHẢ HẲN về phát trực tiếp (người dùng chẩn đoán
+             18:48: on→off không trở về như off lúc đầu). Trước đây chỉ
+             applyRouting() (source -> destination): thẻ vẫn bị
+             AudioContext bắt nên tiếng đi qua ctx, nhỏ hơn phát native
+             thật — load lại trang mới hết (thẻ mới không source). Giờ
+             đổi sang THẺ MỚI (freshElement: không source, không
+             crossOrigin) để phát native y như off lúc đầu; vị trí file
+             giữ qua pendingSeek như đường reload off→on. Các source còn
+             lại (thẻ kia/video) cũng nối về destination qua
+             applyRouting() để lần crossfade sau không lôi chuỗi EQ trở
+             lại. Đổi lấy 1 lần nạp lại ngắn (radio live về lại đầu live,
+             file tua về đúng vị trí cũ) — đúng như Webamp direct mode. */
+          var pos = getCurrentTime();
+          var wasPlaying = playing;
+          var seq = ++loadSeq;
+          clearTimers(); detachHls();
+          cancelXfade(true);
+          retried = false; hlsTried = false; loadState = "loading";
+          pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
+          measuredChannels = null; measuredForEl = null;
+          currentEl = freshElement(currentKind, currentEl);
+          if (!currentEl) { handleLoadFailure("no-element"); return { changed: true, reloaded: true }; }
+          setCrossOrigin(currentEl, false); /* thẻ mới native: không crossOrigin */
+          applyRouting(); /* source còn lại (thẻ kia/video) về destination */
+          setSrcAndPlay(currentEl, currentItem.url, seq);
+          if (!wasPlaying) { pauseEl(currentEl); }
+          else {
+            /* Tải lại là tiếp nối phát (không phải tạm dừng): pauseEl
+               thẻ cũ trong freshElement bắn sự kiện 'pause' làm cờ
+               playing về false (jsdom bắn đồng bộ; trình duyệt thật bắn
+               sau nhưng currentEl đã đổi nên onPauseEv bỏ qua) — khôi
+               lại cờ ngay để renderer/watchdog không tưởng là đã dừng;
+               thẻ mới bắn 'playing'/'timeupdate' sẽ xác nhận lại. */
+            playing = true; loadState = "playing";
+            if (onPlayingChange) { try { onPlayingChange(true); } catch (e) { /* bỏ qua */ } }
+          }
+          applyVolume();
+          return { changed: true, reloaded: true };
+        }
         if (currentCrossOrigin === "anonymous") {
           var pos = getCurrentTime();
           var wasPlaying = playing;
@@ -1038,7 +1325,8 @@
       var wasPlaying2 = playing;
       var seq2 = ++loadSeq;
       clearTimers(); detachHls();
-      retried = false; hlsTried = false; loadState = "loading";
+      retried = false; hlsTried = false; eqFallbackTried = false; /* Đợt v10.2 — lần bật EQ mới được thử fallback CORS lại */
+      loadState = "loading";
       pendingSeek = pos2 > 0 ? pos2 : null; /* khôi phục ở loadedmetadata */
       setCrossOrigin(currentEl, true);
       setSrcAndPlay(currentEl, currentItem.url, seq2);
@@ -1090,7 +1378,7 @@
     return {
       AUDIO_VERSION: AUDIO_VERSION,
       playItem: playItem, pause: pause, resume: resume, togglePlay: togglePlay,
-      stop: stop, seekTo: seekTo, seekToFraction: seekToFraction,
+      stop: stop, destroy: destroy, /* Đợt v10.2 — AUDIT: hủy engine cũ khi đổi skin */ seekTo: seekTo, seekToFraction: seekToFraction,
       getDuration: getDuration, getCurrentTime: getCurrentTime,
       setVolume: setVolume, setPreamp: setPreamp, setEqBand: setEqBand,
       setEqOn: setEqOn, getState: getState, getSampleRate: getSampleRate,
@@ -1101,11 +1389,15 @@
       measureChannels: measureChannels, getMeasuredChannels: getMeasuredChannels,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, limiter: limiter, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
       },
       /* test/debug: trạng thái crossfade */
       _crossfade: function () {
         return { crossfadeMs: crossfadeMs, pending: !!pendingXfade, active: crossfadeActive, pendingTo: pendingXfade ? pendingXfade.toEl : null, activeFrom: activeXfade ? activeXfade.fromEl : null, activeTo: activeXfade ? activeXfade.toEl : null };
+      },
+      /* test/debug: watchdog radio lặng (đợt v10.2) */
+      _watchdog: function () {
+        return { tick: watchdogTick, running: !!watchdogTimer, lastTime: wdLastTime, stallSince: wdStallSince, recoveries: wdRecoveries, eqFallbackTried: eqFallbackTried };
       }
     };
   }

@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.1 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.2 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -137,7 +137,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.1" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "10.2" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js / eqf.js /
    classic.js / milkdrop.js / metadata.js đọc window.AMP_VERSION lúc nạp để tự
    kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và
@@ -195,20 +195,20 @@
    isVideoItem nhận diện nguồn TV qua host vmttv + đường dẫn /tv360/ /VTVGo/
    + group TV; lưới an toàn runtime setVideoInfo đổi mode theo videoWidth
    thật; nhập URL .m3u nạp cả danh sách qua parseM3U). */
-window.AMP_VERSION = "10.1";
+window.AMP_VERSION = "10.2";
 </script>
-<script src="classic.js?v=10.1"></script>
-<script src="skin-loader.js?v=10.1"></script>
-<script src="audio.js?v=10.1"></script>
-<script src="eqf.js?v=10.1"></script>
-<script src="milkdrop.js?v=10.1"></script>
-<script src="metadata.js?v=10.1"></script>
-<script src="maki.js?v=10.1"></script>
-<script src="renderer.js?v=10.1"></script>
+<script src="classic.js?v=10.2"></script>
+<script src="skin-loader.js?v=10.2"></script>
+<script src="audio.js?v=10.2"></script>
+<script src="eqf.js?v=10.2"></script>
+<script src="milkdrop.js?v=10.2"></script>
+<script src="metadata.js?v=10.2"></script>
+<script src="maki.js?v=10.2"></script>
+<script src="renderer.js?v=10.2"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.1" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "10.2" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -224,7 +224,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.1";
+var VERSION = "10.2";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* Đợt 4 (03/11): crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
@@ -270,7 +270,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.1 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.2 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -728,12 +728,21 @@ async function bootSkin(file, name) {
         onTimeUpdate: function (t, dur, seekable) { renderer.onAudioTimeUpdate(t, dur, seekable); },
         onEnded: function () { renderer.onAudioEnded(); },
         onError: function (info) { renderer.onAudioError(info); },
+        onEqFallback: function (info) { renderer.onAudioEqFallback(info); }, /* Đợt v10.2 — bật EQ gặp đài không CORS: engine tự về native, báo rõ */
         onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* đợt F: phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } },
         onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
       });
       renderer.setAudioEngine(audioEngine);
       /* Đợt 4: áp thời gian crossfade đã lưu (mặc định 2s). */
       if (audioEngine.setCrossfade) audioEngine.setCrossfade(crossfadeMs);
+      /* Đợt v10.2 — AUDIT (đổi skin): hủy engine cũ hẳn. Trước đây engine
+         cũ không bị dừng → thẻ audio cũ (không nằm trong DOM) vẫn phát
+         tiếp → chồng tiếng với engine mới + rò AudioContext. Hủy SAU khi
+         engine mới tạo xong để nếu tạo mới lỗi thì catch vẫn khôi phục
+         được engine cũ còn nguyên. */
+      if (prevSkin.audioEngine && prevSkin.audioEngine !== audioEngine && prevSkin.audioEngine.destroy) {
+        try { prevSkin.audioEngine.destroy(); } catch (e) { /* bỏ qua */ }
+      }
     }
     /* Đợt D — restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
     try {
@@ -807,8 +816,18 @@ async function bootSkin(file, name) {
     if (window.console && console.info) console.info("[Amp]\n" + lines.join("\n"));
     logVersion("skin: " + (SKIN.name || name));
     setZoom(zoom);
-    /* Đợt 4: khôi phục Milkdrop đã bật ở lần trước (nạp lib lazy). */
-    if (milkdropOn) { toggleMilkdrop(); }
+    /* Đợt 4: khôi phục Milkdrop đã bật ở lần trước (nạp lib lazy).
+       Đợt v10.2 — AUDIT: trước đây gọi toggleMilkdrop() khi milkdropOn=true
+       thì TẮT luôn Milkdrop sau mỗi lần đổi skin (toggle đảo trạng thái),
+       trái ý "khôi phục". Sửa: tắt → reset visualizer (nó giữ ctx/analyser
+       của engine cũ) → bật lại với canvas/ctx mới. */
+    if (milkdropOn) {
+      (async function () {
+        try { await toggleMilkdrop(); } catch (e) { /* bỏ qua */ }
+        try { if (milkdropCtl && milkdropCtl.reset) milkdropCtl.reset(); } catch (e) { /* bỏ qua */ }
+        try { await toggleMilkdrop(); } catch (e) { /* bỏ qua */ }
+      })();
+    }
     if (RES.kind === "classic") {
       var cs = renderer.getClassicMainState ? renderer.getClassicMainState() : null;
       setStatus("Đã nạp skin Classic " + (SKIN.name || name) + " — cửa sổ chính Classic "

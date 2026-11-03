@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.1";
-  var EXPECTED_RENDERER_VERSION = "10.1";
+  var RENDERER_VERSION = "10.2";
+  var EXPECTED_RENDERER_VERSION = "10.2";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -103,6 +103,10 @@
      visVariant === 0 (mặc định) dùng màu này; bấm VIS_Prev/Next đổi sang
      VIS_VARIANTS[1..2]. AVS canvas dùng chung mảng này (không có <vis> riêng). */
   var visXmlBands = new Array(VIS_BANDS).fill("#ffffff");
+  /* Đợt v10.2 — màu peak từ <vis> colorbandpeak (skin 566: trắng);
+     Classic dùng viscolors[23] (xám 150). Trước đây Amp dùng nhầm
+     visXmlBands[15] (màu đáy, xanh lá) làm màu peak. */
+  var visXmlPeak = "#ffffff";
   /* Nhóm nút trong AVSGroup theo chế độ (v8 syncEmbAvsMode): chế độ video
      hiện buttons.video + buttons.video.switchto ("Switch to Visualizer") +
      buttons.video.detach; chế độ vis hiện bộ .vis tương ứng. */
@@ -634,12 +638,17 @@
       try {
         s.live.style.width = c.w + "px";
         s.live.style.height = c.h + "px";
-        /* Xem trước nhẹ: phần tử co giãn + vùng nội dung theo tỉ lệ. */
+        /* Xem trước nhẹ: phần tử co giãn GIỮ NGUYÊN KHOẢNG CÁCH với mép
+           cửa sổ (đợt v10.2) — list = kích thước khung mới − offset cố
+           định, KHÔNG scale theo tỉ lệ như trước (scale tỉ lệ làm list
+           thiếu dần khi kéo dài: kéo ML 349→600 thì list chỉ 299×1.72 =
+           514 thay vì 550, để khoảng xanh trống dưới list; kéo nhiều lần
+           liên tiếp còn lệch dần). Nền data-stretch vẫn scale tỉ lệ như cũ. */
         var fx = c.w / (s.startW || 1), fy = c.h / (s.startH || 1);
         for (var pi = 0; pi < (s.preview || []).length; pi++) {
           var pv = s.preview[pi];
-          if (pv.w) pv.el.style.width = Math.round(pv.w * fx) + "px";
-          if (pv.h) pv.el.style.height = Math.round(pv.h * fy) + "px";
+          if (pv.w) pv.el.style.width = Math.max(0, Math.round(c.w - (pv.offW || 0))) + "px";
+          if (pv.h) pv.el.style.height = Math.max(0, Math.round(c.h - (pv.offH || 0))) + "px";
           if (pv.stretch) {
             var bs = scalePxPair(pv.bgSize, fx, fy);
             if (bs) pv.el.style.backgroundSize = bs;
@@ -739,10 +748,16 @@
             var baseWrapH = (wrap0 && wrap0.id === "stage-wrap") ? (parseInt(wrap0.style.height || "0", 10) || 0) : 0;
             var preview = [];
             try {
-              var nodes = live.querySelectorAll('[data-stretch="1"], .pl-list, .ml-content, video, canvas');
+              var nodes = live.querySelectorAll('[data-stretch="1"], .pl-list, .ml-content, .ml-list, .ml-tree, video, canvas');
               for (var ni = 0; ni < nodes.length; ni++) {
                 var nd = nodes[ni];
-                preview.push({ el: nd, w: parseInt(nd.style.width || "0", 10) || 0, h: parseInt(nd.style.height || "0", 10) || 0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: !!(nd.dataset && nd.dataset.stretch === "1") });
+                var w0 = parseInt(nd.style.width || "0", 10) || 0, h0 = parseInt(nd.style.height || "0", 10) || 0;
+                /* Đợt v10.2 — lưu KHOẢNG CÁCH tới mép cửa sổ (offset) thay
+                   vì chỉ lưu kích thước: lúc kéo, list = kích thước khung
+                   mới − offset cố định (playlist −65, ML −50 theo XML),
+                   không scale theo tỉ lệ. .ml-list/.ml-tree cũng snapshot
+                   riêng để có chiều cao px tường minh trong lúc kéo. */
+                preview.push({ el: nd, w: w0, h: h0, offW: startW - w0, offH: startH - h0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: !!(nd.dataset && nd.dataset.stretch === "1") });
               }
             } catch (err2) { preview = []; }
             resizeSession = {
@@ -1013,6 +1028,11 @@
        Repeat; kéo rộng cửa sổ thì nhóm hiện theo đúng XML. */
     var beatVisOn = false;
     var avsMedia = null; /* {wrap, video, canvas} — tạo 1 lần, DI CHUYỂN giữa hộp nhúng/rời (không tạo lại để khỏi mất trạng thái phát) */
+    /* Đợt v10.2 — fallback vis ở chế độ video: thẻ <video> đã biết chắc có
+       hình chưa? null = chưa biết (đang nạp / chưa có metadata), true =
+       videoWidth > 0, false = đã có metadata mà videoWidth == 0 (luồng
+       chỉ có tiếng / kênh chết hình). Dùng cho applyAvsMediaVisibility. */
+    var avsVideoHasPic = null;
     var avsAnalyser = null; /* ĐIỂM NỐI ĐỢT E: AnalyserNode của chuỗi EQ (audio.js
        đăng ký qua setAvsAnalyser ngay khi tạo graph). Đợt B (9.9): drawVisStatic
        vẽ theo tần số thật KHI EQ BẬT + analyser có tín hiệu; EQ tắt (tiếng đi
@@ -1330,6 +1350,7 @@
       try { avsMedia.video.pause(); } catch (e) { /* bỏ qua */ }
       try { avsMedia.video.removeAttribute("src"); avsMedia.video.load(); } catch (e) { /* bỏ qua */ }
       avsMedia = null;
+      avsVideoHasPic = null; /* Đợt v10.2 — the moi thi chua biet co hinh khong */
       return true;
     }
 
@@ -1755,6 +1776,20 @@
         updateStatusEls(); refreshPlaylistRows(); persistPlayback();
       }
     }
+    /* Đợt v10.2 — fallback CORS khi bật EQ (audio.js onEqFallback):
+       đài không có CORS nên nạp qua AudioContext lỗi; engine đã tự tắt
+       EQ + nạp lại native, tiếng vẫn phát — chỉ báo rõ lý do trên dòng
+       chữ chạy và đồng bộ nút EQ về off (đừng để LED EQ vẫn sáng trong
+       khi engine đang phát native). Không báo "kênh lỗi" vì kênh vẫn phát. */
+    function onAudioEqFallback(info) {
+      drawerState.eqOn = false; demo.eq = false;
+      try { cfgState.set("EQ_TOGGLE", "off"); refreshCfgGroup("EQ_TOGGLE"); } catch (e) { /* bỏ qua */ }
+      showTickerError("Kenh nay khong qua EQ duoc (CORS) - dang phat truc tiep");
+      persistPlayback();
+      updateInfoEls();
+      updateChannelsIndicator(); /* native: không đo được -> stereo tạm */
+      requestRerender();
+    }
     function onAudioError(info) {
       var it = (info && info.item) || playlistState.items[playlistState.current];
       var name = it ? it.name : "";
@@ -1808,6 +1843,12 @@
          "stereo" TẠM — xem ghi chú trong updateChannelsIndicator (lệch khỏi
          suy đoán gốc, ghi rõ). */
     async function setChannelsState(state) {
+      /* Đợt v10.2 (18:30) — KHÔNG bao giờ hiện "none" (trống) khi đang
+         phát: "none" chỉ đúng khi dừng. Trước đây chỉ báo có thể về trống
+         giữa chừng (render lại / đo kênh trả null) trong khi tiếng vẫn hát
+         — người dùng tưởng mất cả stereo lẫn mono. Đang phát mà chưa đo
+         được thì giữ "stereo" tạm theo quy ước v9.7. */
+      if (state === "none" && demo.playing) state = "stereo";
       /* Snapshot record NGAY ĐẦU: hàm bất đồng bộ, render lại giữa chừng
          (renderLayout reset channelsRec) thì record cũ mất — dùng record
          đã snapshot, và bỏ qua nếu sau await record đã bị thay (lượt render
@@ -1864,7 +1905,11 @@
       try {
         if (audioEngine && audioEngine.measureChannels) {
           audioEngine.measureChannels(function (state) {
-            if (state && demo.playing) setChannelsState(state);
+            /* Đợt v10.2 (18:30) — đo trả null (EQ off / không có source)
+               thì KHẲNG ĐỊNH LẠI "stereo" tạm thay vì không làm gì: trước
+               đây null là bỏ qua, nên nếu chỉ báo bị xóa bởi một lần
+               vẽ lại chen giữa thì không có gì khôi phục lại. */
+            if (demo.playing) setChannelsState(state || "stereo");
           });
         }
       } catch (e) { /* bỏ qua */ }
@@ -2496,15 +2541,36 @@
       return "";
     }
 
-    /* Preset EQ — KHÔNG có trong skin (Winamp gốc đọc preset từ file ngoài),
-       nên đây là đường cong đơn giản tự định nghĩa, ghi rõ dB trong code;
-       chỉ "Flat" là chuẩn (tất cả 0 dB). frac = (dB + 12) / 24. */
+    /* Preset EQ — KHÔNG có trong skin (Winamp gốc đọc preset từ file ngoài).
+       17 preset chuẩn Winamp (đợt v10.2, 18:13): dữ liệu dB lấy từ
+       builtin.json của Webamp — đã kiểm chứng khớp tuyệt đối với file
+       winamp.q1 thật (17 preset, 0 giá trị khác); đổi từ thang .eqf
+       1..64 bằng eqfValueToDb của Amp (33 = 0 dB), làm tròn 1 số lẻ.
+       [preamp, eq1..eq10] theo dB; frac = (dB + 12) / 24.
+       5 preset tự định nghĩa cũ giữ lại phía dưới. */
     var EQ_PRESETS = {
-      "Flat":        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      "Bass Boost":  [0, 6, 5, 3, 0, 0, 0, 0, 0, 0, 0],
-      "Treble Boost":[0, 0, 0, 0, 0, 0, 0, 3, 5, 6, 6],
-      "Loudness":    [0, 5, 4, 2, 0, -1, -1, 0, 2, 4, 5],
-      "Vocal":       [0, -3, -2, 0, 2, 4, 4, 2, 0, -1, -2]
+      "Cổ điển":            [0, 0, 0, 0, 0, 0, 0, -4.9, -4.9, -4.9, -6.4],
+      "Club":               [0, 0, 0, 1.9, 3.5, 3.5, 3.5, 1.9, 0, 0, 0],
+      "Dance":              [0, 5.8, 4.3, 1.2, -0.4, -0.4, -4.1, -4.9, -4.9, -0.4, -0.4],
+      "Loa laptop/Tai nghe":[0, 2.7, 6.6, 3.1, -2.6, -1.9, 0.8, 2.7, 5.8, 7.7, 8.9],
+      "Hội trường lớn":     [0, 6.2, 6.2, 3.5, 3.5, 0, -3.4, -3.4, -3.4, 0, 0],
+      "Party":              [0, 4.3, 4.3, 0, 0, 0, 0, 0, 0, 4.3, 4.3],
+      "Pop":                [0, -1.5, 2.7, 4.3, 4.6, 3.1, -1.1, -1.9, -1.9, -1.5, -1.5],
+      "Reggae":             [0, 0, 0, -0.8, -4.1, 0, 3.9, 3.9, 0, 0, 0],
+      "Rock":               [0, 4.6, 2.7, -3.8, -5.2, -2.6, 2.3, 5.4, 6.6, 6.6, 6.6],
+      "Nhẹ nhàng":          [0, 2.7, 0.8, -1.1, -1.9, -1.1, 2.3, 5, 5.8, 6.6, 7.4],
+      "Ska":                [0, -1.9, -3.4, -3, -0.8, 2.3, 3.5, 5.4, 5.8, 6.6, 5.8],
+      "Bass mạnh":          [0, 5.8, 5.8, 5.8, 3.5, 0.8, -3, -5.6, -6.8, -7.1, -7.1],
+      "Rock nhẹ":           [0, 2.3, 2.3, 1.2, -0.8, -3, -3.8, -2.6, -0.8, 1.5, 5.4],
+      "Treble mạnh":        [0, -6.4, -6.4, -6.4, -3, 1.5, 6.6, 9.7, 9.7, 9.7, 10.5],
+      "Bass & Treble mạnh": [0, 4.3, 3.5, 0, -4.9, -3.4, 0.8, 5, 6.6, 7.4, 7.4],
+      "Trực tiếp":          [0, -3.4, 0, 2.3, 3.1, 3.5, 3.5, 2.3, 1.5, 1.5, 1.2],
+      "Techno":             [0, 4.6, 3.5, 0, -3.8, -3.4, 0, 4.6, 5.8, 5.8, 5.4],
+      "Flat":               [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "Bass Boost":         [0, 6, 5, 3, 0, 0, 0, 0, 0, 0, 0],
+      "Treble Boost":       [0, 0, 0, 0, 0, 0, 0, 3, 5, 6, 6],
+      "Loudness":           [0, 5, 4, 2, 0, -1, -1, 0, 2, 4, 5],
+      "Vocal":              [0, -3, -2, 0, 2, 4, 4, 2, 0, -1, -2]
     };
     var EQ_BAND_IDS = ["preamp", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7", "eq8", "eq9", "eq10"];
     function applyEqPreset(name) {
@@ -4186,6 +4252,10 @@
           var bcol = el.getAttribute("ColorBand" + (bk + 1)) || el.getAttribute("colorband" + (bk + 1)) || "255,255,255";
           xmlBands.push(rgbVal(bcol));
         }
+        /* Đợt v10.2 — đọc màu peak từ <vis> colorbandpeak (skin 566:
+           "255,255,255" -> trắng). */
+        var peakCol = el.getAttribute("colorbandpeak") || el.getAttribute("ColorBandPeak") || el.getAttribute("colorbandPeak") || "255,255,255";
+        visXmlPeak = rgbVal(peakCol);
         visXmlBands = xmlBands;
         visCanvases.push({ cv: cv, bands: xmlBands, fillBg: false });
         return;
@@ -4751,8 +4821,22 @@
           if (!rect || (rect.width === 0 && rect.height === 0)) return null;
           var cx = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
           var cy = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
-          if (vertical) return 1 - (cy - rect.top - th / 2) / Math.max(1, h - th);
-          return (cx - rect.left - tw / 2) / Math.max(1, w - tw);
+          /* Đợt v10.2 — stage zoom Fit scale bằng CSS transform nên rect
+             là px MÀN HÌNH, còn w/h/tw/th là px skin: đổi tọa độ chạm về
+             px skin (chia cho tỉ lệ rect/w) rồi mới tính frac. Trước đây
+             kéo hết cỡ ở Fit ~0.45x cũng chỉ được frac ~0.45 — volume /
+             EQ / seek / balance không bao giờ lên max được bằng cách kéo
+             (người dùng báo 18:38-18:43: thanh volume "100%" là mặc định
+             1.0, còn kéo tay thì không lên nổi max; EQ đẩy hết cỡ cũng
+             chỉ tới ~nửa dải nên vẫn nhỏ hơn Webamp mặc định). */
+          var sc = 1;
+          try {
+            if (vertical) { if (rect.height > 0 && h > 0) sc = rect.height / h; }
+            else if (rect.width > 0 && w > 0) sc = rect.width / w;
+            if (!isFinite(sc) || sc <= 0) sc = 1;
+          } catch (err) { sc = 1; }
+          if (vertical) return 1 - ((cy - rect.top) / sc - th / 2) / Math.max(1, h - th);
+          return ((cx - rect.left) / sc - tw / 2) / Math.max(1, w - tw);
         };
         var onDown = function (e) {
           var f = fracFromEvent(e);
@@ -5362,7 +5446,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.1 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.2 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -5779,8 +5863,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.1 — Winamp Modern",
-        "Phiên bản Amp: 10.1 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.2 — Winamp Modern",
+        "Phiên bản Amp: 10.2 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -5820,6 +5904,12 @@
       var div = document.createElement("div");
       div.style.position = "absolute"; div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = w + "px"; div.style.height = h + "px";
+      /* Đợt v10.2 — chữ tràn màn hình (người dùng 18:56: tên bài chạy ra
+         khỏi màn hình): hộp chữ PHẢI cắt ở mép hộp như Winamp thật.
+         Trước đây div ngoài không có overflow (CSS .stage .ticker cũng
+         không khớp class thật) nên chữ dài hơn hộp cứ vẽ tràn ra ngoài
+         hộp display, qua mép cửa sổ, ra khỏi màn hình ở chế độ Fit. */
+      div.style.overflow = "hidden";
       setAbs(div, parentEl, x, y);
       parentEl.appendChild(div);
       var id = el.getAttribute("id") || "";
@@ -5870,8 +5960,14 @@
           return;
         }
         if (display === "songname" || tag === "songticker") {
+          /* Đợt v10.2 — gán đúng class CSS (.stage .ticker + .inner trong
+             index.html: overflow:hidden + nowrap + will-change) để chữ
+             cuộn bị cắt ở mép hộp display như Winamp thật; trước đây div
+             ngoài không class, holder class "ticker-inner" nên CSS không
+             khớp, chữ tràn ra khỏi màn hình. */
+          div.className = "ticker";
           var holder = document.createElement("div");
-          holder.className = "ticker-inner";
+          holder.className = "inner";
           div.appendChild(holder);
           var rec = { div: div, holder: holder, fontId: fontId, boxW: w, color: color, showlen: el.getAttribute("showlen") === "1", offset: 0, textW: 0 };
           tickerEls.push(rec);
@@ -6189,6 +6285,9 @@
     var AVS_BARS = 75, AVS_ROWS = 16, AVS_MAX_ROWS = 15;
     var AVS_FALLOFF = 12 / 16; /* 0.75 hàng/khung — "moderate" của Webamp */
     var AVS_PEAK_VEL0 = 3 / 256, AVS_PEAK_FALLOFF = 1.1; /* "slow" */
+    var AVS_PUSHDOWN = 2; /* Đợt v10.2 — Webamp (VisPainter.ts): cột/peak/
+       sóng đều đẩy xuống 2 hàng (2 hàng trống trên cùng); barHeight =
+       round(falloff) − 2 (tối đa 13 hàng), peakHeight = peakRows − 1. */
     var avsShownRows = [], avsPeakRows = [], avsPeakVel = [];
     var lastAvsFrame = { mode: "sample", maxBin: 0, heights: [], peaks: [] };
     var avsGradCanvas = null, avsGradKey = "";
@@ -6214,8 +6313,13 @@
       var v = (i1 === i2) ? freq[i1] : (1 - (scaled - i1)) * freq[i1] + (scaled - i1) * freq[i2];
       return Math.min(AVS_MAX_ROWS, (v / 255) * AVS_MAX_ROWS);
     }
-    /* Canvas gradient 1×16 cho cột AVS (hàng trên = band 16, hàng đáy =
-       band 1); cache theo màu hiện tại, vẽ lại khi đổi variant/skin. */
+    /* Canvas gradient 1×16 cho cột AVS. Đợt v10.2 — sửa theo Webamp
+       (VisPainter.ts prepare): hàng y (từ trên) = colors[y] = bands[y−2]
+       (pushDown=2); hàng 0–1 là nền (không bao giờ vẽ — cột tối đa 13
+       hàng). Trước đây Amp tô bands[15−y] (LỘN: cột ngắn cũng hiện đủ
+       xanh→đỏ, đỉnh xanh lá) + vẽ kéo giãn toàn bộ gradient vào mọi cột
+       (cột ngắn cũng đủ màu). Giờ cột chỉ hiện các hàng DƯỚI của gradient
+       (neo đáy, xem drawAvsVis): cột ngắn chỉ xanh, cột cao mới tới đỏ. */
     function avsBarGradient(useXmlCol, col) {
       var key = (useXmlCol ? "xml:" + visXmlBands.join(",") : "var:" + col);
       if (avsGradCanvas && avsGradKey === key) return avsGradCanvas;
@@ -6229,7 +6333,7 @@
       try { g = cv.getContext("2d"); } catch (e) { g = null; }
       if (!g) return null;
       for (var y = 0; y < AVS_ROWS; y++) {
-        g.fillStyle = useXmlCol ? (visXmlBands[AVS_ROWS - 1 - y] || "#fff") : col;
+        g.fillStyle = useXmlCol ? ((y < AVS_PUSHDOWN) ? VIS_BG : (visXmlBands[y - AVS_PUSHDOWN] || "#fff")) : col;
         g.fillRect(0, y, 1, 1);
       }
       avsGradCanvas = cv;
@@ -6253,19 +6357,66 @@
       }
       return Math.sin(p * Math.PI * 8 + avsPhase);
     }
+    /* Đợt v10.2 — sóng kiểu Webamp (WavePaintHandler): analyser fftSize
+       1024 -> 1024 mẫu time-domain, lấy 576 mẫu đầu, sliceWidth 7 ->
+       76 điểm j=0..75, y = kẹp(round(amp/8) − 9, 0, 15) (amp = byte
+       0..255; im lặng 128 -> hàng 7, giữa canvas). Trước đây Amp chỉ có
+       64 mẫu (fftSize 64) nên sóng là lát cắt 1,45 ms, gần như đường
+       thẳng — "ít nhảy". */
+    var WAVE_POINTS = 76, WAVE_SLICE = 7;
+    function waveRowsFromTd(td) {
+      if (!td || !td.length) return null;
+      var rows = [];
+      for (var j = 0; j < WAVE_POINTS; j++) {
+        var amp = td[Math.min(td.length - 1, j * WAVE_SLICE)] || 128;
+        var r = Math.round(amp / 8) - 9;
+        if (r < 0) r = 0; if (r > 15) r = 15;
+        rows.push(r);
+      }
+      return rows;
+    }
     /* Biên độ sóng (0..1) của cột k trong n cột — ghi vào heights cho test. */
     function visWaveAmp(k, n, visMode, freq, td) {
+      if (visMode === "real" && td && td.length) {
+        var rows = waveRowsFromTd(td);
+        if (rows) {
+          var row = rows[Math.min(rows.length - 1, Math.floor((k + 0.5) / n * rows.length))];
+          if (row === undefined) row = 7;
+          return Math.abs(row - 7.5) / 7.5;
+        }
+      }
       return Math.abs(visWaveValue((k + 0.5) / n, visMode, freq, td));
     }
-    /* Vẽ 1 đường sóng ngang canvas (ctx2 null trong jsdom thì thôi). */
+    /* Vẽ 1 đường sóng ngang canvas (ctx2 null trong jsdom thì thôi).
+       real + có td: đoạn dọc nối 76 điểm kiểu Webamp ("lines": đi xuống
+       thì top++ như Winamp/WACUP), đẩy xuống 2 hàng; màu 1 màu (peak
+       color — skin Modern không có palette osc riêng colors[18..22] như
+       Classic nên dùng 1 màu, ghi rõ trong README). Không có td thật
+       (flat/sample/stub) thì giữ đường sine cũ. */
     function drawVisWave(ctx2, W, H, visMode, freq, td, col) {
       if (!ctx2 || !W || !H) return;
       try {
+        var rows = (visMode === "real") ? waveRowsFromTd(td) : null;
+        if (rows && typeof ctx2.fillRect === "function") {
+          var rowH = H / AVS_ROWS;
+          ctx2.fillStyle = col;
+          var lastY = (rows[0] + AVS_PUSHDOWN) * rowH;
+          for (var j = 0; j < rows.length; j++) {
+            var y = (rows[j] + AVS_PUSHDOWN) * rowH;
+            if (y < 0) y = 0; if (y > H - rowH) y = H - rowH;
+            var x = Math.round(j * W / rows.length);
+            var top = y, bottom = lastY;
+            if (bottom < top) { var tmp = top; top = bottom; bottom = tmp; top += 1; /* đi xuống thì top++ */ }
+            ctx2.fillRect(x, top, 1, Math.max(1, bottom - top + 1));
+            lastY = y;
+          }
+          return;
+        }
         if (typeof ctx2.beginPath !== "function") return;
         ctx2.beginPath();
-        for (var x = 0; x <= W; x += 2) {
-          var y = H / 2 - visWaveValue(x / W, visMode, freq, td) * (H / 2 - 2);
-          if (x === 0) ctx2.moveTo(x, y); else ctx2.lineTo(x, y);
+        for (var x2 = 0; x2 <= W; x2 += 2) {
+          var y2 = H / 2 - visWaveValue(x2 / W, visMode, freq, td) * (H / 2 - 2);
+          if (x2 === 0) ctx2.moveTo(x2, y2); else ctx2.lineTo(x2, y2);
         }
         ctx2.strokeStyle = col;
         ctx2.lineWidth = 1;
@@ -6297,7 +6448,7 @@
       if (visType === "osc") {
         /* Sóng: vẽ đường + heights = biên độ từng cột, không falloff/peak. */
         resetAvsVisState();
-        var waveCol = useXmlCol ? (visXmlBands[0] || "#fff") : col;
+        var waveCol = useXmlCol ? (visXmlPeak || "#fff") : col;
         if (ctx2) drawVisWave(ctx2, W, H, visMode, freq, td, waveCol);
         for (var ko = 0; ko < AVS_BARS; ko++) {
           heights.push(Math.round(visWaveAmp(ko, AVS_BARS, visMode, freq, td) * (H - 4)) + 2);
@@ -6323,11 +6474,18 @@
         lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
         return;
       }
-      /* real: mẫu log theo nhóm 4 (wide bandwidth) + falloff + peak. */
+      /* real: mẫu log theo nhóm 4 (wide bandwidth) + falloff + peak.
+         Đợt v10.2 — hình học đúng Webamp (VisPainter.ts): barHeight =
+         round(falloff) − pushDown (tối đa 13 hàng, 2 hàng trống trên
+         cùng); gradient vẽ neo đáy (chỉ các hàng DƯỚI của gradient,
+         cột ngắn chỉ xanh); peak 1 hàng (rowH), ở trên đỉnh cột
+         (peakY = H − (peakRows−1)·rowH), ẩn khi peakRows < 1; màu peak
+         từ colorbandpeak (trước đây nhầm màu đáy + cao 2px + không có
+         pushDown). heights/peaks ghi theo px để test đo được. */
       var sample = [];
       for (var s = 0; s < AVS_BARS; s++) sample.push(avsLogTarget(s, freq));
       var bw2 = W / AVS_BARS;
-      var peakCol = useXmlCol ? (visXmlBands[AVS_ROWS - 1] || "#fff") : col;
+      var peakCol = useXmlCol ? (visXmlPeak || "#fff") : col;
       for (var k2 = 0; k2 < AVS_BARS; k2++) {
         var chunk = k2 & 0xfffffffc;
         var target = ((sample[chunk] || 0) + (sample[chunk + 1] || 0) + (sample[chunk + 2] || 0) + (sample[chunk + 3] || 0)) / 4;
@@ -6338,19 +6496,20 @@
         avsPeakRows[k2] -= avsPeakVel[k2];
         avsPeakVel[k2] *= AVS_PEAK_FALLOFF;
         if (avsPeakRows[k2] <= 0) avsPeakRows[k2] = 0;
-        var shownPx = Math.round(avsShownRows[k2]) * rowH;
+        var barRows = Math.max(0, Math.round(avsShownRows[k2]) - AVS_PUSHDOWN);
+        var barPx = barRows * rowH;
         var peakPx = (peakRows < 1) ? 0 : peakRows * rowH;
-        heights.push(k2 % 4 === 3 ? 0 : shownPx);
+        heights.push(k2 % 4 === 3 ? 0 : barPx);
         peaks.push(k2 % 4 === 3 ? 0 : peakPx);
         if (!ctx2 || k2 % 4 === 3) continue;
         var bx = k2 * bw2 + 1, bwid = Math.max(1, bw2 - 2);
-        if (shownPx > 0) {
-          if (grad && typeof ctx2.drawImage === "function") ctx2.drawImage(grad, 0, 0, 1, AVS_ROWS, bx, H - shownPx, bwid, shownPx);
-          else { ctx2.fillStyle = useXmlCol ? (visXmlBands[0] || "#fff") : col; ctx2.fillRect(bx, H - shownPx, bwid, shownPx); }
+        if (barPx > 0) {
+          if (grad && typeof ctx2.drawImage === "function") ctx2.drawImage(grad, 0, AVS_ROWS - barRows, 1, barRows, bx, H - barPx, bwid, barPx);
+          else { ctx2.fillStyle = useXmlCol ? (visXmlBands[0] || "#fff") : col; ctx2.fillRect(bx, H - barPx, bwid, barPx); }
         }
         if (peakPx > 0) {
           ctx2.fillStyle = peakCol;
-          ctx2.fillRect(bx, H - peakPx, bwid, 2);
+          ctx2.fillRect(bx, H - (peakRows - 1) * rowH, bwid, rowH);
         }
       }
       lastAvsFrame = { mode: visMode, maxBin: maxBin, heights: heights, peaks: peaks, visType: visType };
@@ -6722,7 +6881,13 @@
       try {
         /* RAN GIỚI ĐỢT D/ĐỢT E: loadedmetadata chỉ cập nhật chuỗi WxH;
            việc gán src + phát (native/HLS/crossOrigin/EQ) là đợt E. */
-        v.addEventListener("loadedmetadata", function () { setVideoInfo(v.videoWidth || 0, v.videoHeight || 0); });
+        v.addEventListener("loadedmetadata", function () {
+          avsVideoHasPic = (v.videoWidth || 0) > 0; /* Đợt v10.2 — fallback vis */
+          setVideoInfo(v.videoWidth || 0, v.videoHeight || 0);
+          applyAvsMediaVisibility();
+        });
+        /* Đợt v10.2 — bắt đầu nạp luồng mới: chưa biết có hình không. */
+        v.addEventListener("loadstart", function () { avsVideoHasPic = null; applyAvsMediaVisibility(); });
         v.addEventListener("dblclick", function () { requestVideoFullscreen(); });
       } catch (e) { /* jsdom */ }
       var cv = document.createElement("canvas");
@@ -6741,18 +6906,33 @@
     }
     /* Gắn hộp media vào một hộp cha (nhúng hoặc rời) tại rect cho trước;
        hiện video hay canvas theo mode; đăng ký canvas để drawVisStatic vẽ. */
+    /* Đợt v10.2 — fallback vis ở chế độ video: kênh đang ở mode "video"
+       mà đã biết chắc KHÔNG có hình (avsVideoHasPic === false: luồng chỉ
+       có tiếng / kênh chết hình) thì hiện canvas vis thay vì thẻ video
+       đen; chỉ khi đã biết chắc để không nhá vis lúc kênh video đang nạp
+       (null = chưa biết). setVideoInfo đã có lưới an toàn chuyển mode
+       sang "vis" khi videoWidth == 0 với item phân loại video + AVS đang
+       mở — fallback này bao thêm trường hợp mode vẫn "video" (vd kênh
+       radio mở ở cửa sổ video). Milkdrop bật thì vis thường ẩn như cũ. */
+    function applyAvsMediaVisibility() {
+      if (!avsMedia) return false;
+      var showVis = avsState.mode === "video" && avsVideoHasPic === false && !milkdropActive;
+      avsMedia.video.style.display = (avsState.mode === "video" && !showVis) ? "" : "none";
+      avsMedia.canvas.style.display = ((avsState.mode === "vis" || showVis) && !milkdropActive) ? "" : "none";
+      return showVis;
+    }
     function attachAvsMedia(parentEl, rect) {
       var m = ensureAvsMedia();
       m.wrap.style.left = rect.x + "px"; m.wrap.style.top = rect.y + "px";
       m.wrap.style.width = rect.w + "px"; m.wrap.style.height = rect.h + "px";
       setAbs(m.wrap, parentEl, rect.x, rect.y);
       m.video.style.width = rect.w + "px"; m.video.style.height = rect.h + "px";
-      m.video.style.display = avsState.mode === "video" ? "" : "none";
+      applyAvsMediaVisibility(); /* Đợt v10.2 — thay 2 dòng gán display trực tiếp */
       m.canvas.width = Math.max(40, rect.w); m.canvas.height = Math.max(20, rect.h);
       m.canvas.style.width = rect.w + "px"; m.canvas.style.height = rect.h + "px";
       /* Đợt 4 (Milkdrop): Milkdrop bật thì canvas vis thường ẩn, canvas
-         Milkdrop hiện thay (xem applyMilkdropVisibility). */
-      m.canvas.style.display = (avsState.mode === "vis" && !milkdropActive) ? "" : "none";
+         Milkdrop hiện thay (xem applyMilkdropVisibility — nó tính lại
+         display của canvas vis, giữ nguyên quyết định fallback video-mode). */
       setAbs(m.video, m.wrap, 0, 0);
       setAbs(m.canvas, m.wrap, 0, 0);
       applyVideoScaleToEl();
@@ -6772,7 +6952,9 @@
       var showMd = !!(milkdropActive && milkdropCanvas && avsState.mode === "vis" && avsState.open);
       try {
         if (milkdropCanvas) milkdropCanvas.style.display = showMd ? "" : "none";
-        if (avsMedia) avsMedia.canvas.style.display = (avsState.mode === "vis" && !showMd) ? "" : "none";
+        /* Đợt v10.2 — canvas vis hiện khi mode "vis" HOẶC fallback video-mode
+           (mode "video" + đã biết chắc không có hình), trừ khi Milkdrop hiện. */
+        if (avsMedia) avsMedia.canvas.style.display = ((avsState.mode === "vis" || (avsState.mode === "video" && avsVideoHasPic === false)) && !showMd) ? "" : "none";
       } catch (e) { /* bỏ qua */ }
       return showMd;
     }
@@ -7175,7 +7357,12 @@
         try { rect = div.getBoundingClientRect(); } catch (err) { rect = null; }
         if (!rect || (rect.width === 0 && rect.height === 0)) return null;
         var cx = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
-        return (cx - rect.left - cfg.thumbW / 2) / Math.max(1, geo.w - cfg.thumbW);
+        /* Đợt v10.2 — như slider Modern: rect là px màn hình (stage
+           scale bằng transform), geo.w là px skin — đổi về px skin rồi
+           mới tính frac, không thì kéo hết cỡ ở Fit cũng chỉ ~0.45. */
+        var sc = 1;
+        try { if (rect.width > 0 && geo.w > 0) sc = rect.width / geo.w; if (!isFinite(sc) || sc <= 0) sc = 1; } catch (err) { sc = 1; }
+        return ((cx - rect.left) / sc - cfg.thumbW / 2) / Math.max(1, geo.w - cfg.thumbW);
       };
       var onDown = function (e) {
         var f = fracFromEvent(e);
@@ -8277,8 +8464,11 @@
         vidInfoEls = savedRegs.vid.concat(vidInfoEls);
         animLayerRecs = savedRegs.anim.concat(animLayerRecs); /* Đợt D (9.9): filmstrip */
         /* Đợt K (9.7): Pledit không có lớp channels nên lượt Pledit đặt
-           channelsRec = null; khôi lại của cửa sổ chính (trạng thái đã áp
-           trong lượt render main, không cần vẽ lại). */
+           channelsRec = null; khôi lại BẢN GHI của cửa sổ chính (chỉ giữ
+           lại record/div để các lần áp sau có đích — KHÔNG đồng nghĩa
+           trạng thái đã áp: lệnh áp "stereo" ở cuối lượt main là async
+           nên thường bị hủy khi lượt Pledit reset rec giữa chừng, xem
+           ghi chú cuối renderStackedInner đợt v10.2). */
         if (savedRegs.channels) channelsRec = savedRegs.channels;
       }
       var totalH = playerH + plH;
@@ -8352,6 +8542,16 @@
           T.insertBefore(bgDiv, T.firstChild);
         }
       } catch (e) { /* không có basetexture: giữ nền #000 như cũ */ }
+      /* Đợt v10.2 (18:34) — GIẢ THUYẾT PL/ML ĐÚNG: bật/tắt PL hay ML đều
+         xếp chồng vẽ lại cửa sổ chính, layer channels về ảnh mặc định
+         "none" (trong suốt). Lệnh áp "stereo" ở cuối lượt render main
+         là async (setChannelsState chờ bitmap) nên bị hủy khi lượt
+         Pledit/ML reset channelsRec = null giữa chừng (kiểm tra
+         channelsRec !== rec) — chỉ báo tắt luôn tới lần đổi trạng thái
+         phát sau. Áp lại ở đây, sau mọi lượt + khôi registry, để trạng
+         thái stereo/mono hiện tại luôn sáng sau mỗi lần bật/tắt cửa sổ
+         (PL, ML, ngăn kéo, video đều qua renderStackedInner). */
+      updateChannelsIndicator();
       applyColorTheme(T);
       swapIn();
       return totalH;
@@ -8484,6 +8684,7 @@
       cycleVisType: cycleVisType, setVisType: setVisType, getVisTypes: getVisTypes, VIS_TYPES: VIS_TYPES, /* Đợt 4: kiểu vis bar/osc/none */
       setAvsAnalyser: setAvsAnalyser, getAvsAnalyser: getAvsAnalyser,
       getVisXmlBands: function () { return visXmlBands.slice(); },
+      getVisXmlPeak: function () { return visXmlPeak; }, /* Đợt v10.2 */
       restoreAvsState: restoreAvsState, isVideoItem: isVideoItem,
       getAvsMedia: getAvsMedia, resetAvsMedia: resetAvsMedia,
       getAvsParkState: getAvsParkState, parkAvsMedia: parkAvsMedia, /* Đợt 4: holder giữ thẻ video khi đóng cửa sổ */
@@ -8501,7 +8702,7 @@
       playCurrentItem: playCurrentItem, nextTrack: nextTrack, prevTrack: prevTrack,
       togglePlay: togglePlay, stopPlayback: stopPlayback,
       onAudioTimeUpdate: onAudioTimeUpdate, onAudioEnded: onAudioEnded,
-      onAudioError: onAudioError, onAudioPlayingChange: onAudioPlayingChange,
+      onAudioError: onAudioError, onAudioEqFallback: onAudioEqFallback, onAudioPlayingChange: onAudioPlayingChange,
       setChannelsState: setChannelsState, updateChannelsIndicator: updateChannelsIndicator,
       showTickerError: showTickerError, clearTickerError: clearTickerError,
       getTickerError: getTickerError,

@@ -1,6 +1,82 @@
-# Amp v10.1 — Winamp Modern (đợt v10.1: Classic skin parser — vẽ được cửa sổ chính .wsz + shade Classic)
+# Amp v10.2 — Winamp Modern (đợt v10.2: gain staging EQ + radio không lặng + vis giống Webamp + 17 preset EQ chuẩn)
 
-Bản phát hành duy nhất: **version 10.1** (đợt v10.1 bump từ 10.0 vì loader đổi cho Classic — xem mục Đợt v10.1; các đợt sau giữ 10.1, chỉ bump tiếp nếu loader đổi).
+Bản phát hành duy nhất: **version 10.2** (đợt v10.2 bump từ 10.1 — sửa loader? Không: bump vì đổi `audio.js`/`renderer.js`/`milkdrop.js`/`skin-loader.js` (destroy engine) + thêm preset/fallback; manifest `window.AMP_VERSION` kiểm lệch thì dừng, báo "BẢN MIX").
+
+## Có gì trong gói
+
+| File | Version | Nội dung |
+|---|---|---|
+| `index.html` | 10.2 (`window.AMP_VERSION`) | Vỏ trang + toolbar + kiểm version + self-check lúc chạy; **đợt v10.2: hủy engine cũ khi đổi skin (không chồng tiếng)** |
+| `classic.js` | CLASSIC_VERSION 10.2 | **MỚI đợt v10.1:** parser skin Classic (.wsz) chuyển từ Webamp fork — đọc `viscolor.txt`/`pledit.txt`/`region.txt`/`genex.bmp`, bảng tọa độ 281 sprite Winamp 2, hình học cửa sổ chính 275×116 + shade 275×14 |
+| `skin-loader.js` | LOADER_VERSION 10.2 | Mở `.wal`/`.zip`, đọc XML, gom model (bitmap/font/màu/groupdef/layout), suy `embeddedAvs`, `drawerRestY`, `snapadjustbottom`; `.wsz` không có skin.xml thì parse thật bằng `classic.js` |
+| `renderer.js` | RENDERER_VERSION 10.2 | Vẽ cửa sổ chính + shade + ngăn kéo + playlist + AVS/Video (nhúng + cửa sổ rời), EQ/Options/Color Themes, playlist `.m3u`; **đợt v10.1: vẽ cửa sổ chính Classic + shade Classic từ BMP, nút bấm được**; **đợt 4: holder park giữ thẻ video khi đóng cửa sổ (tiếng vẫn phát), vis bấm đổi kiểu bar/sóng/tắt từng vùng, nối Milkdrop**; **đợt v10.2: 17 preset EQ chuẩn Winamp, slider kéo đúng ở tỉ lệ Fit, chỉ báo stereo/mono áp lại sau khi vẽ lại cửa sổ, ticker clip trong khung, fallback vis khi video không có hình** |
+| `audio.js` | AUDIO_VERSION 10.2 | Phát tiếng thật: native trước, HLS sau 6s/lỗi; chuỗi EQ (preamp + 10 biquad + master + analyser); MediaElementSource mỗi thẻ 1 lần; **đợt 4: crossfade trộn bài bằng engine 2 thẻ audio (A/B) + ramp gain, mặc định 2s**; **đợt v10.2: preamp map theo dB (0,5 = 0 dB), dải đầu lowshelf/dải cuối highshelf, limiter chống clip, watchdog radio lặng + HLS tự hồi + fallback CORS khi bật EQ, EQ off nhả hẳn về thẻ native mới, destroy() hủy engine cũ** |
+| `milkdrop.js` | MILKDROP_VERSION 10.2 | **MỚI đợt 4:** Milkdrop/butterchurn — nạp `butterchurn@2.6.7` + `butterchurn-presets@2.4.7` qua CDN lúc chạy (lazy, chỉ khi bật), preset mặc định qua URL, fallback preset nhúng sẵn; canvas gắn vào hộp AVS thay vis thường; **đợt v10.2: reset() để đổi skin xong bật lại đúng với ctx/analyser mới** |
+| `eqf.js` | EQF_VERSION 10.2 | Đọc/ghi preset EQ Winamp `.eqf`/`.q1` (header v1.1, 268B/preset) + map sang 10 dải + preamp của Amp (đợt v10.0) |
+| `metadata.js` | METADATA_VERSION 10.2 | **MỚI đợt 5:** đọc tag nhạc local — `music-metadata-browser@2.5.11` qua CDN ESM (dynamic import, dự phòng esm.sh) + parser ID3v2/v1 + FLAC Vorbis comment nhúng sẵn khi CDN chết; ghi title/artist/album/duration vào model mục playlist |
+| `maki.js` | MAKI_VERSION 10.2 | **MỚI đợt 7 (giai đoạn a):** parser + inspect script MAKI — đọc file `.maki` của skin (magic `FG`, formatVersion 23), liệt kê method/binding/ẩn-hiện/gán text; CHỈ ĐỌC, không chạy code MAKI (interpreter thật là giai đoạn b, để sau) |
+| ~~`skin-browser.js`~~ | ~~BROWSER_VERSION 10.1~~ | **ĐÃ GỠ HẲN ở đợt 5** (xem mục "Đợt 5"): chọn skin từ kho Webamp (GraphQL `skins.webamp.org`, panel `#skin-panel`, menu "Chọn skin từ kho…") bỏ luôn theo chốt của Hải — chỉ giữ "Nạp skin .wal/.zip…" chọn file tay |
+| `winampmodern566.wal` | — | Skin Winamp Modern 566 (mặc định, tự nạp lúc mở trang) |
+| `base-2.91.wsz` | — | Skin Classic mẫu — **đợt v10.1 vẽ được cửa sổ chính + shade, nút bấm được** (trước đây chỉ phát tiếng qua cửa sổ Video/Hiệu ứng rời) |
+| `radio.m3u` | — | Playlist mặc định: 41 kênh radio/TV (không còn bài Demo) (giữ tên + thứ tự gốc) |
+
+## Đợt v10.2 (03/11 tối — gain staging + radio lặng + vis + preset + audit chuyển trạng thái)
+
+Hải test v10.1 trên điện thoại thật (18:02–18:56) và báo 1 loạt lỗi. Gốc chung: **chuỗi gain sai 2 đầu** (EQ bật suy hao −6 dB ở preamp tuyến tính nên nhỏ tiếng; bù bằng volume max thì clip) + **EQ on→off không nhả hẳn** (thẻ vẫn bị AudioContext bắt nên nhỏ hơn Webamp cả khi EQ off; load lại trang thì ngang vì reset hết) + **bật EQ gặp đài không CORS thì câm luôn**.
+
+### (1) Gain staging — preamp map theo dB, limiter chống clip (`audio.js`)
+- Trước: `preamp.gain = frac` tuyến tính (giữa = 0,5 = −6 dB, max = 1,0 = 0 dB, không bao giờ tăng được). Webamp map theo dB (giữa = 0 dB, max = +12 dB). Đã sửa: `preampGain(frac) = 10^(fracToDb(frac)/20)` (frac 0,5 → 1,0; frac 1,0 → +12 dB → 3,98; frac 0 → −12 dB → 0,25), dùng ở 3 chỗ (tạo graph, khôi phục state, `setPreamp`). Dải EQ vẫn map dB như cũ (đúng).
+- Dải 0 → **lowshelf**, dải 9 → **highshelf** (giống Webamp; 8 dải giữa peaking), tần số Amp giữ nguyên (31,5…16000 Hz), Q=1. Analyser smoothing 0,8 → **0,0** (như Webamp), fftSize 64 → **1024** (sóng oscilloscope thấy rõ nhiều chu kỳ).
+- **Limiter chống clip (lựa chọn của Amp, KHÔNG phải từ Webamp — Webamp không có limiter):** DynamicsCompressorNode sau master, trước panner/analyser: threshold −3 dB, knee 3 dB, ratio 20:1, attack 0,002, release 0,1. Mức thường gần như không chạm tới; chỉ bóp các đỉnh vượt 0 dBFS khi preset boost + đài to.
+- Lỗi lệch dải (phát hiện khi kiểm preset): `getEqState()` trả 11 phần tử [preamp, eq1..eq10] còn `resume()`/eqf trả 10 phần tử [eq1..eq10]; `applyEqValues` cũ đọc thẳng `b[i]` nên dải 1 ăn giá trị preamp, eq10 không bao giờ được áp. Đã chuẩn hóa: 11 phần tử thì bỏ phần tử đầu.
+- Điểm so sánh chuẩn để test A/B: Webamp EQ phẳng mặc định vs Amp cùng preset phẳng — âm lượng phải ngang nhau; Amp boost hết cỡ phải to hơn rõ.
+
+### (2) Radio tự lặng + EQ on gặp đài không CORS (`audio.js` + `renderer.js`)
+- Watchdog (5s/lần, chỉ khi đang phát): ctx suspended → resume; thẻ bị pause mà cờ playing còn true → phát lại; `currentTime` đứng yên quá 10s → nạp lại src (tối đa 3 lần rồi báo lỗi hẳn `reason: "watchdog-stall"`, ở yên kênh, không tự nhảy kênh dưới). Thêm listener `stalled`/`waiting`, `ctx.onstatechange`, `wireResumeHandlers()` (touchend/click/keydown → resume ctx treo, như Webamp) + `visibilitychange`.
+- HLS tự hồi như Webamp: fatal NETWORK → `hls.startLoad()`, MEDIA → `hls.recoverMediaError()`; chỉ khi không hồi được mới báo lỗi.
+- **Fallback CORS khi bật EQ (hướng chẩn đoán chính 18:30):** lỗi lần 2 mà đang dùng `crossOrigin="anonymous"` thì tự tắt EQ, nạp lại native + báo qua `onEqFallback` → renderer đồng bộ trạng thái EQ off + dòng chữ chạy không dấu `Kenh nay khong qua EQ duoc (CORS) - dang phat truc tiep`. Áp dụng cả khi phát lần đầu với EQ bật lẫn khi bật EQ giữa chừng, cả kênh video (TV360 qua vmttv cũng chỉ xem được khi EQ tắt).
+- Chỉ báo stereo/mono khi EQ off: chưa đo được thì hiện **"stereo" tạm** (quy ước v9.7), không bao giờ hiện trống khi đang phát; `measureChannels` đo thật bằng ChannelSplitter sẽ sửa thành "mono" nếu L/R giống hệt.
+
+### (3) EQ on→off nhả hẳn về native (`audio.js`)
+- Trước: tắt EQ chỉ nối lại source về destination — thẻ vẫn bị AudioContext bắt nên tiếng vẫn qua ctx (nhỏ hơn off lúc đầu). Đã sửa: `setEqOn(false)` khi có source thì đổi sang **thẻ MỚI** (không source, không crossOrigin) để phát native y như off lúc đầu; vị trí file giữ qua `pendingSeek`; các source còn lại cũng nối về destination. Đổi lấy 1 lần nạp lại ngắn (radio live về lại đầu live, file tua về đúng vị trí cũ) — đúng như Webamp direct mode.
+- Đo thẳng (jsdom, `v10-2-test.js` S1–S12): mọi đường gain đều = 1,0 khi volume max; off→on→off cho gain hiệu dụng bằng nhau; bật/tắt EQ 5 lần không nhỏ dần; crossfade sau EQ-off không lôi chuỗi EQ trở lại.
+
+### (4) Vis giống Webamp — BAR + OSC, cả AVS lẫn cửa sổ Video rời (`renderer.js`)
+- Đối chiếu trực tiếp `VisPainter.ts`/`Vis.tsx` của Webamp (chỉ lấy kiểu dáng/thông số, code vẫn viết theo Amp, dùng analyser thật của Amp): BAR 75 cột (nhóm 4, bỏ cột thứ 4 làm khe), log scale 0,91, **pushDown = 2** (2 hàng trống trên cùng, cột cao tối đa 13/16), gradient **neo đáy** (cột ngắn chỉ hiện xanh lá, không kéo giãn toàn bộ gradient), peak **1px** màu `colorbandpeak`, ẩn khi peak < 1 hàng. Sửa `avsBarGradient` (trước đây lộn thứ tự màu) + `drawAvsVis`.
+- OSC: analyser fftSize 1024 → 76 điểm (lấy 576 mẫu đầu, lát 7), y = clamp(round(amp/8)−9, 0, 15), vẽ đoạn dọc nối các điểm (đi xuống thì top++), pushDown 2 hàng. Màu sóng: 1 màu (peak color) — skin Modern không có palette osc riêng colors[18..22] như Classic nên dùng 1 màu, đây là xấp xỉ (ghi rõ).
+- Fallback vis ở chế độ video: theo dõi `avsVideoHasPic` (null/trưa biết / true / false) qua `loadstart` + `loadedmetadata`; mode "video" + đã biết chắc không có hình → hiện canvas vis thay vì thẻ video đen; chỉ khi đã biết chắc để không nhá vis lúc kênh video đang nạp.
+- Cửa sổ Video của Webamp chỉ vẽ Milkdrop, không có vis spectrum — "vis trong cửa sổ Video của Webamp" mà Hải đối chiếu thực chất là vis spectrum chuẩn của Webamp; Amp vẽ vis đó trong cả 2 chỗ (AVS + cửa sổ Video rời) qua chung 1 wrap `avsMedia`.
+
+### (5) Đủ 17 preset EQ chuẩn Winamp (`renderer.js` — `EQ_PRESETS`)
+- Trước chỉ có 5 mục tự định nghĩa (Flat/Bass/Treble/Loudness/Vocal). Nay thêm đủ 17 preset chuẩn Winamp, dữ liệu dB lấy từ `builtin.json` của Webamp — đã kiểm chứng khớp tuyệt đối với file `winamp.q1` thật (17 preset, 0 giá trị khác); đổi từ thang .eqf 1..64 bằng `eqfValueToDb` của Amp (33 = 0 dB), làm tròn 1 số lẻ. Code EQ của Amp vẫn chuẩn spec Winamp — chỉ thiếu danh sách preset sẵn, nay bổ sung (lấy DỮ LIỆU dB từ Webamp, không lấy code xử lý; map theo dB của Amp giữ nguyên, KHÔNG theo kiểu tuyến tính của Webamp).
+- Danh sách: Cổ điển, Club, Dance, Loa laptop/Tai nghe, Hội trường lớn, Party, Pop, Reggae, Rock, Nhẹ nhàng, Ska, Bass mạnh, Rock nhẹ, Treble mạnh, Bass & Treble mạnh, Trực tiếp, Techno + 5 mục cũ + "Nạp preset .eqf…"/"Lưu preset .eqf…".
+
+### (6) Resize: list lấp đầy khung + số/chữ đúng kích thước (`renderer.js`)
+- Repro jsdom cho thấy đường re-render sau `setWinSize` đúng; lỗi trên điện thoại nhiều khả năng ở **preview lúc kéo scale theo snapshot tỉ lệ** (list = windowH − offset cố định, không phải tỉ lệ) và/hoặc **build cũ còn cache** (GitHub Pages deploy lag; `index.html` không có cache-buster). Đã sửa: preview lúc kéo tính trực tiếp từ kích thước khung mới bằng offset math (snapshot lưu `offW/offH`); selector snapshot mở rộng thêm `.ml-list,.ml-tree`; nền `data-stretch` vẫn scale tỉ lệ như cũ. Video cửa sổ rời: `object-fit: contain`, không méo.
+- **Số/chữ bitmap GIỮ NGUYÊN kích thước skin khi kéo resize khung** (chỉ stage zoom Fit mới scale toàn bộ bằng CSS transform) — đó là hành vi đúng của Winamp thật; chỉ vùng list/video giãn ra. Tay nắm kéo mượt v10.0/v10.1 giữ nguyên; đọc min/max từ XML, không gán cứng số 566.
+
+### (7) Slider kéo không lên max ở tỉ lệ Fit (`renderer.js` — `fracFromEvent`)
+- Lỗi thật (tìm ra khi đo đường EQ-off, 18:38–18:43): stage Fit scale bằng CSS transform nhưng `fracFromEvent` chia tọa độ màn hình (đã scale) cho kích thước skin (chưa scale) — kéo hết cỡ ở Fit ~0,45x cũng chỉ được frac ~0,45. Đã sửa cả 2 chỗ (slider Modern + Classic): tính tỉ lệ `sc = rect.width / w` (hoặc `rect.height / h` dọc), đổi tọa độ chạm về px skin trước khi chia. Đây là 1 nguyên nhân thật của "volume 100% mà vẫn nhỏ hơn Webamp".
+- Sửa thêm `applyVolume` lúc crossfade đang chờ: thẻ cũ đang hát được cập nhật volume ngay (trước đây early-return làm volume kẹt ở mức cũ trong khi thanh đã hiện 100%).
+
+### (8) Chỉ báo stereo/mono mất sau khi bật/tắt PL/ML (`renderer.js`)
+- Giả thuyết của Hải đúng: `renderStackedInner` vẽ lại cửa sổ chính từ đầu, layer channels về ảnh mặc định `player.songinfo.none` (trong suốt); `setChannelsState` là async nên lệnh áp "stereo" bị hủy khi lượt render sau reset `channelsRec`. Đã sửa: gọi `updateChannelsIndicator()` ở cuối `renderStackedInner` (bao cả PL, ML, ngăn kéo, video); guard không bao giờ áp "none" khi đang phát; `measureChannels` trả null thì khẳng định lại "stereo" tạm.
+
+### (9) Ticker tràn màn hình (`renderer.js` — `renderText`)
+- CSS `index.html` viết cho class `.ticker`/`.inner` nhưng renderer tạo div ngoài KHÔNG có class và holder class `ticker-inner` — `overflow:hidden` không bao giờ áp. Đã sửa: div ngoài được `style.overflow = "hidden"` (mọi nhánh); nhánh songticker: `div.className = "ticker"`, holder `className = "inner"`. Cơ chế cuộn không đổi (Modern 30px/s, tới cuối dừng 1s rồi về 0; Classic cuộn đều; Disabled không cuộn).
+
+### (10) Audit toàn diện chuyển trạng thái (18:49) — lỗi tìm được
+- **A. Engine cũ không bị hủy khi đổi skin (NGHIÊM TRỌNG):** `bootSkin` tạo engine MỚI mỗi lần đổi skin mà không dừng engine cũ → thẻ audio cũ (không nằm trong DOM) vẫn phát tiếp → chồng tiếng; watchdog/HLS/timer cũ chạy mãi; AudioContext cũ không đóng → đổi skin nhiều lần chạm giới hạn số ctx của Chrome (~6). Đã sửa: thêm `destroy()` vào `audio.js` (stop watchdog, stop, pause + clearSrc mọi thẻ, detachHls, `ctx.close()`, `playing = false`) + `bootSkin` gọi `prevSkin.audioEngine.destroy()` sau khi engine mới tạo xong; `playItem` sau destroy trả `{ok:false, reason:"destroyed"}`.
+- **B. Milkdrop bị tắt sau đổi skin:** `bootSkin` gọi `toggleMilkdrop()` khi đang BẬT thì TẮT luôn Milkdrop (đảo trạng thái), trái comment "khôi phục Milkdrop đã bật". Đã sửa: thêm `reset()` vào `milkdrop.js` (stopLoop, visualizer = null) + `bootSkin`: tắt → `reset()` → bật lại với canvas/ctx mới.
+- Các mục đối xứng (không lỗi): mute/unmute, shade, minimize, vis cycle, zoom, shuffle/repeat 3 trạng thái, đổi bài/crossfade, PL/ML/drawer, preset EQ.
+
+### Kiểm chứng đợt v10.2 (jsdom)
+- `audio-test.js` **314 PASS, 0 FAIL** (153 phần 1 + 161 phần 2; mới: slider Fit 0,45x, 17 preset, chỉ báo stereo sau re-render, EQ release).
+- `v10-2-test.js` (MỚI — đo thẳng gain/EQ release/destroy) **77 PASS, 0 FAIL** (S1–S12).
+- `avs-vis-test.js` **41 PASS, 0 FAIL** (mới: fallback vis video-mode).
+- `vis-options-songinfo-test.js` **149 PASS, 0 FAIL** (mới: ticker clip).
+- Headless Chrome trong sandbox không chạy được (lỗi Hatch WebGL domain policy — đã biết) nên các mục đo tiếng/hình thật chờ test trên điện thoại Oppo thật của Hải (xem checklist cuối báo cáo).
+
 
 ## Có gì trong gói
 

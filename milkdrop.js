@@ -43,8 +43,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MILKDROP_VERSION = "10.1";
-  var EXPECTED_MILKDROP_VERSION = "10.1";
+  var MILKDROP_VERSION = "10.2";
+  var EXPECTED_MILKDROP_VERSION = "10.2";
   if (MILKDROP_VERSION !== EXPECTED_MILKDROP_VERSION) {
     throw new Error("milkdrop.js: MILKDROP_VERSION (" + MILKDROP_VERSION + ") khac EXPECTED_MILKDROP_VERSION (" + EXPECTED_MILKDROP_VERSION + ") — ban mix, dung lai");
   }
@@ -273,6 +273,17 @@
       if (canvas) { try { canvas.style.display = "none"; } catch (e) { /* bỏ qua */ } }
       return getState();
     }
+    /* Đợt v10.2 — AUDIT (đổi skin): bỏ visualizer đã cache (nó giữ ctx +
+       analyser của engine cũ — engine mới có ctx/analyser mới nên
+       visualizer cũ sẽ không theo nhạc nữa). Gọi khi đổi skin, trước khi
+       bật lại Milkdrop để ensureVisualizer tạo mới với ctx/analyser mới. */
+    function reset() {
+      stopLoop();
+      visualizer = null;
+      state.visualizerReady = false;
+      presetLoaded = false;
+      return getState();
+    }
     /* Thử tạo visualizer + nạp preset khi đã bật mà trước đó chưa có
        AudioContext (vd bật Milkdrop trước khi phát nhạc lần đầu). */
     function ensureReady() {
@@ -370,7 +381,7 @@
       isEnabled: function () { return state.enabled; },
       setPlaying: setPlaying, setVisible: setVisible,
       setSize: setSize, syncSizeFromWrap: syncSizeFromWrap,
-      attachTo: attachTo, detach: detach, ensureReady: ensureReady,
+      attachTo: attachTo, detach: detach, reset: reset, /* Đợt v10.2 — AUDIT: bỏ visualizer cũ khi đổi skin */ ensureReady: ensureReady,
       loadPreset: loadPreset, loadDefaultPreset: loadDefaultPreset,
       resolvePreset: resolvePreset, getState: getState,
       getVisualizer: getVisualizer, getCanvas: getCanvas
