@@ -69,10 +69,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "9.5";
-  var EXPECTED_AUDIO_VERSION = "9.5";
+  var AUDIO_VERSION = "9.7";
+  var EXPECTED_AUDIO_VERSION = "9.7";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.5" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.7" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -123,6 +123,13 @@
     /* --- graph --- */
     var ctx = null, preamp = null, bandNodes = [], master = null, analyser = null;
     var graphBuilt = false, graphUnavailable = false;
+    /* Đợt K (9.7, điểm 7a) — đo kênh thật (stereo/mono) khi có source:
+       ChannelSplitter(2) tách L/R từ source + 2 analyser nhỏ đo biên độ
+       từng kênh. Chỉ đo được khi MediaElementSource đã tồn tại (EQ bật +
+       đài có CORS); không có source thì không đo được (xem ghi chú trong
+       renderer.updateChannelsIndicator). */
+    var chSplitter = null, chAnL = null, chAnR = null, chProbeFor = null;
+    var measuredChannels = null, measuredForEl = null;
     /* --- media --- */
     var audioEl = null, audioSrc = null, audioSrcEl = null;
     var videoSrc = null, videoSrcEl = null, lastVideoEl = null;
@@ -237,7 +244,81 @@
     function routeSource(src) {
       if (!src || !ctx) return;
       try { src.disconnect(); } catch (e) { /* chưa nối gì */ }
+      /* disconnect() cắt CẢ đường tới splitter đo kênh → nối lại sau. */
+      chProbeFor = null;
       try { src.connect(eqOn ? preamp : ctx.destination); } catch (e) { /* stub */ }
+      hookChannelProbe(src);
+    }
+    /* Đợt K (9.7) — móc source vào splitter đo kênh (lười tạo, dùng chung
+       1 bộ cho cả 2 source; đổi source thì ngắt source cũ khỏi splitter).
+       Stub jsdom (không có createChannelSplitter) thì im lặng bỏ qua. */
+    function hookChannelProbe(src) {
+      if (!ctx || !src || chProbeFor === src) return;
+      try {
+        if (!chSplitter) {
+          chSplitter = ctx.createChannelSplitter(2);
+          chAnL = ctx.createAnalyser(); chAnR = ctx.createAnalyser();
+          chAnL.fftSize = 256; chAnR.fftSize = 256;
+        }
+        if (chProbeFor && chProbeFor !== src) { try { chProbeFor.disconnect(chSplitter); } catch (e) { /* bỏ qua */ } }
+        src.connect(chSplitter);
+        try { chSplitter.connect(chAnL, 0); } catch (e) { /* bỏ qua */ }
+        try { chSplitter.connect(chAnR, 1); } catch (e) { /* bỏ qua */ }
+        chProbeFor = src;
+      } catch (e) { chProbeFor = null; }
+    }
+    /* Đợt K (9.7) — đo kênh thật của thẻ đang phát: lấy mẫu L/R 5 lần trong
+       ~500ms, theo dõi mức từng kênh (maxL/maxR) và chênh lệch L-R (maxDiff).
+       - Cả 2 kênh im (mức < 8) -> null (không kết luận), giữ "stereo" tạm.
+       - Chỉ 1 kênh có tín hiệu (kênh kia im) -> "mono" (file mono qua
+         splitter: kênh thừa im lặng, không phải L==R).
+       - Cả 2 kênh có tín hiệu và khác nhau (diff > 8) -> "stereo".
+       - Cả 2 kênh có tín hiệu và giống hệt (diff ~ 0) -> "mono" (dual mono /
+         file mono đã upmix L==R ở source).
+       Không có source sau 2s chờ (EQ tắt / không CORS) thì trả null.
+       cb(state) với state ∈ {"stereo","mono",null}. */
+    function getMeasuredChannels() {
+      if (!currentEl || measuredForEl !== currentEl) return null;
+      return measuredChannels;
+    }
+    function measureChannels(cb) {
+      var el0 = currentEl;
+      if (!el0 || !playing) { if (cb) cb(null); return; }
+      var waited = 0;
+      var tick = function () {
+        if (!playing || currentEl !== el0) { if (cb) cb(null); return; }
+        if (chProbeFor && chAnL && chAnR) { sample(); return; }
+        waited += 100;
+        if (waited >= 2000) { if (cb) cb(null); return; }
+        setTimeout(tick, 100);
+      };
+      var sample = function () {
+        var n = 0, maxL = 0, maxR = 0, maxDiff = 0;
+        var bufL = new Uint8Array(256), bufR = new Uint8Array(256);
+        var step = function () {
+          if (!playing || currentEl !== el0) { if (cb) cb(null); return; }
+          try { chAnL.getByteTimeDomainData(bufL); chAnR.getByteTimeDomainData(bufR); }
+          catch (e) { if (cb) cb(null); return; }
+          for (var i = 0; i < 256; i++) {
+            var l = Math.abs(bufL[i] - 128), r = Math.abs(bufR[i] - 128);
+            if (l > maxL) maxL = l;
+            if (r > maxR) maxR = r;
+            var d = Math.abs(bufL[i] - bufR[i]);
+            if (d > maxDiff) maxDiff = d;
+          }
+          n++;
+          if (n < 5) { setTimeout(step, 100); return; }
+          var res = null;
+          if (Math.max(maxL, maxR) >= 8) {
+            if (Math.min(maxL, maxR) < 8) res = "mono";
+            else res = (maxDiff > 8) ? "stereo" : "mono";
+          }
+          if (res && currentEl === el0) { measuredChannels = res; measuredForEl = el0; }
+          if (cb) cb(res);
+        };
+        step();
+      };
+      tick();
     }
     /* Nối/ngắt toàn bộ source theo EQ hiện tại (chuyển on/off không nạp lại). */
     function applyRouting() {
@@ -452,6 +533,9 @@
         if (!el) { handleLoadFailure("no-element"); return { ok: false, reason: "no-element" }; }
       }
       currentEl = el;
+      /* Đợt K (9.7): bài/kênh mới -> kết quả đo kênh cũ hết hiệu lực (thẻ
+         audio dùng lại cho bài mới nên không thể dựa vào measuredForEl). */
+      measuredChannels = null; measuredForEl = null;
       /* Thử lại (sau lỗi 3s) phải GIỮ retried=true để lỗi lần 2 là lỗi
          cuối (không thử lại vô hạn). Chỉ lần nạp do người dùng bấm mới
          reset retried. */
@@ -700,6 +784,7 @@
         playing: playing, loadState: loadState, volume: volume,
         hlsActive: !!hls, hlsTried: hlsTried, retried: retried,
         analyserConnected: !!analyser, analyserSignal: analyserHasSignal(),
+        measuredChannels: getMeasuredChannels(),
         eqValues: { preamp: eqValues.preamp, bands: eqValues.bands.slice() }
       };
     }
@@ -715,9 +800,10 @@
       setEqOn: setEqOn, getState: getState,
       getAudioEl: getAudioEl, getVideoElement: getVideoElement,
       ensureGraph: ensureGraph,
+      measureChannels: measureChannels, getMeasuredChannels: getMeasuredChannels,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, audioSrc: audioSrc, videoSrc: videoSrc };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, analyser: analyser, audioSrc: audioSrc, videoSrc: videoSrc, chSplitter: chSplitter, chAnL: chAnL, chAnR: chAnR, chProbeFor: chProbeFor };
       }
     };
   }

@@ -44,10 +44,10 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "9.5";
-  var EXPECTED_RENDERER_VERSION = "9.5";
+  var RENDERER_VERSION = "9.7";
+  var EXPECTED_RENDERER_VERSION = "9.7";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
-     đặt window.AMP_VERSION = "9.5" TRƯỚC khi nạp file này; khác manifest
+     đặt window.AMP_VERSION = "9.7" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
      manifest (test trực tiếp bằng require) thì không kiểm. */
   var MANIFEST_VERSION = (function () {
@@ -98,6 +98,11 @@
   /* Kiểu hiệu ứng (VIS_Prev/Next đổi): 3 màu cột — 0 là #7fff2a của đợt A.
      Chỉ đổi màu vẽ mẫu ở đợt D; đợt E nối analyser thì vẫn dùng 3 kiểu này. */
   var VIS_VARIANTS = [{ col: "#7fff2a" }, { col: "#33c3ff" }, { col: "#ffb02a" }];
+  /* Đợt K (9.7, điểm 7b2): màu cột vis theo XML <vis> ColorBand1..16
+     (skin 566: toàn trắng — vẽ cột trắng như WACUP thay vì xanh lá gán cứng).
+     visVariant === 0 (mặc định) dùng màu này; bấm VIS_Prev/Next đổi sang
+     VIS_VARIANTS[1..2]. AVS canvas dùng chung mảng này (không có <vis> riêng). */
+  var visXmlBands = new Array(VIS_BANDS).fill("#ffffff");
   /* Nhóm nút trong AVSGroup theo chế độ (v8 syncEmbAvsMode): chế độ video
      hiện buttons.video + buttons.video.switchto ("Switch to Visualizer") +
      buttons.video.detach; chế độ vis hiện bộ .vis tương ứng. */
@@ -114,8 +119,16 @@
        "0123456789._:  -'! +\\/  ^&?,=$#" (31 ký tự): ":" cột 12 (không phải
        13), "-" cột 15, KHÔNG có "%", CÓ "?" cột 26. Giữ bảng cũ thì PLTime
        "3:45" mất dấu ":" (hiện "3 45"), "-" hiện thành ":", "+"/"^"/"&" mất hẳn.
-     Hai font này giống hệt nhau về bảng ký tự, chỉ khác đảo alpha
-     (songinfofont đảo, pe.time không đảo — xem §8.1). */
+     Hai font này giống hệt nhau về bảng ký tự.
+     Đợt K (9.7, điểm 7b1): songinfofont là font "khuôn" (stencil) — nền ô
+     đục trắng, glyph là lỗ trong suốt — NHƯNG VẼ NGUYÊN BẢN, KHÔNG ĐẢO ALPHA.
+     Winamp vẽ glyph nguyên bản: nền ô đục nối thành viên trắng, lỗ hiện nền
+     display tối → chữ tối trên viên trắng (KBPS "56" mean ~194 ở WACUP).
+     Cơ chế đảo alpha cũ (v9, theo §8.1) SAI: nó biến glyph thành nét trắng
+     trên nền trong suốt (mất viên trắng) và lật hàng phân cách trong suốt
+     (y=15) thành vạch trắng đặc → vệt gạch dưới chân số ở ảnh Amp. Đã bỏ
+     hẳn cơ chế đảo (loadFont không còn đếm opaque/inverted; glyphURL
+     không còn lật alpha). Xem VERIFIED-NUMBERS.md §8.1 (đã sửa kết luận). */
   var FONT_ROWS = {
     "player.songticker.font": ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
     "player.smallfont":       ["ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@", "0123456789_.:()-'!_+\\/[]^&%,=$#", "ÀÖÄ?×"],
@@ -352,6 +365,7 @@
     var onDrawerToggle = opts.onDrawerToggle || null;
     var onShadeToggle = opts.onShadeToggle || null; /* đợt G: normal<->shade (nút winshade / dblclick nền shade) */
     var onPlaylistToggle = opts.onPlaylistToggle || null; /* đợt C: mở/đóng playlist */
+    var onPlayerClose = opts.onPlayerClose || null; /* v9.6 (Điểm 2): nút X cửa sổ chính — web không "thoát app" như Winamp thật nên index.html ẩn giao diện + hiện nút mở lại */
     var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
     /* State ngăn kéo đợt B (sống trong closure, KHÔNG reset khi re-render):
@@ -968,6 +982,73 @@
       if (playing) clearTickerError();
       updateStatusEls();
       refreshPlaylistRows();
+      updateChannelsIndicator();
+    }
+    /* Đợt K (9.7, điểm 7a) — chỉ báo kênh mono/stereo/surround.
+       XML: layer "channels" (songinfo (0,10), ảnh mặc định player.songinfo.none
+       — trong suốt) + 4 bitmap trạng thái player.songinfo.<none|stereo|mono|
+       surround>; MAKI songinfo.maki đổi image theo trạng thái phát. Amp không
+       chạy MAKI nên tự đổi ảnh bằng setChannelsState.
+       - Đổi ảnh bằng cách thay hậu tố sau dấu "." cuối của baseImage (lấy từ
+         XML, không gán cứng); bitmap không có trong model (skin khác thiếu
+         trạng thái) thì giữ nguyên, không ném lỗi.
+       - "none" khi dừng (đúng mặc định XML). Khi phát: dùng số kênh đo được
+         (audioEngine.getMeasuredChannels) nếu có; chưa đo được thì hiện
+         "stereo" TẠM — xem ghi chú trong updateChannelsIndicator (lệch khỏi
+         suy đoán gốc, ghi rõ). */
+    async function setChannelsState(state) {
+      /* Snapshot record NGAY ĐẦU: hàm bất đồng bộ, render lại giữa chừng
+         (renderLayout reset channelsRec) thì record cũ mất — dùng record
+         đã snapshot, và bỏ qua nếu sau await record đã bị thay (lượt render
+         mới sẽ tự áp lại trạng thái qua updateChannelsIndicator). */
+      var rec = channelsRec;
+      if (!rec) return false;
+      var base = rec.baseImage || "";
+      var idx = base.lastIndexOf(".");
+      var bid = idx >= 0 ? base.slice(0, idx + 1) + state : base;
+      var info = null;
+      try { info = await bitmapInfoCached(bid); } catch (e) { info = null; }
+      if (!info || !info.file) return false;
+      var spr = null;
+      try { spr = await spriteDiv(bid, rec.w, rec.h, { opacity: rec.opacity }); } catch (e) { spr = null; }
+      if (!spr) return false;
+      if (channelsRec !== rec) return false;
+      spr.style.left = rec.x + "px"; spr.style.top = rec.y + "px";
+      setAbs(spr, rec.parent, rec.x, rec.y);
+      var parent = rec.parent;
+      if (parent) {
+        var next = rec.div.nextSibling;
+        try { parent.removeChild(rec.div); } catch (e) { /* đã mất */ }
+        try { parent.insertBefore(spr, next); } catch (e) { parent.appendChild(spr); }
+      }
+      rec.div = spr;
+      rec.state = state;
+      return true;
+    }
+    function updateChannelsIndicator() {
+      if (!demo.playing) { setChannelsState("none"); return; }
+      var m = null;
+      try { m = audioEngine && audioEngine.getMeasuredChannels ? audioEngine.getMeasuredChannels() : null; } catch (e) { m = null; }
+      if (m) { setChannelsState(m); return; }
+      /* Chưa đo được: hiện "stereo" tạm rồi đo thật để sửa lại. Lý do (ghi rõ,
+         lệch khỏi suy đoán gốc "không mặc định stereo nếu chưa đo"): trình duyệt
+         KHÔNG cho đọc số kênh của thẻ đang phát khi chưa có MediaElementSource
+         — đã thử nghiệm thật trên Chrome headless 3/11: MediaElementSource.
+         channelCount luôn = 2 (thuộc tính của node, mode "max", không phản ánh
+         file — file mono 1 kênh cũng đọc 2); captureStream().getAudioTracks()
+         .getSettings()/getCapabilities() đều không có channelCount. Tạo source
+         cho thẻ đang phát chỉ để đo thì câm tiếng với đài không CORS (bài học
+         đợt E), nên không làm. Nhạc/radio gần như luôn stereo nên "stereo" tạm
+         đúng ~99%; đo thật (ChannelSplitter, xem audio.js) sẽ sửa thành "mono"
+         nếu L/R giống hệt nhau. Dừng phát → "none" (đúng mặc định XML). */
+      setChannelsState("stereo");
+      try {
+        if (audioEngine && audioEngine.measureChannels) {
+          audioEngine.measureChannels(function (state) {
+            if (state && demo.playing) setChannelsState(state);
+          });
+        }
+      } catch (e) { /* bỏ qua */ }
     }
     /* Nút Shuffle/Repeat trên skin (cfgattrib "{GUID};Shuffle" /
        "{GUID};Repeat"): Shuffle đảo on/off; Repeat xoay 0 -> 1 -> -1 -> 0
@@ -1544,7 +1625,7 @@
           if ((avsDiv._absY || 0) !== ea.y) errs.push("AVSGroup _absY " + (avsDiv._absY || 0) + ", dung ra " + ea.y);
           var aw = parseInt(avsDiv.style.width || "0", 10) || 0, ah = parseInt(avsDiv.style.height || "0", 10) || 0;
           if (aw !== ea.w || ah !== ea.h) errs.push("AVSGroup " + aw + "x" + ah + ", dung ra " + ea.w + "x" + ea.h);
-          if (mainDiv && (mainDiv._absY || 0) !== 17 + VIDEO_SHIFT) errs.push("mo AVS nhung ma main _absY " + (mainDiv._absY || 0) + ", dung ra " + (17 + VIDEO_SHIFT) + " (17+116)");
+          if (mainDiv && (mainDiv._absY || 0) !== 35 + VIDEO_SHIFT) errs.push("mo AVS nhung ma main _absY " + (mainDiv._absY || 0) + ", dung ra " + (35 + VIDEO_SHIFT) + " (35+116)");
           if (!vgDiv) errs.push("AVS mo nhung nhung khong thay video.group");
           else {
             var vx = vgDiv._absX || 0, vy = vgDiv._absY || 0;
@@ -1592,6 +1673,10 @@
     var fontCache = {}, glyphCache = new Map();
     var visCanvases = [], statusEls = [], tickerEls = [], timerEls = [],
         progressEls = [], volumebarEls = [], infoEls = [], sliderRecords = [];
+    /* Đợt K (9.7, điểm 7a): registry cho lớp chỉ báo kênh (layer "channels"
+       trong player.normal.songinfo) — để đổi bitmap none/stereo/mono/surround
+       theo trạng thái phát mà không vẽ lại cả cửa sổ. */
+    var channelsRec = null;
     var cfgGroups = {};
     var cfgState = new Map([["SHUFFLE", "off"], ["REPEAT", "0"], ["EQ_TOGGLE", "on"]]);
     var lastStage = null, lastLayout = null, lastTitle = "";
@@ -1713,26 +1798,15 @@
       var canvas = document.createElement("canvas");
       var ctx = null;
       try { ctx = canvas.getContext("2d"); } catch (e) { ctx = null; }
-      if (!ctx) { fontCache[fontId] = { img: img, canvas: canvas, ctx: null, inverted: false, baseX: 0, baseY: 0, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing }; return fontCache[fontId]; }
+      if (!ctx) { fontCache[fontId] = { img: img, canvas: canvas, ctx: null, baseX: 0, baseY: 0, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing }; return fontCache[fontId]; }
       canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
       ctx.drawImage(img, 0, 0);
       var cw = f.charwidth, chh = f.charheight;
       var baseX = bmp.crop ? bmp.crop.x : 0, baseY = bmp.crop ? bmp.crop.y : 0;
-      /* Phát hiện font "khuôn" (đảo alpha): lấy mẫu pixel góc trên-trái
-         từng ô glyph; nền đục quá nửa thì đảo. Ngưỡng opaque/total > 0.5,
-         alpha mẫu > 128. */
-      var opaque = 0, total = 0;
-      var rows = FONT_ROWS[fontId] || [];
-      rows.forEach(function (rowStr, r) {
-        for (var c = 0; c < rowStr.length; c++) {
-          var x = baseX + c * cw, y = baseY + r * chh;
-          if (x < canvas.width && y < canvas.height) {
-            var d = ctx.getImageData(x, y, 1, 1).data;
-            total++; if (d[3] > 128) opaque++;
-          }
-        }
-      });
-      var rec = { img: img, canvas: canvas, ctx: ctx, inverted: total > 0 && opaque / total > 0.5, baseX: baseX, baseY: baseY, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing };
+      /* Đợt K (9.7): KHÔNG đảo alpha. Font "khuôn" (songinfofont) vẽ nguyên
+         bản — nền ô đục + glyph lỗ trong suốt là đúng như Winamp vẽ
+         (xem ghi chú FONT_ROWS trên). Cơ chế đếm opaque/inverted cũ đã bỏ. */
+      var rec = { img: img, canvas: canvas, ctx: ctx, baseX: baseX, baseY: baseY, charwidth: f.charwidth, charheight: f.charheight, hspacing: f.hspacing, vspacing: f.vspacing };
       fontCache[fontId] = rec;
       return rec;
     }
@@ -1749,14 +1823,7 @@
       var cx = c.getContext("2d");
       if (!cx) { glyphCache.set(key, null); return null; }
       cx.drawImage(font.img, sx, sy, cw, chh, 0, 0, cw, chh);
-      var d = cx.getImageData(0, 0, cw, chh);
-      if (font.inverted) {
-        for (var i = 0; i < d.data.length; i += 4) {
-          d.data[i + 3] = d.data[i + 3] < 128 ? 255 : 0;
-          d.data[i] = d.data[i + 1] = d.data[i + 2] = 255;
-        }
-        cx.putImageData(d, 0, 0);
-      }
+      /* Đợt K (9.7): không lật alpha nữa (xem loadFont) — glyph vẽ nguyên bản. */
       var col = colorOf(color);
       if (col !== "#fff" && col !== "rgb(255,255,255)") {
         cx.globalCompositeOperation = "source-in";
@@ -1853,13 +1920,24 @@
       for (var i = 0; i < kids.length; i++) shiftSubtree(kids[i], dy);
     }
 
-    async function renderChildren(children, parentEl, parentW, parentH, ctx, depth) {
+    async function renderChildren(children, parentEl, parentW, parentH, ctx, depth, skipLocalHide) {
       if (depth > MAX_DEPTH) return;
       var localHidden = new Set();
-      for (var i = 0; i < children.length; i++) {
-        if (lowerTag(children[i]) === "hideobject") {
-          var parts = (children[i].getAttribute("target") || "").split(";");
-          for (var j = 0; j < parts.length; j++) if (parts[j]) localHidden.add(parts[j].toLowerCase());
+      /* v9.6 (Điểm 2): hideobject CHỈ áp trong subtree của groupdef chứa
+         nó, KHÔNG áp lên con trực tiếp của <layout>. Trước đây lời gọi cấp
+         layout cũng gom hideobject (player-normal.xml:26
+         target="close;close.inactive") rồi ẩn luôn 2 nút Close của chính
+         layout (x=-17) — chỉ còn trơ viên pill nền, không có icon X.
+         hideobject đó chỉ nhằm nút Close NỘI BỘ của MainFrame (đã ẩn đúng
+         qua ctx.frameHidden -> frameCtx.hiddenIds). Lời gọi cấp layout
+         truyền skipLocalHide=true (xem renderLayout); mọi lời gọi khác
+         giữ nguyên. */
+      if (!skipLocalHide) {
+        for (var i = 0; i < children.length; i++) {
+          if (lowerTag(children[i]) === "hideobject") {
+            var parts = (children[i].getAttribute("target") || "").split(";");
+            for (var j = 0; j < parts.length; j++) if (parts[j]) localHidden.add(parts[j].toLowerCase());
+          }
         }
       }
       for (var k = 0; k < children.length; k++) {
@@ -2079,20 +2157,41 @@
       if (gid === "player.normal.drawer.content" && parentEl.dataset && parentEl.dataset.gid === "player.normal.drawer") {
         x = Math.round((parentW - gw) / 2);
       }
+      /* v9.6 (Điểm 1): 2 streak của titlebar dời theo chữ đã căn giữa
+         (titlebar.maki dời streak theo chữ; XML tĩnh để streak trái 0–95
+         và phải 155–325, chữ cũ ở 100–150 dính vào streak trái).
+         Mức 1: streak trái giữ x=0, ngắn lại tới cách chữ 8px; streak
+         phải bắt đầu cách chữ 8px, kéo tới hết group. 8px = khe đo từ
+         ảnh WACUP thật; vị trí chữ lấy từ ctx.titleCenter (nhánh XUI).
+         Phân biệt 2 instance bằng x trong XML (trái x=0, phải x≠0) vì
+         renderer không đọc instanceid. Các lớp con trong streak (center
+         relatw=1) tự giãn theo rộng group mới. */
+      if (gid === "wasabi.titlebar.streak" && ctx.titleCenter) {
+        var tc = ctx.titleCenter;
+        var gAbsX = parentEl._absX || 0;
+        if (x === 0) {
+          gw = Math.max(0, Math.round((tc.textLeftAbs - 8) - gAbsX));
+        } else {
+          x = Math.round((tc.textRightAbs + 8) - gAbsX);
+          gw = Math.max(0, Math.round((gAbsX + parentW) - (tc.textRightAbs + 8)));
+        }
+      }
       var div = document.createElement("div");
       div.style.position = "absolute";
       div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = gw + "px"; div.style.height = gh + "px";
       setAbs(div, parentEl, x, y);
       div.dataset.gid = gid;
-      /* Lỗi 8 (9.4): ngăn kéo phải là stacking context riêng (isolation)
-         để z-index:2 của config.tabs không thoát ra ngoài ngăn kéo và
-         đè lên shadow. Shadow (player.normal.drawer.shadow) là anh em
-         SAU của ngăn kéo trong dummy group, nên theo thứ tự vẽ nó phải
-         đè lên TOÀN BỘ ngăn kéo — kể cả 13px dưới của tab — như Winamp
-         thật (dải tối đều ở đáy ngăn kéo). Không có isolation, tab z:2
-         thoát ra ngoài, dải đáy loang sáng/tối không đều. Tab vẫn giữ
-         z:2 để đè nền panel ColorThemes BÊN TRONG ngăn kéo (D10). */
+      /* Lỗi 8 (9.4, sửa lại 9.6 — Điểm 3): ngăn kéo phải là stacking
+         context riêng (isolation) để z-index:2 của config.tabs không thoát
+         ra ngoài ngăn kéo. 9.4 từng để shadow (anh em sau của ngăn kéo)
+         đè lên TOÀN BỘ ngăn kéo — sai: shadow là dải 15px cuối ngăn kéo,
+         chồng 13px dưới của tab + chữ đen, làm tab tối còn ~61–102 thay
+         vì ~205 (ảnh điện thoại 3/11 09:10). 9.6 đảo thứ tự DOM (xem
+         renderLayout): shadow đứng TRƯỚC drawer nên vẽ DƯỚI ngăn kéo;
+         tab vẫn giữ z:2 để đè nền panel ColorThemes BÊN TRONG ngăn kéo
+         (D10). Không có ảnh Winamp thật nào chứng minh shadow phải đè
+         lên tab. */
       if (gid === "player.normal.drawer") div.style.isolation = "isolate";
       div.style.pointerEvents = "none";
       parentEl.appendChild(div);
@@ -2266,6 +2365,45 @@
         parentEl.appendChild(div);
         var content = el.getAttribute("content");
         var frameCtx = { overrides: ctx.overrides, hiddenIds: ctx.frameHidden || new Set(), drawerTab: ctx.drawerTab, titleText: ctx.titleText, frameHidden: ctx.frameHidden, windowKind: ctx.windowKind };
+        /* v9.6 (Điểm 1): căn giữa chữ titlebar như titlebar.maki làm.
+           Winamp thật căn giữa chữ (tâm = giữa layout 354/2 = 177) rồi
+           dời 2 streak theo; renderer trước đây vẽ chữ ở vị trí tĩnh
+           x=100 trong group titlebar nên lệch trái ~45px (tâm ~132).
+           Đo rộng chữ bằng canvas với font đang render ("bold 11px
+           Arial" — fontsize="14" trong XML nhưng cap-height thật 8px =
+           Arial Bold 11px, đừng đổi). Không có canvas (jsdom) thì ước
+           theo 7.6px/ký tự. titleCenter chảy xuống frameCtx cho cả chữ,
+           2 streak và overlay trong group titlebar. */
+        (function () {
+          /* Chỉ áp cho TitleBar: div này CHÍNH LÀ group titlebar (xui =
+             "wasabi.titlebar", div._absX = vị trí group trong layout).
+             Không tìm group lồng "wasabi.titlebar" trong groupdefs của
+             chính nó (không có — trước đây IIFE trả về rỗng nên chữ ở
+             yên x=100). Tâm = giữa nhóm CHA (layout chứa titlebar,
+             parentW = rộng layout: main 354 → 177, playlist 436 → 218),
+             không phải giữa group titlebar (w=325 → tâm sai 172,5). */
+          if (xui !== "wasabi.titlebar") return;
+          var groupAbsX = div._absX || 0;
+          var txt = (ctx.titleText || "WINAMP").toUpperCase();
+          var textW = 0;
+          try {
+            if (typeof document !== "undefined") {
+              var mc = document.createElement("canvas");
+              var mx = null;
+              try { mx = mc.getContext("2d"); } catch (e) { mx = null; }
+              if (mx) { mx.font = "bold 11px Arial, sans-serif"; textW = mx.measureText(txt).width; }
+            }
+          } catch (e) { textW = 0; }
+          if (!textW) textW = txt.length * 7.6;
+          var centerAbs = (parentEl._absX || 0) + parentW / 2;
+          frameCtx.titleCenter = {
+            textW: Math.round(textW),
+            left: Math.round(centerAbs - textW / 2 - groupAbsX),
+            textLeftAbs: centerAbs - textW / 2,
+            textRightAbs: centerAbs + textW / 2,
+            groupAbsX: groupAbsX
+          };
+        })();
         if (content && RES.groupdefs[content]) {
           /* Nội dung frame nằm dưới titlebar 18px: vẽ trước, frame đè sau.
              Chiều cao nội dung lấy theo groupSize của nhóm content (nhóm
@@ -2306,6 +2444,9 @@
            nếu MAKI gốc hiện hider trong trạng thái nào đó (vd video tách
            rời), Amp chưa tái hiện được — cần đọc videoavs.maki để biết. */
         if (id === "openclosehider") return;
+        /* v9.6 (Điểm 1): overlay của chữ title (w=1, x=100 trong XML)
+           dời theo mép trái chữ đã căn giữa. */
+        if (id === "window.titlebar.title.overlay" && ctx.titleCenter) x = ctx.titleCenter.left;
         var spr = await spriteDiv(image, lw, lh, { tile: el.getAttribute("tile") === "1", opacity: alphaOf(el) });
         if (!spr) return;
         spr.style.left = x + "px"; spr.style.top = y + "px";
@@ -2313,6 +2454,15 @@
         if (el.getAttribute("relatw") === "1") spr.dataset.stretch = "1";
         setAbs(spr, parentEl, x, y);
         parentEl.appendChild(spr);
+        /* Đợt K (9.7, điểm 7a): đăng ký lớp chỉ báo kênh (layer "channels",
+           songinfo (0,10) → layout (101,65), 74×9, ảnh mặc định
+           player.songinfo.none — trong suốt, tức chưa phát). Bitmap chứa
+           cả 2 chữ (chữ đang sáng + chữ kia mờ alpha 34); đổi trạng thái
+           bằng cách thay ảnh, không vẽ thêm chữ. baseImage lấy từ XML,
+           không gán cứng tên file. */
+        if (id === "channels") {
+          channelsRec = { div: spr, parent: parentEl, x: x, y: y, w: lw, h: lh, opacity: alphaOf(el), baseImage: image, state: "none" };
+        }
         /* Đợt G — dblClickAction SWITCH;normal/shade trên layer (nền shade
            bấm đúp để về normal; nền normal bấm đúp để sang shade). Chỉ
            gắn khi có onShadeToggle; các layer khác không có thuộc tính
@@ -2375,7 +2525,19 @@
         cv.style.width = vw + "px"; cv.style.height = vh + "px";
         setAbs(cv, parentEl, x, y);
         parentEl.appendChild(cv);
-        visCanvases.push({ cv: cv, bands: new Array(VIS_BANDS).fill(2) });
+        /* Đợt K (9.7, điểm 7b2): đọc màu cột từ XML ColorBand1..16 (skin 566:
+           toàn "255,255,255" → cột trắng như WACUP; skin khác dùng màu riêng
+           của nó). Thiếu thuộc tính → trắng. Mảng dùng chung cho cả canvas
+           AVS (không có <vis> riêng). fillBg: false = canvas trong display
+           để trong suốt (chỉ clearRect) để nền display + lớp dots + overlay
+           phía dưới hiện qua, như WACUP (nền vis ≈ nền display, mean ~90). */
+        var xmlBands = [];
+        for (var bk = 0; bk < VIS_BANDS; bk++) {
+          var bcol = el.getAttribute("ColorBand" + (bk + 1)) || el.getAttribute("colorband" + (bk + 1)) || "255,255,255";
+          xmlBands.push(rgbVal(bcol));
+        }
+        visXmlBands = xmlBands;
+        visCanvases.push({ cv: cv, bands: xmlBands, fillBg: false });
         return;
       }
       if (tag === "progressgrid") {
@@ -2697,6 +2859,27 @@
         }
       };
       rec.refresh = async function () {
+        /* v9.6 (Điểm 4): NStatesButton (vd RepeatDisplay): ảnh theo state =
+           image + chỉ số state, chỉ số = vị trí của giá trị cfg hiện tại
+           trong cfgvals (vd "0;1;-1" -> 0/1/2 -> repeat0/repeat1/repeat2;
+           player-elements.xml chỉ có repeat0/1/2, không có tên trần
+           "player.songinfo.repeat" nên đường cũ vẽ trống — div rỗng, nút
+           lặp trong display không thấy). Chỉ áp khi cả 3 bitmap hậu tố
+           tồn tại trong model; không có thì rơi về đường image/activeImage
+           cũ (LED: image="player.led.off" không có "player.led.off0" nên
+           vẫn dùng led.off/led.on). */
+        if (tag === "nstatesbutton") {
+          var nstates = parseInt(el.getAttribute("nstates") || "0", 10) || 0;
+          var cfgvals = (el.getAttribute("cfgvals") || "").split(";").filter(function (s) { return !!s; });
+          if (nstates > 1 && cfgvals.length === nstates) {
+            var cur = cfgState.get(cfgKey);
+            var idx = cfgvals.indexOf(cur === undefined || cur === null ? "" : String(cur));
+            if (idx < 0) idx = 0;
+            var stateBid = image + idx;
+            var info = await bitmapInfoCached(stateBid);
+            if (info && info.file) { await rec.setImg(stateBid); return; }
+          }
+        }
         if (cfgKey && cfgOn(cfgKey) && activeImage) await rec.setImg(activeImage);
         else await rec.setImg(image);
       };
@@ -2742,12 +2925,21 @@
           return;
         }
         /* Đợt C — nút đóng (X) của cửa sổ Playlist (id="Close",
-           action="CLOSE", standardframe.xml): đóng playlist. Cửa sổ CHÍNH
-           không có nút Close nào để bấm: player-normal.xml:26
-           <hideobject target="close;close.inactive"/> — skin Modern ẩn
-           nút X của main theo thiết kế (thoát bằng menu). */
+           action="CLOSE", standardframe.xml): đóng playlist.
+           v9.6 (Điểm 2): nút X của cửa sổ CHÍNH HIỆN (layout
+           player-normal.xml: nút Close x=-17) — <hideobject
+           target="close;close.inactive"/> ở player-normal.xml:26 chỉ ẩn
+           nút Close NỘI BỘ của MainFrame, không ẩn nút X của layout
+           (comment cũ nói "skin Modern ẩn nút X của main" là sai —
+           WACUP cho thấy nút X vẫn hiện). Trên web không có "thoát app"
+           như Winamp thật nên X gọi onPlayerClose (index.html: ẩn giao
+           diện + hiện nút "Mở lại Amp"). */
         if (action === "CLOSE" && ctx.windowKind === "playlist") {
           if (onPlaylistToggle) onPlaylistToggle(false);
+          return;
+        }
+        if (action === "CLOSE" && ctx.windowKind === "player") {
+          if (onPlayerClose) onPlayerClose();
           return;
         }
         /* Đợt D — nút đóng (X) trên titlebar cửa sổ Video/Vis rời:
@@ -2818,6 +3010,30 @@
       };
     }
 
+    /* v9.6 (Điểm 5): đặt menu/hộp trong stage, mở hướng lên khi không đủ
+       chỗ dưới anchor (vd menu preset EQ: anchor y=241, menu ~107px,
+       stage 280px -> mở xuống chỉ thấy 27px = 1 hàng "Flat"). Đo chiều
+       cao thật sau khi append (offsetHeight); jsdom không layout được
+       (offsetHeight=0) thì ước theo số hàng x 21px + viền 2px. Không
+       hardcode chiều cao stage. */
+    function placePopupInStage(box, anchorDiv, rowCount) {
+      var T = lastStage;
+      if (!T || !box) return;
+      var menuH = 0;
+      try { menuH = box.offsetHeight || 0; } catch (e) { menuH = 0; }
+      if (!menuH) menuH = (rowCount || 1) * 21 + 2;
+      var stageH = parseInt(T.style.height || "0", 10) || 0;
+      if (!stageH) { try { stageH = Math.round(T.getBoundingClientRect().height); } catch (e) { stageH = 0; } }
+      if (!stageH) return;
+      var top = parseInt(box.style.top || "0", 10) || 0;
+      if (top + menuH > stageH) top = Math.max(0, (anchorDiv._absY || 0) - menuH);
+      box.style.top = top + "px";
+      if (top + menuH > stageH) {
+        box.style.maxHeight = Math.max(40, stageH - 8) + "px";
+        box.style.overflowY = "auto";
+      }
+    }
+
     /* Menu preset EQ (nút PRESETS): đường cong tự định nghĩa, xem EQ_PRESETS. */
     function showEqPresetsMenu(anchorDiv) {
       var T = lastStage;
@@ -2830,9 +3046,15 @@
       menu.style.position = "absolute";
       menu.style.left = ((anchorDiv._absX || 0)) + "px";
       menu.style.top = ((anchorDiv._absY || 0) + 12) + "px";
-      menu.style.background = "#1c1c1c"; menu.style.border = "1px solid #555";
+      /* v9.6 (Điểm 5): nền SÁNG kiểu menu Winamp thật trên Windows
+         (#ECE9D8, chữ đen, viền #ACA899, hover #316AC5 chữ trắng) thay
+         cho nền tối #1c1c1c cũ — nền tối trên nền trang #141414 chỉ đạt
+         tương phản 1,08:1 nên hộp chìm hẳn, không thấy viền. Đây là
+         "chọn theo Winamp thật" (menu Winamp là menu hệ điều hành),
+         KHÔNG phải đọc từ XML (skin không định nghĩa màu menu). */
+      menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#ddd";
+      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
       var names = Object.keys(EQ_PRESETS);
       for (var i = 0; i < names.length; i++) {
         (function (name) {
@@ -2840,8 +3062,8 @@
           row.textContent = name;
           row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
           row.dataset.presetName = name;
-          row.onmouseover = function () { row.style.background = "#33507e"; };
-          row.onmouseout = function () { row.style.background = ""; };
+          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
+          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             applyEqPreset(name);
@@ -2852,6 +3074,7 @@
         })(names[i]);
       }
       T.appendChild(menu);
+      placePopupInStage(menu, anchorDiv, names.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       var close = function () {
         if (menu.parentElement) menu.parentElement.removeChild(menu);
         try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
@@ -2860,8 +3083,10 @@
     }
 
     /* ---------- menu playlist (đợt C) ----------
-       Menu HTML gọn theo phong cách skin (nền #1c1c1c, viền #555, Arial
-       11px) vì .maki chạy menu thật không chạy được trên trình duyệt.
+       Menu HTML gọn theo phong cách menu Winamp thật trên Windows (nền
+       sáng #ECE9D8, viền #ACA899, Arial 11px — v9.6 Điểm 5, bỏ nền tối
+       #1c1c1c cũ vì chìm vào nền trang #141414) vì .maki chạy menu thật
+       không chạy được trên trình duyệt.
        Cùng 1 helper cho cả nút Add/Sel/Misc/List dưới playlist, mục
        File/Playlist/Sort/Help trên menubar playlist và mục View trên
        menubar chính. Menu đóng khi bấm mục khác hoặc bấm ra ngoài. */
@@ -2881,17 +3106,17 @@
       menu.style.position = "absolute";
       menu.style.left = ((anchorDiv._absX || 0)) + "px";
       menu.style.top = ((anchorDiv._absY || 0) + (parseInt(anchorDiv.style.height || "0", 10) || 12)) + "px";
-      menu.style.background = "#1c1c1c"; menu.style.border = "1px solid #555";
+      menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899"; /* v9.6 (Điểm 5): nền sáng như menu Winamp thật */
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#ddd";
+      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
       for (var i = 0; i < items.length; i++) {
         (function (it) {
           var row = document.createElement("div");
           row.textContent = it.label;
           row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
           row.dataset.menuItem = it.label;
-          row.onmouseover = function () { row.style.background = "#33507e"; };
-          row.onmouseout = function () { row.style.background = ""; };
+          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
+          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             closePlaylistMenus();
@@ -2901,6 +3126,7 @@
         })(items[i]);
       }
       T.appendChild(menu);
+      placePopupInStage(menu, anchorDiv, items.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       try {
         setTimeout(function () {
           document.addEventListener("click", function h() {
@@ -2932,15 +3158,15 @@
       box.style.position = "absolute";
       box.style.left = ((anchorDiv._absX || 0)) + "px";
       box.style.top = ((anchorDiv._absY || 0) + (parseInt(anchorDiv.style.height || "0", 10) || 12)) + "px";
-      box.style.background = "#1c1c1c"; box.style.border = "1px solid #555";
+      box.style.background = "#ECE9D8"; box.style.border = "1px solid #ACA899"; /* v9.6 (Điểm 5): nền sáng như menu Winamp thật */
       box.style.padding = "6px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
-      box.style.font = "11px Arial, sans-serif"; box.style.color = "#ddd";
+      box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       var inp = document.createElement("input");
       inp.type = "text";
       inp.placeholder = "https://…/kenh.m3u8 (hoặc .mp3)";
       inp.style.width = "220px"; inp.style.font = "11px Arial, sans-serif";
-      inp.style.background = "#111"; inp.style.color = "#fff";
-      inp.style.border = "1px solid #555"; inp.style.padding = "3px";
+      inp.style.background = "#fff"; inp.style.color = "#000";
+      inp.style.border = "1px solid #7F9DB9"; inp.style.padding = "3px";
       box.appendChild(inp);
       var ok = document.createElement("button");
       ok.textContent = "Thêm";
@@ -2958,6 +3184,7 @@
       cancel.onclick = function () { closePlaylistMenus(); };
       box.appendChild(cancel);
       T.appendChild(box);
+      placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       if (inp.focus) { try { inp.focus(); } catch (e) { /* jsdom */ } }
     }
     function showHelpNote(anchorDiv) {
@@ -2969,13 +3196,14 @@
       box.style.position = "absolute";
       box.style.left = ((anchorDiv._absX || 0)) + "px";
       box.style.top = ((anchorDiv._absY || 0) + (parseInt(anchorDiv.style.height || "0", 10) || 12)) + "px";
-      box.style.background = "#1c1c1c"; box.style.border = "1px solid #555";
+      box.style.background = "#ECE9D8"; box.style.border = "1px solid #ACA899"; /* v9.6 (Điểm 5): nền sáng như menu Winamp thật */
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
-      box.style.font = "11px Arial, sans-serif"; box.style.color = "#ddd";
+      box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
       box.textContent = "Amp v9 · Playlist Editor (đợt C): 41 kênh radio.m3u. Nhấp 1 lần để chọn, nhấp đúp để phát (đợt E mới có tiếng). Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
+      placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
     }
     function addMenuItems(anchorDiv) {
       return [
@@ -3041,7 +3269,17 @@
         div.textContent = (ctx.titleText || "WINAMP").toUpperCase();
         div.style.font = "bold 11px Arial, sans-serif";
         div.style.color = colorOf(color);
-        div.style.lineHeight = h + "px";
+        /* v9.6 (Điểm 1): chữ căn giữa cửa sổ (tâm 177) theo
+           ctx.titleCenter tính ở nhánh XUI; lineHeight h+2 để glyph
+           xuống ~1px cho khớp Winamp thật (đỉnh glyph thật y=5, Amp cũ
+           y≈3,5). Không đổi font-size 11px, không thêm shadow (XML
+           không có shadow="1" — chỉ có shadowcolor/shadowx/shadowy). */
+        if (ctx.titleCenter) {
+          div.style.left = ctx.titleCenter.left + "px";
+          div.style.width = ctx.titleCenter.textW + "px";
+          setAbs(div, parentEl, ctx.titleCenter.left, y);
+        }
+        div.style.lineHeight = (h + 2) + "px";
         if (el.getAttribute("shadow") === "1") div.style.textShadow = "1px 1px #000";
         return;
       }
@@ -3179,14 +3417,30 @@
        Kiểu hiệu ứng (VIS_Prev/Next) đổi màu cột trong VIS_VARIANTS.
        Gọi 1 lần sau mỗi render (tĩnh) và mỗi frame rAF khi AVS đang mở
        (động nhẹ: avsPhase tăng dần, sóng trượt). */
+    /* Đợt K (9.7, điểm 7b2): 3 thay đổi so với trước —
+       (1) Analyser im (không có analyser, hoặc mọi bin ≈ 0 — vd EQ tắt,
+       đài không CORS nên chưa có source) thì VẼ LẠI VẠCH MẪU sine như lúc
+       chưa phát, thay vì cột 2px chìm nghỉm. Trước đây: có analyser nhưng
+       đọc 0 → hh = 2 + 0 → chỉ còn 2px ở đáy, mắt không thấy; người dùng
+       thấy vis đen trống khi phát radio. Mẫu chỉ là mẫu tĩnh như WACUP
+       hiện khi dừng — KHÔNG phải hiệu ứng theo nhạc thật (mục để sau).
+       (2) Màu cột mặc định (visVariant === 0) lấy từ XML ColorBand1..16
+       (skin 566: trắng) thay vì xanh lá gán cứng #7fff2a; bấm VIS_Prev/Next
+       mới đổi sang VIS_VARIANTS[1..2].
+       (3) Canvas trong display để trong suốt (fillBg false: chỉ clearRect,
+       không fill VIS_BG) để nền display hiện qua; canvas AVS giữ nền tối. */
     function drawVisStatic() {
-      var freq = null;
+      var freq = null, maxBin = 0;
       if (avsAnalyser && typeof avsAnalyser.getByteFrequencyData === "function" && avsAnalyser.frequencyBinCount) {
         try {
           freq = new Uint8Array(avsAnalyser.frequencyBinCount);
           avsAnalyser.getByteFrequencyData(freq);
-        } catch (e) { freq = null; }
+          for (var fi = 0; fi < freq.length; fi++) if (freq[fi] > maxBin) maxBin = freq[fi];
+        } catch (e) { freq = null; maxBin = 0; }
       }
+      /* Analyser im (max bin < 4) = không tín hiệu → dùng vạch mẫu sine. */
+      var useSample = !freq || maxBin < 4;
+      var useXmlCol = avsState.visVariant === 0;
       var col = (VIS_VARIANTS[avsState.visVariant] || VIS_VARIANTS[0]).col;
       for (var i = 0; i < visCanvases.length; i++) {
         var v = visCanvases[i];
@@ -3195,18 +3449,20 @@
         if (!ctx2) continue;
         var W = v.cv.width, H = v.cv.height;
         ctx2.clearRect(0, 0, W, H);
-        ctx2.fillStyle = VIS_BG;
-        ctx2.fillRect(0, 0, W, H);
+        if (v.fillBg !== false) {
+          ctx2.fillStyle = VIS_BG;
+          ctx2.fillRect(0, 0, W, H);
+        }
         var n = VIS_BANDS, bw = W / n;
-        ctx2.fillStyle = col;
         for (var k = 0; k < n; k++) {
           var hh;
-          if (freq) {
+          if (!useSample) {
             var bin = freq[Math.floor(k * freq.length / n)] || 0;
             hh = 2 + (bin / 255) * (H - 6);
           } else {
             hh = 2 + Math.abs(Math.sin(k * 0.9 + avsPhase)) * (H - 6);
           }
+          ctx2.fillStyle = useXmlCol ? (v.bands[k] || "#fff") : col;
           ctx2.fillRect(k * bw + 1, H - hh, bw - 2, hh);
         }
       }
@@ -3318,7 +3574,9 @@
       setAbs(m.canvas, m.wrap, 0, 0);
       applyVideoScaleToEl();
       parentEl.appendChild(m.wrap);
-      visCanvases.push({ cv: m.canvas, bands: new Array(VIS_BANDS).fill(2) });
+      /* Đợt K (9.7): canvas AVS giữ nền tối (fillBg: true) như trước; màu cột
+         dùng chung visXmlBands (màu XML của <vis> chính). */
+      visCanvases.push({ cv: m.canvas, bands: visXmlBands, fillBg: true });
       return m;
     }
     function attachEmbeddedAvsMedia(T) {
@@ -3492,6 +3750,7 @@
       }
       visCanvases = []; statusEls = []; tickerEls = []; timerEls = [];
       progressEls = []; volumebarEls = []; infoEls = []; sliderRecords = [];
+      channelsRec = null;
       cfgGroups = {}; cfDisplayEls = []; vidInfoEls = [];
       plListDiv = null; plSearchInput = null;
       T.innerHTML = "";
@@ -3553,7 +3812,7 @@
           ctx.overrides.set("buttons.vis.switchto", true);
         }
       }
-      await renderChildren(kids, T, LW, LH, ctx, 0);
+      await renderChildren(kids, T, LW, LH, ctx, 0, true); /* v9.6 (Điểm 2): cấp layout không gom hideobject — xem renderChildren */
       /* Ngăn kéo + video (đợt B, sửa 9.4):
          - MỞ MỘT BƯỚC: đặt thẳng top cuối = restY + drawerInnerY(open)
            (không rAF hai bước như v8 — kiểu đó kẹt ở vị trí đóng khi frame
@@ -3602,6 +3861,18 @@
             sh.style.top = (parseInt(sh.style.top || "0", 10) + dy) + "px";
             shiftSubtree(sh, dy);
           }
+          /* v9.6 (Điểm 3): shadow (player.normal.drawer.shadow) phải vẽ
+             DƯỚI ngăn kéo, không đè lên tab. Sửa v9.4 (isolation để shadow
+             đè lên toàn bộ ngăn kéo) đi sai hướng: shadow là dải 15px cuối
+             ngăn kéo, tab ở y 108–127 trong ngăn kéo 129px nên shadow
+             (y 114–129) chồng 13px dưới của tab + chữ đen trên nền tab
+             sáng — ảnh điện thoại 3/11 09:10: tab tối còn ~61–102 thay
+             vì ~205, chữ chìm. Không có ảnh Winamp thật nào chứng minh
+             shadow phải đè lên tab; configtabs.maki chỉ chứng minh shadow
+             hiện cùng ngăn kéo. Đảo thứ tự DOM: shadow trước drawer.
+             isolation của drawer vẫn giữ (tab z:2 không thoát ra ngoài,
+             vẫn đè nền panel ColorThemes bên trong). */
+          if (d && sh && sh.parentElement === d.parentElement) d.parentElement.insertBefore(sh, d);
           /* Đợt G — ghi lại top đóng/mở để tính độ dời animation, và áp
              transform ban đầu của lần trượt mở (pendingDrawerStartDy):
              render đặt thẳng top cuối, transform chỉ làm mượt đường đi. */
@@ -3633,6 +3904,7 @@
          xếp dưới cùng của stage. Cả 2 đều trước drawVisStatic. */
       if (avsOpenNow) attachEmbeddedAvsMedia(T);
       updateStatusEls(); await updateTimerEls(); updateProgress(); updateVolumebar();
+      updateChannelsIndicator();
       var totalH = finalH;
       if (avsState.open && avsState.detached && container === "main" && opts.noDetached !== true) {
         totalH = finalH + await appendDetachedWindow(T, finalH);
@@ -3698,7 +3970,8 @@
       var savedRegs = {
         vis: visCanvases, status: statusEls, ticker: tickerEls, timer: timerEls,
         progress: progressEls, volume: volumebarEls, info: infoEls,
-        sliders: sliderRecords, cfg: cfgGroups, cf: cfDisplayEls, vid: vidInfoEls
+        sliders: sliderRecords, cfg: cfgGroups, cf: cfDisplayEls, vid: vidInfoEls,
+        channels: channelsRec
       };
       var plDiv = document.createElement("div");
       plDiv.style.position = "absolute"; plDiv.style.left = "0px"; plDiv.style.top = playerH + "px";
@@ -3720,6 +3993,10 @@
       cfgGroups = mergedCfg;
       cfDisplayEls = savedRegs.cf.concat(cfDisplayEls);
       vidInfoEls = savedRegs.vid.concat(vidInfoEls);
+      /* Đợt K (9.7): Pledit không có lớp channels nên lượt Pledit đặt
+         channelsRec = null; khôi lại của cửa sổ chính (trạng thái đã áp
+         trong lượt render main, không cần vẽ lại). */
+      if (savedRegs.channels) channelsRec = savedRegs.channels;
       var totalH = playerH + plH;
       if (avsState.open && avsState.detached) {
         totalH += await appendDetachedWindow(T, totalH);
@@ -3727,6 +4004,30 @@
       T.style.height = totalH + "px";
       lastStage = T;
       drawVisStatic();
+      /* Điểm 6 (v9.6): nền stage — lót texture nền của skin đang nạp
+         (wasabi.frame.basetexture) sau mọi cửa sổ, để dải trống bên phải
+         cửa sổ chính (stage rộng hơn main: playlist 436, main 354) hiện
+         nền của skin thay vì đen #000. Lấy từ model (không gán cứng
+         màu/số của skin 566); skin nào không có basetexture thì thôi
+         (giữ #000 như cũ). Div .spr nên applyColorTheme tô đúng nhóm
+         gamma "Backgrounds" theo Color Theme đang chọn; phải chèn
+         TRƯỚC applyColorTheme(T). */
+      try {
+        var bgInfo = await bitmapInfoCached("wasabi.frame.basetexture");
+        var bgUrl = bgInfo && bgInfo.file ? await RES.fileURL(bgInfo.file) : null;
+        if (bgUrl) {
+          var bgDiv = document.createElement("div");
+          bgDiv.className = "spr";
+          bgDiv.dataset.bitmap = "wasabi.frame.basetexture";
+          bgDiv.style.position = "absolute";
+          bgDiv.style.left = "0px"; bgDiv.style.top = "0px";
+          bgDiv.style.width = T.style.width; bgDiv.style.height = T.style.height;
+          bgDiv.style.backgroundImage = 'url("' + bgUrl + '")';
+          bgDiv.style.backgroundRepeat = "repeat";
+          if (bgInfo.w && bgInfo.h) bgDiv.style.backgroundSize = bgInfo.w + "px " + bgInfo.h + "px";
+          T.insertBefore(bgDiv, T.firstChild);
+        }
+      } catch (e) { /* không có basetexture: giữ nền #000 như cũ */ }
       applyColorTheme(T);
       swapIn();
       return totalH;
@@ -3798,6 +4099,7 @@
       setVideoScale: setVideoScale, requestVideoFullscreen: requestVideoFullscreen,
       setVideoInfo: setVideoInfo, cycleVisVariant: cycleVisVariant,
       setAvsAnalyser: setAvsAnalyser, getAvsAnalyser: getAvsAnalyser,
+      getVisXmlBands: function () { return visXmlBands.slice(); },
       restoreAvsState: restoreAvsState, isVideoItem: isVideoItem,
       getAvsMedia: getAvsMedia, resetAvsMedia: resetAvsMedia,
       /* Đợt E — phát tiếng: nối audio.js + điều khiển phát + lưu state. */
@@ -3808,6 +4110,7 @@
       togglePlay: togglePlay, stopPlayback: stopPlayback,
       onAudioTimeUpdate: onAudioTimeUpdate, onAudioEnded: onAudioEnded,
       onAudioError: onAudioError, onAudioPlayingChange: onAudioPlayingChange,
+      setChannelsState: setChannelsState, updateChannelsIndicator: updateChannelsIndicator,
       showTickerError: showTickerError, clearTickerError: clearTickerError,
       getTickerError: getTickerError,
       addLocalFiles: addLocalFiles, openLocalFolderPicker: openLocalFolderPicker,

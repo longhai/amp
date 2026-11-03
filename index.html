@@ -66,22 +66,33 @@
      skin — nạp skin .wal/.zip, thêm nhạc local, đổi zoom 1x/fit. Nhỏ,
      mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
   #btn-menu{position:fixed;right:10px;bottom:10px;z-index:50;width:36px;height:36px;
-    border-radius:50%;background:rgba(28,28,28,.85);color:#bbb;border:1px solid #555;
-    font-size:18px;line-height:1;cursor:pointer;opacity:.65;padding:0;}
-  #btn-menu:hover,#btn-menu:focus{opacity:1;border-color:#888;color:#fff;outline:none;}
-  #menu-pop{position:fixed;right:10px;bottom:54px;z-index:50;background:#1c1c1c;
-    border:1px solid #555;border-radius:6px;padding:4px;min-width:200px;
+    border-radius:50%;background:rgba(236,233,216,.92);color:#000;border:1px solid #ACA899;
+    font-size:18px;line-height:1;cursor:pointer;opacity:.85;padding:0;}
+  #btn-menu:hover,#btn-menu:focus{opacity:1;border-color:#7a7663;color:#000;outline:none;}
+  /* v9.6 (Điểm 5): menu ⋯ nền SÁNG như menu Winamp thật (#ECE9D8, chữ
+     đen, hover #316AC5) — nền tối #1c1c1c cũ chìm vào nền trang #141414. */
+  #menu-pop{position:fixed;right:10px;bottom:54px;z-index:50;background:#ECE9D8;
+    border:1px solid #ACA899;border-radius:6px;padding:4px;min-width:200px;
     box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;}
   #menu-pop button{display:block;width:100%;text-align:left;background:none;border:0;
-    color:#ddd;padding:9px 10px;font-size:13px;cursor:pointer;border-radius:4px;font-family:Verdana,Arial,sans-serif;}
-  #menu-pop button:hover{background:#333;color:#fff;}
-  #menu-pop button.on{color:#fff;}
+    color:#000;padding:9px 10px;font-size:13px;cursor:pointer;border-radius:4px;font-family:Verdana,Arial,sans-serif;}
+  #menu-pop button:hover{background:#316AC5;color:#fff;}
+  #menu-pop button.on{color:#000;}
   #menu-pop button.on::before{content:"✓ ";}
+  /* v9.6 (Điểm 2): nút mở lại khi bấm X ở cửa sổ chính — web không có
+     "thoát app" như Winamp thật nên X ẩn giao diện, nút này hiện giữa
+     màn hình để mở lại (không cần tải lại trang). Ẩn mặc định. */
+  #btn-reopen{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);z-index:60;
+    background:#ECE9D8;color:#000;border:1px solid #ACA899;border-radius:6px;
+    padding:12px 22px;font-size:14px;cursor:pointer;font-family:Verdana,Arial,sans-serif;
+    box-shadow:0 8px 30px rgba(0,0,0,.6);}
+  #btn-reopen:hover{background:#316AC5;color:#fff;}
 </style>
 </head>
 <body>
 <div id="stage-wrap"><div class="stage" id="stage"></div></div>
 <div id="status"></div>
+<button id="btn-reopen" hidden>Mở lại Amp</button>
 <button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom" aria-label="Menu">⋯</button>
 <div id="menu-pop" hidden>
   <button data-act="skin">Nạp skin .wal/.zip…</button>
@@ -92,7 +103,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip" hidden>
 
 <script>
-/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.5" là nguồn sự thật, đặt TRƯỚC
+/* Đợt F — VERSION MANIFEST DUY NHẤT: "9.7" là nguồn sự thật, đặt TRƯỚC
    mọi file JS. skin-loader.js / audio.js / renderer.js đọc window.AMP_VERSION
    lúc nạp để tự kiểm (MANIFEST_MISMATCH); index.html kiểm lại ở
    checkVersions() và DỪNG + báo "bản mix" nếu lệch 1 file. Đổi version thì
@@ -100,16 +111,22 @@
    Đợt G: 9.2 → 9.3 (shade mode + sửa lằn đen menubar + tab ngăn kéo + trượt).
    Đợt H: 9.3 → 9.4 (sửa hình học cửa sổ chính theo Winamp thật + 8 lỗi đợt 3/11).
    Đợt I: 9.4 → 9.5 (bỏ banner self-check; bỏ hết bài Demo chỉ giữ radio.m3u;
-   sửa lệch phải + lằn ngang đáy ngăn kéo lúc trượt = thanh cuộn #stage-wrap). */
-window.AMP_VERSION = "9.5";
+   sửa lệch phải + lằn ngang đáy ngăn kéo lúc trượt = thanh cuộn #stage-wrap).
+   Đợt J: 9.5 → 9.6 (6 điểm 3/11: chữ titlebar căn giữa + dời streak; nút X
+   góc phải hiện lại; shadow ngăn kéo vẽ dưới tab; RepeatDisplay vẽ theo
+   state; menu nền sáng + chống cắt; nền stage lót texture skin).
+   Đợt K: 9.6 → 9.7 (3 điểm 3/11: chỉ báo stereo/mono; font songinfo vẽ nguyên
+   bản không đảo alpha; vis vẽ lại vạch mẫu khi analyser im + cột trắng theo
+   XML; VIDEO/VIS KHÔNG thêm — XML 566 không có chữ đó; sửa self-check 17→35). */
+window.AMP_VERSION = "9.7";
 </script>
-<script src="skin-loader.js?v=9.5"></script>
-<script src="audio.js?v=9.5"></script>
-<script src="renderer.js?v=9.5"></script>
+<script src="skin-loader.js?v=9.7"></script>
+<script src="audio.js?v=9.7"></script>
+<script src="renderer.js?v=9.7"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang đợt E (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "9.5" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
+   VERSION = "9.7" ở mọi file; lệch version thì dừng và báo rõ, không vẽ sai
    trong im lặng (bài học bản mix v7.4/v8). Đợt E KHÔNG đổi loader nên GIỮ
    "9.2" (audio.js là file mới, cùng version 9.2).
    Đợt F: nguồn sự thật duy nhất là window.AMP_VERSION (đặt ở thẻ script
@@ -122,10 +139,10 @@ window.AMP_VERSION = "9.5";
    biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
 var $ = function (s) { return document.querySelector(s); };
 var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
-    btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"),
+    btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "9.5";
+var VERSION = "9.7";
 var zoom = "fit"; /* Đợt 9.5: mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
@@ -154,7 +171,7 @@ function logVersion(extra) {
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v9.5 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v9.7 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -361,6 +378,15 @@ async function bootSkin(file, name) {
         if (open === undefined) setPlaylistOpen(!playlistOpen);
         else setPlaylistOpen(!!open);
       },
+      /* v9.6 (Điểm 2): nút X của cửa sổ chính — web không "thoát app"
+         như Winamp thật: ẩn giao diện + nút ⋯, hiện nút "Mở lại Amp"
+         (không dừng tiếng; bấm nút mở lại thì giao diện hiện lại). */
+      onPlayerClose: function () {
+        try { stageWrap.style.display = "none"; } catch (e) { /* bỏ qua */ }
+        try { btnMenu.style.display = "none"; } catch (e) { /* bỏ qua */ }
+        try { menuPop.hidden = true; } catch (e) { /* bỏ qua */ }
+        try { btnReopen.hidden = false; } catch (e) { /* bỏ qua */ }
+      },
       isPlaylistOpen: function () { return playlistOpen; },
       /* Đợt C: menu Add/File/List "Nạp lại radio.m3u" — nạp lại file cùng
          thư mục rồi đặt làm dữ liệu playlist (41 kênh). */
@@ -488,6 +514,14 @@ function wireMenu() {
   if (btnMenu) btnMenu.addEventListener("click", function (e) {
     if (e.stopPropagation) e.stopPropagation();
     toggleMenu();
+  });
+  /* v9.6 (Điểm 2): nút "Mở lại Amp" — hiện lại giao diện sau khi bấm X
+     ở cửa sổ chính (onPlayerClose đã ẩn stage-wrap + nút ⋯). */
+  if (btnReopen) btnReopen.addEventListener("click", function () {
+    try { stageWrap.style.display = ""; } catch (e) { /* bỏ qua */ }
+    try { btnMenu.style.display = ""; } catch (e) { /* bỏ qua */ }
+    try { btnReopen.hidden = true; } catch (e) { /* bỏ qua */ }
+    try { renderCurrent(); } catch (e) { /* bỏ qua */ }
   });
   document.addEventListener("click", function (e) {
     if (!menuPop || menuPop.hidden) return;
