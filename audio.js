@@ -82,8 +82,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.13";
-  var EXPECTED_AUDIO_VERSION = "10.13";
+  var AUDIO_VERSION = "10.14";
+  var EXPECTED_AUDIO_VERSION = "10.14";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -107,9 +107,19 @@
   var ANALYSER_FFT_SIZE = 1024; /* như Webamp (fftSize 1024): sóng lấy
      1024 mẫu time-domain, BAR có 512 bin tần số để map log. */
   /* Limiter chống clip (lựa chọn của Amp, KHÔNG phải từ Webamp — Webamp
-     không có limiter): chỉ bóp các đỉnh vượt ngưỡng, mức thường gần như
-     không chạm tới. */
-  var LIMITER_THRESHOLD_DB = -3, LIMITER_KNEE_DB = 3, LIMITER_RATIO = 20;
+     không có limiter). v10.14 — NGƯỠNG VỀ 0 dB (trước là -3 dB, knee 3):
+     ĐÃ ĐO THẬT bằng headless Chrome 156 (OfflineAudioContext, xem
+     eq-loudness-114-measure.mjs + eq-loudness-114b/c trong verify):
+     DynamicsCompressor của Chrome CỘNG THÊM gain makeup theo mức tín
+     hiệu khi threshold < 0 — với threshold -3/knee 3/ratio 20, tín hiệu
+     dưới -4.5 dB được +1.2 dB, sine 0 dB bị -0.65 dB (nhạc stereo to:
+     -0.01 dB nhưng dải động bị bóp ~1.85 dB) — chuỗi EQ ở preset Mặc
+     định KHÔNG bằng unity nên EQ bật nghe khác EQ tắt (người dùng báo
+     04/11). Với threshold 0/knee 0: 0.00 dB đúng trên MỌI tín hiệu
+     ≤ 0 dBFS (sine -12/-3/-1/0, multi, nhạc stereo) — EQ bật = EQ tắt;
+     limiter chỉ còn là TRẦN CHỐNG CLIP trên 0 dBFS (preamp +12 dB:
+     đỉnh giữ ở +0.44 dB thay vì +6 dB). */
+  var LIMITER_THRESHOLD_DB = 0, LIMITER_KNEE_DB = 0, LIMITER_RATIO = 20;
   var LIMITER_ATTACK = 0.002, LIMITER_RELEASE = 0.1;
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -280,8 +290,10 @@
         master.gain.value = volume;
         /* Limiter chống clip (lựa chọn của Amp, KHÔNG phải từ Webamp):
            DynamicsCompressor sau master, trước panner/analyser. Ngưỡng
-           -3 dB, tỉ lệ 20:1 nên mức thường gần như không chạm tới; chỉ
-           bóp các đỉnh vượt 0 dBFS khi preset boost + đài to. */
+           0 dB, knee 0, tỉ lệ 20:1 (v10.14: ngưỡng về 0 để chuỗi là
+           unity — xem ghi chú ở LIMITER_THRESHOLD_DB): chỉ bóp các
+           đỉnh vượt 0 dBFS khi preset boost + đài to; tín hiệu thường
+           ≤ 0 dBFS đi qua nguyên vẹn 0.00 dB. */
         try {
           if (ctx.createDynamicsCompressor) {
             limiter = ctx.createDynamicsCompressor();
