@@ -13,14 +13,17 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.6 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.7 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   /* màn hình CHỈ HIỆN GIAO DIỆN (skin Winamp): không tiêu đề,
      không dòng mô tả/version, không hàng nút HTML, không chữ hướng dẫn.
-     Chỉ còn: cửa sổ skin (#stage) + 1 nút menu nhỏ ⋯ ở góc dưới-phải
-     (nạp skin / thêm nhạc / zoom) + banner đỏ chỉ hiện khi lỗi. */
+     Chỉ còn: cửa sổ skin (#stage) + banner đỏ chỉ hiện khi lỗi.
+     Mọi mục menu (nạp skin / thêm nhạc / zoom / Video/Vis / MAKI)
+     nằm TRONG menu của skin (menubar File/Play/Options/View/Help của
+     skin Modern, nút O trên titlebar của skin Classic) — không còn nút
+     ngoài giao diện (nút menu góc dưới-phải đã bỏ 04/11). */
   html,body{margin:0;padding:0;background:#141414;color:#ccc;font-family:Verdana,Arial,sans-serif;}
   /* body padding 0 — trước đây padding:8px đẩy toàn
      bộ stage sang phải 8px (trái hở, phải bị cắt: cửa sổ chính 354px
@@ -62,24 +65,6 @@
      Không có chữ thường trực trên màn hình. */
   #status{display:none;margin:8px auto;max-width:720px;font-size:12px;color:#e88;min-height:16px;text-align:left;line-height:1.5;}
   #status.show{display:block;border:1px solid #a33;background:#2a1111;padding:6px 8px;}
-  /* Nút menu tối thiểu (⋯) ở góc dưới-phải: điểm chạm duy nhất ngoài
-     skin — nạp skin .wal/.wsz/.zip, thêm nhạc local, đổi zoom 1x/fit,
-     cài đặt Video/Vis (v10.5). Nhỏ,
-     mờ, không thành hàng nút; bấm được trên điện thoại (36×36). */
-  #btn-menu{position:fixed;right:10px;bottom:10px;z-index:50;width:36px;height:36px;
-    border-radius:50%;background:rgba(236,233,216,.92);color:#000;border:1px solid #ACA899;
-    font-size:18px;line-height:1;cursor:pointer;opacity:.85;padding:0;}
-  #btn-menu:hover,#btn-menu:focus{opacity:1;border-color:#7a7663;color:#000;outline:none;}
-  /* v9.6 (Điểm 5): menu ⋯ nền SÁNG như menu Winamp thật (#ECE9D8, chữ
-     đen, hover #316AC5) — nền tối #1c1c1c cũ chìm vào nền trang #141414. */
-  #menu-pop{position:fixed;right:10px;bottom:54px;z-index:50;background:#ECE9D8;
-    border:1px solid #ACA899;border-radius:6px;padding:4px;min-width:200px;
-    box-shadow:0 8px 30px rgba(0,0,0,.6);text-align:left;}
-  #menu-pop button{display:block;width:100%;text-align:left;background:none;border:0;
-    color:#000;padding:9px 10px;font-size:13px;cursor:pointer;border-radius:4px;font-family:Verdana,Arial,sans-serif;}
-  #menu-pop button:hover{background:#316AC5;color:#fff;}
-  #menu-pop button.on{color:#000;}
-  #menu-pop button.on::before{content:"✓ ";}
   /* v9.6 (Điểm 2): nút mở lại khi bấm X ở cửa sổ chính — web không có
      "thoát app" như Winamp thật nên X ẩn giao diện, nút này hiện giữa
      màn hình để mở lại (không cần tải lại trang). Ẩn mặc định. */
@@ -93,9 +78,10 @@
      không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên
      nên cửa sổ đó vô dụng. Chỉ giữ "Nạp skin .wal/.wsz/.zip…" chọn file
      tay làm cách duy nhất để nạp skin. Quy tắc [hidden] còn lại cho
-     #menu-pop và #btn-reopen. */
-  #menu-pop[hidden],#btn-reopen[hidden],#maki-panel[hidden]{display:none;}
-  /* bảng xem MAKI — nền sáng như menu ⋯, giữa màn hình,
+     #btn-reopen và #maki-panel. */
+  #btn-reopen[hidden],#maki-panel[hidden]{display:none;}
+  /* bảng xem MAKI — nền sáng như menu Winamp thật (#ECE9D8, chữ đen,
+     hover #316AC5), giữa màn hình,
      cuộn trong khi cần; quy tắc [hidden] ở trên (đặt SAU display) để
      thuộc tính hidden thật sự ẩn panel (bài học panel chọn skin đợt 4). */
   #maki-panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:55;
@@ -119,36 +105,15 @@
 <div id="stage-wrap"><div class="stage" id="stage"></div></div>
 <div id="status"></div>
 <button id="btn-reopen" hidden>Mở lại Amp</button>
-<button id="btn-menu" title="Menu: nạp skin, thêm nhạc, zoom, video/hiệu ứng" aria-label="Menu">⋯</button>
-<div id="menu-pop" hidden>
-  <button data-act="skin">Nạp skin .wal/.wsz/.zip…</button>
-  <button data-act="localfile">Thêm 1 bài nhạc…</button>
-  <button data-act="localdir">Thêm thư mục nhạc…</button>
-  <button data-act="zoom1">Zoom: Cỡ gốc 1x</button>
-  <button data-act="zoomfit">Zoom: Vừa màn hình</button>
-  <button data-act="xfade">Crossfade: 2s</button>
-  <button data-act="milkdrop">Milkdrop: Tắt</button>
-  <!-- v10.5 — cài đặt Video/Vis CHUYỂN TỪ menu của 2 nút VID_Misc/
-       Vis_Menu sang đây (Hải 04/11: 2 nút đó chỉ mở video/hiệu ứng,
-       cài đặt đã có trong nút ⋯ này rồi): đủ các mục của videoMenuItems
-       + visMenuItems trừ Milkdrop (đã có ở trên), gộp trùng (Toàn màn
-       hình, Tách rời/Gắn lại, Đóng chỉ 1 mục chung cho cả 2 chế độ). -->
-  <button data-act="vid-aspect">Giữ tỉ lệ khung hình</button>
-  <button data-act="vid-1x">Cỡ thường (1x)</button>
-  <button data-act="vid-2x">Cỡ gấp đôi (2x)</button>
-  <button data-act="vid-fs">Toàn màn hình</button>
-  <button data-act="vid-max">Phóng to cửa sổ</button>
-  <button data-act="vid-detach">Tách rời (Detach)</button>
-  <button data-act="vid-close">Đóng Video/Hiệu ứng</button>
-  <button data-act="vis-prev">Màu hiệu ứng trước</button>
-  <button data-act="vis-next">Màu hiệu ứng sau</button>
-  <button data-act="vis-random">Màu hiệu ứng ngẫu nhiên</button>
-  <button data-act="maki">Xem script MAKI…</button>
-</div>
 <!-- bảng xem
      script MAKI của skin đang nạp — liệt kê file .maki + method ẩn/hiện.
-     Chỉ hiện khi bấm mục "Xem script MAKI…" trong menu ⋯; không thêm
-     chrome thường trực (màn hình vẫn chỉ hiện skin khi đóng panel). -->
+     Chỉ hiện khi bấm mục "Xem script MAKI…" trong menu Help của skin;
+     không thêm chrome thường trực (màn hình vẫn chỉ hiện skin khi đóng
+     panel). Các mục cũ của nút menu góc dưới-phải (đã bỏ 04/11 — nạp
+     skin / thêm nhạc / zoom /
+     Crossfade / Milkdrop / Video/Vis — 18 mục) đã chuyển hết vào menu
+     của skin (renderer.js: fileMenuItems / viewMenuItems /
+     optionsMenuItems / helpMenuItems), nút menu đã bỏ 04/11. -->
 <div id="maki-panel" hidden>
   <div id="maki-head"><span>Script MAKI (chỉ xem — không chạy)</span><button id="maki-close" title="Đóng" aria-label="Đóng">✕</button></div>
   <div id="maki-body">Chưa nạp.</div>
@@ -156,7 +121,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.6" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.7" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -165,26 +130,26 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.6";
+window.AMP_VERSION = "10.7";
 </script>
-<script src="classic.js?v=10.6"></script>
-<script src="skin-loader.js?v=10.6"></script>
-<script src="audio.js?v=10.6"></script>
-<script src="eqf.js?v=10.6"></script>
+<script src="classic.js?v=10.7"></script>
+<script src="skin-loader.js?v=10.7"></script>
+<script src="audio.js?v=10.7"></script>
+<script src="eqf.js?v=10.7"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
      GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
      cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
      (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
      milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
      / PRESETS_* / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.6"></script>
-<script src="metadata.js?v=10.6"></script>
-<script src="maki.js?v=10.6"></script>
-<script src="renderer.js?v=10.6"></script>
+<script src="milkdrop.js?v=10.7"></script>
+<script src="metadata.js?v=10.7"></script>
+<script src="maki.js?v=10.7"></script>
+<script src="renderer.js?v=10.7"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.6" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.7" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -193,15 +158,17 @@ window.AMP_VERSION = "10.6";
    biến global tự sinh từ id (id có gạch ngang không thành biến camelCase). */
 var $ = function (s) { return document.querySelector(s); };
 var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
-    btnMenu = $("#btn-menu"), menuPop = $("#menu-pop"), btnReopen = $("#btn-reopen"),
+    btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.6";
+var VERSION = "10.7";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
-/* crossfade + Milkdrop — chỉnh từ menu ⋯, lưu localStorage.
+/* crossfade + Milkdrop — chỉnh từ menu trong giao diện skin (File/
+   Play/Options/View/Help của skin Modern, nút O của skin Classic),
+   lưu localStorage.
    crossfadeMs: 0 = tắt, mặc định 2000 (2s); milkdropOn: mặc định TẮT
-   (tốn GPU/pin — bật từ menu ⋯ khi cần). */
+   (tốn GPU/pin — bật từ menu View khi cần). */
 var crossfadeMs = 2000;
 var milkdropOn = false, milkdropCtl = null, milkdropLastErrorShown = "";
 try { var _xf = parseInt(localStorage.getItem("amp9-xfade-ms") || "2000", 10); if (isFinite(_xf) && _xf >= 0 && _xf <= 10000) crossfadeMs = _xf; } catch (e) { /* bỏ qua */ }
@@ -232,7 +199,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.6 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.7 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -242,7 +209,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.6 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.7 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -304,7 +271,7 @@ function ensureJSZip() {
    (số 24 cũ làm fit thu nhỏ oan cả cửa sổ chính 354px dù đã vừa 360px).
    transform-origin:0 0 (đặt ở CSS .stage) nên scale không cắt đỉnh
    stage như lỗi fit đợt 9.4. Mặc định là "fit" để thấy hết các góc;
-   chọn 1x trong menu ⋯ để về cỡ gốc (vuốt ngang xem playlist).
+   chọn 1x trong menu View của skin để về cỡ gốc (vuốt ngang xem playlist).
    Nút 2x/3x đã bỏ khỏi thanh công cụ (người dùng chốt 3/11: web chỉ
    cần 1x + fit). Mọi mode khác "fit" đều về 1x. Zoom giữ mượt như cũ
    (scale transform + image-rendering:auto, KHÔNG pixelated). */
@@ -341,43 +308,18 @@ function setZoom(mode) {
      (LW*s == clientWidth, vd 354×1.017=360) vẫn giữ "0 auto" (3px mỗi
      bên), cộng scale khiến mép phải tràn 3px ra ngoài wrap. */
   stage.style.margin = (LW * s > stageWrap.clientWidth - 1) ? "0" : "0 auto";
-  /* Đánh dấu chế độ đang chọn trong menu ⋯ (không còn nút zoom trên
-     thanh công cụ). */
-  if (menuPop) {
-    var z1 = menuPop.querySelector('[data-act="zoom1"]');
-    var zf = menuPop.querySelector('[data-act="zoomfit"]');
-    if (z1) z1.classList.toggle("on", mode === "1");
-    if (zf) zf.classList.toggle("on", mode === "fit");
-  }
-  /* nhãn crossfade/Milkdrop chỉ cập nhật khi MỞ menu (toggleMenu
-     gọi markMenuChecks) — không gọi ở đây để setZoom trích độc lập được
-     cho test (zoom-fit-test eval riêng hàm này). */
+  /* Dấu ✓ chế độ zoom KHÔNG cập nhật ở đây nữa: menu trong giao diện
+     skin (viewMenuItems trong renderer.js) dựng NHÃN MỚI mỗi lần mở,
+     đọc trạng thái zoom hiện tại qua isZoomFit() nên luôn đúng. */
 }
-/* mục Crossfade + Milkdrop trong menu ⋯. */
+/* Crossfade + Milkdrop: nhãn/✓ nằm trong menu của skin (Options/View),
+   dựng mới mỗi lần mở nên luôn đúng trạng thái hiện tại. */
 function xfadeLabel(ms) { return ms <= 0 ? "Tắt" : (ms / 1000) + "s"; }
 function markMenuChecks() {
-  if (!menuPop) return;
-  var xf = menuPop.querySelector('[data-act="xfade"]');
-  if (xf) { xf.textContent = "Crossfade: " + xfadeLabel(crossfadeMs); xf.classList.toggle("on", crossfadeMs > 0); }
-  var md = menuPop.querySelector('[data-act="milkdrop"]');
-  if (md) { md.textContent = "Milkdrop: " + (milkdropOn ? "Bật" : "Tắt"); md.classList.toggle("on", milkdropOn); }
-  /* v10.5 — nhãn động cho các mục Video/Vis đã chuyển sang menu ⋯:
-     ✓ theo trạng thái AVS hiện tại (đọc từ renderer.getAvsState);
-     chưa nạp skin thì giữ nhãn mặc định trong HTML. */
-  if (renderer && renderer.getAvsState) {
-    var avs = null;
-    try { avs = renderer.getAvsState(); } catch (e) { avs = null; }
-    if (avs) {
-      var va = menuPop.querySelector('[data-act="vid-aspect"]');
-      if (va) { va.textContent = (avs.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình"; va.classList.toggle("on", !!avs.keepAspect); }
-      var vm = menuPop.querySelector('[data-act="vid-max"]');
-      if (vm) { vm.textContent = avs.videoMaximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ"; }
-      var vd = menuPop.querySelector('[data-act="vid-detach"]');
-      if (vd) { vd.textContent = avs.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)"; }
-      var vr = menuPop.querySelector('[data-act="vis-random"]');
-      if (vr) { vr.textContent = (avs.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên"; vr.classList.toggle("on", !!avs.visRandom); }
-    }
-  }
+  /* GIỮ HÀM (no-op): toggleMilkdrop/cycleCrossfade vẫn gọi nó, và các
+     test Milkdrop cũ trích hàm từ index.html vào trang stub của riêng
+     chúng (stub tự định nghĩa markMenuChecks của nó). Không còn menu
+     HTML thường trực nào để cập nhật nhãn nữa. */
 }
 function cycleCrossfade() {
   var steps = [0, 1000, 2000, 4000];
@@ -700,13 +642,11 @@ function toggleDrawer(open) {
   }, 50);
 }
 /* MINIMIZE: web không thu nhỏ cửa sổ thật như Winamp
-   desktop (không có taskbar/cửa sổ hệ thống); Amp ẩn giao diện + nút ⋯,
+   desktop (không có taskbar/cửa sổ hệ thống); Amp ẩn giao diện,
    hiện nút "Mở lại Amp", GIỮ TIẾNG đang phát — chung đường với nút X
    của cửa sổ chính (onPlayerClose). Bấm "Mở lại Amp" thì hiện lại. */
 function hideUi() {
   try { stageWrap.style.display = "none"; } catch (e) { /* bỏ qua */ }
-  try { btnMenu.style.display = "none"; } catch (e) { /* bỏ qua */ }
-  try { menuPop.hidden = true; } catch (e) { /* bỏ qua */ }
   try { btnReopen.hidden = false; } catch (e) { /* bỏ qua */ }
 }
 async function bootSkin(file, name) {
@@ -763,7 +703,7 @@ async function bootSkin(file, name) {
       /* kéo đổi kích thước cửa sổ xong → lưu. */
       onWinSizeChange: function (sizes) { saveWinSizes(sizes); },
       /* v9.6 (Điểm 2): nút X của cửa sổ chính — web không "thoát app"
-         như Winamp thật: ẩn giao diện + nút ⋯, hiện nút "Mở lại Amp"
+         như Winamp thật: ẩn giao diện, hiện nút "Mở lại Amp"
          (không dừng tiếng; bấm nút mở lại thì giao diện hiện lại). */
       onPlayerClose: function () { hideUi(); },
       /* MINIMIZE (nút thu nhỏ cửa sổ chính + shade):
@@ -771,12 +711,24 @@ async function bootSkin(file, name) {
          của desktop, chỉ ẩn giao diện + giữ tiếng). */
       onMinimize: function () { hideUi(); },
       /* Preferences "Nạp skin…" / menu File "Nạp skin…":
-         mở hộp chọn file .wal/.wsz của trang (giống mục "skin" của
-         menu ⋯ và kéo-thả file vào trang). */
+         mở hộp chọn file .wal/.wsz của trang (giống mục "Nạp skin…"
+         trong menu File của skin và kéo-thả file vào trang). */
       onOpenSkinPicker: function () { fileInput.click(); },
-      /* Preferences "Zoom": 1x / Vừa màn hình (giống
-         menu ⋯; chỉ 2 chế độ này, theo chốt 3/11). */
+      /* menu View của skin "Zoom": 1x / Vừa màn hình (cùng đường
+         setZoom; chỉ 2 chế độ này, theo chốt 3/11). */
       onZoom: function (mode) { setZoom(mode); },
+      /* nút D trên clutter bar Classic cần biết zoom hiện
+         tại để đổi 1x/fit + sáng đèn khi đang fit. */
+      isZoomFit: function () { return zoom === "fit"; },
+      /* menu Options của skin "Crossfade": xoay 0 → 1s → 2s → 4s
+         (cùng đường cycleCrossfade của trang); nhãn + ✓ đọc từ
+         crossfadeMs hiện tại, menu dựng mới mỗi lần mở nên luôn đúng. */
+      onCycleCrossfade: function () { cycleCrossfade(); },
+      getCrossfadeLabel: function () { return "Crossfade: " + xfadeLabel(crossfadeMs); },
+      isCrossfadeOn: function () { return crossfadeMs > 0; },
+      /* menu Help của skin "Xem script MAKI…": mở bảng xem script
+         của skin đang nạp (chỉ xem, không chạy). */
+      onOpenMakiPanel: function () { openMakiPanel(); },
       /* nút D trên clutter bar Classic cần biết zoom hiện
          tại để đổi 1x/fit + sáng đèn khi đang fit. */
       isZoomFit: function () { return zoom === "fit"; },
@@ -784,7 +736,7 @@ async function bootSkin(file, name) {
          đọc trạng thái shade hiện tại để đánh dấu ✓ và đảo trạng thái. */
       isShadeMode: function () { return shadeMode; },
       /* v10.4 — menu Vis/Video trong renderer cũng bật/tắt được Milkdrop
-         (cùng đường toggleMilkdrop với menu ⋯; trạng thái đọc từ
+         (cùng đường toggleMilkdrop với menu View của skin; trạng thái đọc từ
          milkdropOn để đánh ✓). */
       onMilkdropToggle: function () { toggleMilkdrop(); },
       isMilkdropOn: function () { return milkdropOn; },
@@ -970,77 +922,20 @@ async function bootSkin(file, name) {
     }
   }
 }
-/* menu tối thiểu (⋯) ở góc trang: điểm chạm duy nhất ngoài skin.
-   Chứa những thứ skin không làm được: nạp skin .wal/.wsz/.zip (chọn file),
-   thêm nhạc local, đổi zoom 1x/fit + (v10.5) cài đặt Video/Vis chuyển từ
-   menu của 2 nút VID_Misc/Vis_Menu sang đây. Mọi chức năng khác (ngăn kéo,
-   playlist, mở Video/Vis) dùng qua chính skin: nút trong skin + menu View
-   (File/Play/Options/View/Help) — xem viewMenuItems trong renderer.js.
-   Kéo-thả file .wal/.wsz/.zip vào trang vẫn giữ (không cần chữ hướng dẫn). */
-function wireMenu() {
-  function closeMenu() { if (menuPop) menuPop.hidden = true; }
-  function toggleMenu() {
-    if (!menuPop) return;
-    menuPop.hidden = !menuPop.hidden;
-    if (!menuPop.hidden) { setZoom(zoom); markMenuChecks(); /* cập nhật dấu ✓ + nhãn crossfade/Milkdrop */ }
-  }
-  if (btnMenu) btnMenu.addEventListener("click", function (e) {
-    if (e.stopPropagation) e.stopPropagation();
-    toggleMenu();
-  });
+/* Nối trang (không còn nút menu ngoài skin — bỏ 04/11): các mục cũ của
+   nút đó (nạp skin / thêm nhạc / zoom / Crossfade / Milkdrop / Video-Vis
+   / MAKI — đủ 18 mục) nay nằm TRONG menu của skin (renderer.js:
+   fileMenuItems / viewMenuItems / optionsMenuItems / helpMenuItems;
+   skin Classic thì gộp vào menu của nút O trên titlebar). Chỗ này chỉ
+   còn: nút "Mở lại Amp", đóng bảng MAKI, phím tắt, hộp chọn file skin,
+   resize, kéo-thả file .wal/.wsz/.zip vào trang (không chữ hướng dẫn). */
+function wirePage() {
   /* v9.6 (Điểm 2): nút "Mở lại Amp" — hiện lại giao diện sau khi bấm X
-     ở cửa sổ chính (onPlayerClose đã ẩn stage-wrap + nút ⋯). */
+     ở cửa sổ chính (onPlayerClose đã ẩn stage-wrap). */
   if (btnReopen) btnReopen.addEventListener("click", function () {
     try { stageWrap.style.display = ""; } catch (e) { /* bỏ qua */ }
-    try { btnMenu.style.display = ""; } catch (e) { /* bỏ qua */ }
     try { btnReopen.hidden = true; } catch (e) { /* bỏ qua */ }
     try { renderCurrent(); } catch (e) { /* bỏ qua */ }
-  });
-  document.addEventListener("click", function (e) {
-    if (!menuPop || menuPop.hidden) return;
-    if (e.target === btnMenu || (menuPop.contains && menuPop.contains(e.target))) return;
-    closeMenu();
-  });
-  if (menuPop) menuPop.addEventListener("click", function (e) {
-    var t = e.target && e.target.closest ? e.target.closest("[data-act]") : null;
-    if (!t) return;
-    var act = t.getAttribute("data-act");
-    if (act === "skin") { fileInput.click(); }
-    else if (act === "localfile") {
-      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
-      renderer.openLocalFilePicker();
-    }
-    else if (act === "localdir") {
-      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
-      renderer.openLocalFolderPicker();
-    }
-    else if (act === "zoom1") { setZoom("1"); }
-    else if (act === "zoomfit") { setZoom("fit"); }
-    else if (act === "xfade") { cycleCrossfade(); }
-    else if (act === "milkdrop") { toggleMilkdrop(); }
-    else if (act === "maki") { openMakiPanel(); }
-    /* v10.5 — cài đặt Video/Vis trong menu ⋯ (chuyển từ menu của 2 nút
-       VID_Misc/Vis_Menu; cùng đường hàm renderer như menu cũ nên hành vi
-       y hệt, chỉ khác chỗ bấm). Chưa nạp skin thì báo rõ như localfile. */
-    else if (act === "vid-aspect" || act === "vid-1x" || act === "vid-2x" || act === "vid-fs" || act === "vid-max" || act === "vid-detach" || act === "vid-close" || act === "vis-prev" || act === "vis-next" || act === "vis-random") {
-      if (!renderer) { setStatus("Chưa nạp skin nào.", true); return; }
-      var avsSt = renderer.getAvsState ? renderer.getAvsState() : null;
-      if (act === "vid-aspect") { renderer.setKeepAspect(!(avsSt && avsSt.keepAspect)); }
-      else if (act === "vid-1x") { renderer.setVideoScale(1); }
-      else if (act === "vid-2x") { renderer.setVideoScale(2); }
-      else if (act === "vid-fs") { renderer.requestVideoFullscreen(); }
-      else if (act === "vid-max") { renderer.setVideoMaximized(!(avsSt && avsSt.videoMaximized)); }
-      else if (act === "vid-detach") {
-        if (avsSt && avsSt.detached) { renderer.reattachAvs(); }
-        else { if (!avsSt || !avsSt.open) renderer.openAvs(avsSt ? avsSt.mode : "video"); renderer.detachAvs(); }
-      }
-      else if (act === "vid-close") { renderer.closeAvs(); }
-      else if (act === "vis-prev") { renderer.cycleVisVariant(-1); }
-      else if (act === "vis-next") { renderer.cycleVisVariant(1); }
-      else if (act === "vis-random") { renderer.setVisRandom(!(avsSt && avsSt.visRandom)); }
-      markMenuChecks(); /* cập nhật nhãn ✓/Phóng to/Tách rời ngay */
-    }
-    closeMenu();
   });
   /* đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.
      Bỏ qua cú chạm mở panel trong 250ms (cú chạm mở nổi bọt lên document
@@ -1054,7 +949,6 @@ function wireMenu() {
     if (!makiPanel || makiPanel.hidden) return;
     if (Date.now() - makiOpenedAt < 250) return;
     if (makiPanel.contains && makiPanel.contains(e.target)) return;
-    if (e.target === btnMenu || (menuPop && menuPop.contains && menuPop.contains(e.target))) return;
     closeMakiPanel();
   });
   document.addEventListener("keydown", function (e) {
@@ -1082,7 +976,7 @@ function wireMenu() {
     if (f) bootSkin(f, f.name);
   });
 }
-wireMenu();
+wirePage();
 /* bảng "Xem script MAKI…": CHỈ XEM, không
    chạy code MAKI. Đọc file .maki của skin đang nạp từ zip (RES.zip do
    loader giữ), parse + inspect bằng window.AmpMaki rồi vẽ bảng tóm tắt:
@@ -1170,8 +1064,8 @@ async function openMakiPanel() {
   }
 }
 /* openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
-   ghi chú manifest trên) — nạp skin chỉ còn file tay (menu ⋯
-   "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
+   ghi chú manifest trên) — nạp skin chỉ còn file tay (menu File của
+   skin "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
    Panel MAKI ở trên (#maki-panel) là panel XEM script, không phải panel
    chọn skin — đừng nhầm 2 panel này. */
 if (checkVersions()) {
@@ -1185,7 +1079,7 @@ if (checkVersions()) {
         return;
       }
     } catch (e) { /* không có file cùng thư mục -> chờ kéo thả */ }
-    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.wsz/.zip vào trang, hoặc bấm ⋯ (góc dưới-phải) → “Nạp skin .wal/.wsz/.zip…”.", true);
+    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.wsz/.zip vào trang, hoặc mở menu File trong skin → “Nạp skin .wal/.wsz/.zip…”.", true);
   })();
 } else {
   setStatus("Version lệch — dừng lại, xem banner đỏ ở trên.", true);

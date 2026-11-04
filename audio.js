@@ -82,8 +82,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.6";
-  var EXPECTED_AUDIO_VERSION = "10.6";
+  var AUDIO_VERSION = "10.7";
+  var EXPECTED_AUDIO_VERSION = "10.7";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -524,10 +524,17 @@
         var ax = activeXfade;
         activeXfade = null;
         crossfadeActive = false;
-        if (pauseFrom) { try { ax.fromEl.pause(); } catch (e) { /* bỏ qua */ } }
+        if (pauseFrom) { pauseEl(ax.fromEl); }
         try { ax.fromEl.volume = elTargetVolume(ax.fromEl); } catch (e) { /* bỏ qua */ }
         try { ax.toEl.volume = elTargetVolume(ax.toEl); } catch (e) { /* bỏ qua */ }
       } else if (had && had.toEl) {
+        /* v10.7 fix Stop tu phat lai (04/11): fade dang CHO (bai moi chua
+           phat, bai cu van hat) ma chi reset volume thi bai cu hat tiep
+           mai sau Stop/Pause — pauseFrom=true thi dung CA 2 the. Dung
+           pauseEl (thay cho .pause() tran) de ghi so the dung ngay
+           (su kien 'pause' cua the khong phai currentEl bi bo qua nen
+           khong tu cap nhat duoc). */
+        if (pauseFrom) { pauseEl(had.fromEl); pauseEl(had.toEl); }
         try { had.toEl.volume = elTargetVolume(had.toEl); } catch (e) { /* bỏ qua */ }
       }
       return !!had;
@@ -682,6 +689,10 @@
     }
     function tryHls(seq) {
       if (!currentItem || !currentEl) return;
+      /* v10.7 fix Stop tu phat lai (04/11): da dung/tam dung thi khong
+         roi ve HLS roi phat lai (MANIFEST_PARSED goi play()). Chi roi HLS
+         khi dang phat that hoac dang nap lan dau. */
+      if (!playing && loadState !== "loading") return;
       hlsTried = true;
       loadHlsCtor().then(function (Hls) {
         if (destroyed || seq !== loadSeq || !currentEl) return;
@@ -725,7 +736,10 @@
       nativeTimer = setTimeout(function () {
         nativeTimer = null;
         if (destroyed || seq !== loadSeq || !currentItem || !currentEl) return;
-        if (playing) return; /* đã phát rồi thì thôi */
+        /* v10.7 fix Stop tu phat lai (04/11): chi roi HLS / bao loi khi
+           dang nap lan dau (loadState "loading"). Da dung han (Stop, doi
+           EQ luc dung) thi timer nay (neu con) khong duoc phat lai. */
+        if (playing || loadState !== "loading") return;
         if (isHlsUrl(currentItem.url) && !hlsTried) tryHls(seq);
         else handleLoadFailure("timeout");
       }, nativeTimeoutMs);
@@ -826,6 +840,12 @@
     function handleLoadFailure(reason) {
       clearTimers();
       if (!currentItem) return;
+      /* v10.7 fix Stop tu phat lai (04/11): da dung han (Stop, loadState
+         "idle") hoac dang tam dung (Pause) thi loi den sau (vd mang chop
+         cua radio) KHONG duoc thu lai / bao loi — nguoi dung khong nghe
+         nua, thu lai la tu phat lai. Chi thu lai khi dang phat that
+         (playing) hoac dang nap lan dau (loadState "loading"). */
+      if (!playing && loadState !== "loading") return;
       if ((pendingXfade && currentItem === pendingXfade.newItem) ||
           (activeXfade && currentItem === activeXfade.newItem)) {
         cancelXfadeRestoreOld();
@@ -894,6 +914,15 @@
     function onTimeEv(ev) {
       var el = currentEventEl(ev);
       if (!el) return;
+      /* v10.7 fix Stop tu phat lai (04/11): timeupdate khi the dang PAUSE
+         KHONG phai dang phat — trinh duyet ban timeupdate sau seek ke ca
+         luc pause (vd Stop tua ve 0). Truoc day onTimeEv bat lai
+         playing=true tu su kien nay, roi watchdog (van chay sau Stop) goi
+         play() trong vong 5s. Bo qua han: khong bat playing, khong ramp
+         crossfade, khong danh dau the dang phat. */
+      var pausedNow = false;
+      try { pausedNow = !!el.paused; } catch (e) { pausedNow = false; }
+      if (pausedNow) return;
       clearTimers(); /* có timeupdate = đang phát thật */
       wdStallSince = 0; /* thời gian chạy = không kẹt */
       markElPlaying(el);
@@ -1077,6 +1106,11 @@
       if (ctx && ctx.state === "suspended" && ctx.resume) {
         try { ctx.resume(); } catch (e) { /* bỏ qua */ }
       }
+      /* v10.7 fix Stop tu phat lai (04/11): resume la y dinh phat that —
+         dat "loading" de loi sau day duoc thu lai / bao loi (setEqOn luc
+         dung de "idle", khong co dong nay thi Play sau Stop + doi EQ se
+         mat han xu ly loi). */
+      loadState = "loading";
       try {
         var p = currentEl.play();
         if (p && p.catch) p.catch(function () { /* autoplay chặn */ });
@@ -1092,6 +1126,18 @@
       if (recheckTimer) { clearTimeout(recheckTimer); recheckTimer = null; }
       clearTimers();
       detachHls();
+      /* v10.7 fix Stop tu phat lai (04/11): Stop phai DUNG HAN, khong chi
+         pause + tua ve 0.
+         - Dung watchdog: no chi co nghia khi dang phat; de chay tiep thi
+           chi can 1 su kien lac (vd timeupdate do tua) bat lai playing la
+           no goi play() trong vong 5s. playItem/resume khoi dong lai.
+         - Tang loadSeq: vo hieu hoa moi async dang bay (nap HLS.js qua
+           CDN, MANIFEST_PARSED, native timer) — chung chi kiem seq nay.
+         - loadState = "idle": danh dau da dung han; loi den sau (mang
+           chop) khong duoc thu lai / bao loi (xem handleLoadFailure). */
+      stopWatchdog();
+      loadSeq++;
+      loadState = "idle";
       cancelXfade(true); /* dừng thì dừng cả 2 thẻ crossfade */
       if (currentEl) {
         pauseEl(currentEl);
@@ -1197,7 +1243,12 @@
           var seq = ++loadSeq;
           clearTimers(); detachHls();
           cancelXfade(true);
-          retryCount = 0; hlsTried = false; loadState = "loading";
+          retryCount = 0; hlsTried = false;
+          /* v10.7 fix Stop tu phat lai (04/11): nap lai luc DUNG (Stop /
+             Pause, khong nap do) thi loadState "idle" de native timer /
+             loi sau do khong tu phat lai; dang phat hoac dang nap do thi
+             giu "loading" (van can HLS fallback / thu lai). */
+          loadState = (wasPlaying || loadState === "loading") ? "loading" : "idle";
           pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
           currentEl = freshElement(currentKind, currentEl);
           if (!currentEl) { handleLoadFailure("no-element"); return { changed: true, reloaded: true }; }
@@ -1222,7 +1273,9 @@
           var wasPlaying = playing;
           var seq = ++loadSeq;
           clearTimers(); detachHls();
-          retryCount = 0; hlsTried = false; loadState = "loading";
+          retryCount = 0; hlsTried = false;
+          /* v10.7 (xem nhan tren): nap lai luc dung thi "idle". */
+          loadState = (wasPlaying || loadState === "loading") ? "loading" : "idle";
           pendingSeek = pos > 0 ? pos : null; /* khôi phục ở loadedmetadata */
           setCrossOrigin(currentEl, false);
           setSrcAndPlay(currentEl, currentItem.url, seq);
@@ -1239,7 +1292,8 @@
       var seq2 = ++loadSeq;
       clearTimers(); detachHls();
       retryCount = 0; hlsTried = false; eqFallbackTried = false; /* lần bật EQ mới được thử fallback CORS lại */
-      loadState = "loading";
+      /* v10.7 (xem nhan tren): nap lai luc dung thi "idle". */
+      loadState = (wasPlaying2 || loadState === "loading") ? "loading" : "idle";
       pendingSeek = pos2 > 0 ? pos2 : null; /* khôi phục ở loadedmetadata */
       setCrossOrigin(currentEl, true);
       setSrcAndPlay(currentEl, currentItem.url, seq2);
