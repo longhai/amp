@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.10";
-  var EXPECTED_RENDERER_VERSION = "10.10";
+  var RENDERER_VERSION = "10.11";
+  var EXPECTED_RENDERER_VERSION = "10.11";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -7348,7 +7348,7 @@
          làm khe (bandwidth "wide": 3 cột + 1 khe) — như Webamp.
        - Ánh xạ tần số log: scale 0.91 (0 = tuyến tính, 1 = log hẳn),
          nội suy giữa 2 bin kề — như Webamp (maxFreqIndex = số bin của
-         analyser Amp, fftSize 64 → 32 bin).
+         analyser Amp, fftSize 1024 → 512 bin).
        - Falloff: lên tức thì, xuống 0.75 hàng/khung (falloff 12
          "moderate" /16 của Webamp); đỉnh (peak) 1 vạch, vận tốc rơi
          khởi đầu 3/256 hàng/khung rồi nhân 1.1 mỗi khung ("slow").
@@ -7367,8 +7367,13 @@
     var avsShownRows = [], avsPeakRows = [], avsPeakVel = [];
     var lastAvsFrame = { mode: "sample", maxBin: 0, heights: [], peaks: [] };
     var avsGradCanvas = null, avsGradKey = "";
+    /* Đợt v10.11 — peak tracker cho chuẩn hoá vis display (xem visBarHeight):
+       đỉnh khung hiện tại, rớt 0.995/khung; reset khi đổi analyser hoặc
+       rời mode "real" (trong resetAvsVisState + drawVisStatic). */
+    var visNormPeak = 0;
     function resetAvsVisState() {
       avsShownRows = []; avsPeakRows = []; avsPeakVel = [];
+      visNormPeak = 0;
       for (var k = 0; k < AVS_BARS; k++) { avsShownRows.push(0); avsPeakRows.push(0); avsPeakVel.push(0); }
       lastAvsFrame = { mode: lastAvsFrame.mode || "sample", maxBin: 0, heights: [], peaks: [] };
     }
@@ -7610,6 +7615,40 @@
       }
       /* Đợt B (9.9): chế độ vẽ theo EQ + tín hiệu (xem ghi chú trên). */
       var visMode = (!hasAnalyser || !drawerState.eqOn) ? "sample" : (maxBin >= 4 ? "real" : "flat");
+      /* Đợt v10.11 — biên độ display đã equalize + chuẩn hoá (tính 1 lần/khung,
+         chỉ mode "real"): byte freq -> dB (min/maxDecibels của analyser, mặc
+         định -100/-30 như Web Audio) -> tuyến tính 10^(dB/20) -> nhân bảng
+         equalize Nullsoft -> chuẩn hoá theo peak (rớt 0.995/khung). Chỉ lấy
+         NỬA ĐẦU bin của analyser: FFT Nullsoft của Webamp chỉ bao 0..Fs/4
+         (~11kHz ở 44,1kHz) nên cột cao nhất của Webamp đọc ~11kHz (stream
+         radio vẫn còn năng lượng); analyser của Amp bao 0..Fs/2 (~22kHz) nên
+         lấy hết thì cột cao đọc 18–22kHz — vùng stream 128kbps đã lowpass
+         hết, cột chết (đúng lỗi Hải báo 04/11). Mảng `freq` thô GIỮ NGUYÊN
+         cho beat (bass dùng bin thô) và OSC (time-domain) bên dưới. */
+      var visNorm = null;
+      if (visMode === "real" && freq) {
+        var visMinDb = (avsAnalyser && typeof avsAnalyser.minDecibels === "number") ? avsAnalyser.minDecibels : -100;
+        var visMaxDb = (avsAnalyser && typeof avsAnalyser.maxDecibels === "number") ? avsAnalyser.maxDecibels : -30;
+        var visNBins = Math.max(1, Math.floor(freq.length / 2));
+        var visEq = getVisEqualizeTable(visNBins);
+        visNorm = new Array(visNBins);
+        var visFramePeak = 0;
+        for (var vei = 0; vei < visNBins; vei++) {
+          var vdb = visMinDb + (freq[vei] / 255) * (visMaxDb - visMinDb);
+          var vemag = Math.pow(10, vdb / 20) * visEq[vei];
+          visNorm[vei] = vemag;
+          if (vemag > visFramePeak) visFramePeak = vemag;
+        }
+        visNormPeak = Math.max(visNormPeak * 0.995, visFramePeak);
+        if (visNormPeak > 0) {
+          for (var vni = 0; vni < visNBins; vni++) visNorm[vni] = visNorm[vni] / visNormPeak;
+        }
+      } else {
+        visNormPeak = 0; /* rời mode "real": bỏ neo peak cũ */
+      }
+      /* visBarHeight nhánh "real" đọc mảng norm đã equalize; flat/sample
+         không dùng mảng nên truyền freq thô cũng được — giữ 1 biến chung. */
+      var barVals = (visMode === "real") ? visNorm : freq;
       var useXmlCol = avsState.visVariant === 0;
       var col = (VIS_VARIANTS[avsState.visVariant] || VIS_VARIANTS[0]).col;
       var heights = [];
@@ -7671,7 +7710,7 @@
         if (!ctx2) { /* jsdom không có canvas 2d: vẫn tính heights cho test */
           if (i === 0) {
             var H0 = v.cv.height || 0;
-            for (var k0 = 0; k0 < VIS_BANDS; k0++) heights.push(visBarHeight(k0, visMode, freq, H0));
+            for (var k0 = 0; k0 < VIS_BANDS; k0++) heights.push(visBarHeight(k0, visMode, barVals, H0));
           }
           continue;
         }
@@ -7686,7 +7725,7 @@
           ctx2.clearRect(0, 0, Wc, Hc);
           var nc = VIS_BANDS, bwc = Wc / nc, rh = Hc / 16;
           for (var kc = 0; kc < nc; kc++) {
-            var hhc = visBarHeight(kc, visMode, freq, Hc);
+            var hhc = visBarHeight(kc, visMode, barVals, Hc);
             if (i === 0) heights.push(hhc);
             var litRows = Math.round(hhc / rh);
             /* v10.7 — chieu cao 1 hang toi thieu 1px: canvas Classic cao
@@ -7709,7 +7748,7 @@
         }
         var n = VIS_BANDS, bw = W / n;
         for (var k = 0; k < n; k++) {
-          var hh = visBarHeight(k, visMode, freq, H);
+          var hh = visBarHeight(k, visMode, barVals, H);
           if (i === 0) heights.push(hh);
           ctx2.fillStyle = useXmlCol ? (v.bands[k] || "#fff") : col;
           ctx2.fillRect(k * bw + 1, H - hh, bw - 2, hh);
@@ -7746,13 +7785,60 @@
       for (var i = 0; i < animLayerRecs.length; i++) if (animLayerRecs[i].beat) return animLayerRecs[i].frame;
       return 0;
     }
+    /* Đợt v10.11 — bảng equalize Nullsoft (Webamp FFTNullsoft.ts
+       initEqualizeTable, port y nguyên, tham số hoá theo N bin):
+       eq[i] = log10(1 + bias + (i+1)*(9-bias)/N), bias khởi đầu 0.04 và
+       bias /= 1.0025 sau mỗi bin. Với N=512: eq[0]≈0.024 → eq[511]≈1.0,
+       tức dải cao được BOOST ~40x (≈+32dB) so với dải thấp — đây là lý do
+       cột cao của Webamp vẫn nhảy dù năng lượng nhạc giảm dần theo tần số.
+       Cache theo N (test dùng analyser giả 32 bin, thật dùng 512 bin).
+       N=1: eq[0] = log10(10) = 1. */
+    var visEqCache = {};
+    function getVisEqualizeTable(n) {
+      if (!n || n < 1) n = 1;
+      var t = visEqCache[n];
+      if (t) return t;
+      t = new Array(n);
+      var bias = 0.04;
+      for (var i = 0; i < n; i++) {
+        var invHalf = (9.0 - bias) / n;
+        t[i] = Math.log10(1.0 + bias + (i + 1) * invHalf);
+        bias /= 1.0025;
+      }
+      visEqCache[n] = t;
+      return t;
+    }
+    /* Ánh xạ log kiểu Webamp (scale 0.91, nội suy 2 bin kề) của cột k trong
+       nb cột trên mảng giá trị 0..1 — cùng toán như avsLogTarget (đường AVS
+       75 cột) nhưng trả về giá trị 0..1 thay vì hàng 0..15. */
+    function visLogValue(k, nb, arr) {
+      if (!arr || !arr.length) return 0;
+      var maxFreqIndex = arr.length;
+      var logMax = Math.log10(maxFreqIndex);
+      var linearIndex = (k / (nb - 1)) * (maxFreqIndex - 1);
+      var logIndex = Math.pow(10, (logMax * k) / (nb - 1));
+      var scaled = 0.09 * linearIndex + 0.91 * logIndex;
+      var i1 = Math.floor(scaled), i2 = Math.ceil(scaled);
+      if (i1 >= maxFreqIndex) i1 = maxFreqIndex - 1;
+      if (i2 >= maxFreqIndex) i2 = maxFreqIndex - 1;
+      return (i1 === i2) ? arr[i1] : (1 - (scaled - i1)) * arr[i1] + (scaled - i1) * arr[i2];
+    }
     /* Chiều cao 1 cột vis (đợt B — tách riêng để test không cần canvas):
-       real = theo bin tần số; flat = 2px (im); sample = sine theo phase. */
+       real = theo bin tần số; flat = 2px (im); sample = sine theo phase.
+       Đợt v10.11 — nhánh "real": `freq` ở đây là mảng norm đã equalize +
+       chuẩn hoá theo peak (drawVisStatic tính, chỉ lấy nửa đầu bin =
+       0..Fs/4 như FFT của Webamp), ánh xạ log 16 cột kiểu Webamp rồi
+       chiều cao = 2 + norm*(H-6) (giữ thang cũ để cột bass/mid không đổi
+       tầm). Trước đây nhánh này đọc 1 bin TUYẾN TÍNH trên toàn bộ 512 bin
+       analyser (0..Fs/2): cột 12–15 đọc 18–22,5kHz — vùng stream radio
+       128kbps gần như không còn năng lượng — nên cột cao đứng yên.
+       Nhánh "flat"/"sample" GIỮ NGUYÊN y hệt. */
     function visBarHeight(k, mode, freq, H) {
       if (mode === "flat") return 2;
       if (mode === "real" && freq) {
-        var bin = freq[Math.floor(k * freq.length / VIS_BANDS)] || 0;
-        return 2 + (bin / 255) * (H - 6);
+        var v = visLogValue(k, VIS_BANDS, freq);
+        if (v < 0) v = 0; if (v > 1) v = 1;
+        return 2 + v * (H - 6);
       }
       return 2 + Math.abs(Math.sin(k * 0.9 + avsPhase)) * (H - 6);
     }
@@ -10590,6 +10676,7 @@
       refreshClassicPlRows: refreshClassicPlRows, drawClassicEqGraph: drawClassicEqGraph,
       /* Đợt v10.0 (việc AVS-vis): khung vis AVS kiểu Webamp. */
       getAvsFrame: getAvsFrame, AVS_BARS: AVS_BARS, AVS_ROWS: AVS_ROWS,
+      getVisEqualizeTable: getVisEqualizeTable, visLogValue: visLogValue, /* v10.11: bảng equalize Nullsoft + ánh xạ log cho vis display */
       stepTicker: stepTicker, syncTickerAnim: syncTickerAnim,
       getSongInfoState: getSongInfoState, songInfoText: songInfoText,
       runAvsSelfCheck: runAvsSelfCheck, runAudioSelfCheck: runAudioSelfCheck,
