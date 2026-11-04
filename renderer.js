@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.21";
-  var EXPECTED_RENDERER_VERSION = "10.21";
+  var RENDERER_VERSION = "10.22";
+  var EXPECTED_RENDERER_VERSION = "10.22";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -435,7 +435,11 @@
       optionsPage: "optionsgroup.drawers", bucketScroll: 0,
       colorThemeIdx: 0, cfgSliders: {}
     };
-    function requestRerender() { if (onRerender) onRerender(); }
+    /* v10.22 (2) — requestRerender(hint): gợi ý cho lần vẽ lại (vd
+       resizeEnd thả tay sau khi kéo đổi cỡ -> {animateZoom:true} để
+       tỉ lệ Fit trượt mượt về thay vì nhảy tức thì; các lời gọi khác
+       không truyền hint -> vẽ như cũ, không đổi hành vi. */
+    function requestRerender(hint) { if (onRerender) onRerender(hint); }
     /* Đợt A (9.9, việc 2) — GIỮ VỊ TRÍ CUỘN (nguyên nhân + sửa):
        - Nhấp 1 lần: selectPlaylistItem → refreshPlaylistRows → build
          rows XÓA HẾT hàng rồi vẽ lại. Lúc danh sách trống tức thì,
@@ -741,13 +745,36 @@
         var fx = c.w / (s.startW || 1), fy = c.h / (s.startH || 1);
         for (var pi = 0; pi < (s.preview || []).length; pi++) {
           var pv = s.preview[pi];
-          if (pv.w) pv.el.style.width = Math.max(0, Math.round(c.w - (pv.offW || 0))) + "px";
-          if (pv.h) pv.el.style.height = Math.max(0, Math.round(c.h - (pv.offH || 0))) + "px";
-          if (pv.stretch) {
-            var bs = scalePxPair(pv.bgSize, fx, fy);
+          /* v10.22 (1) — Chỉ đổi cỡ chiều nào relat chiều đó (stretchW/
+             stretchH): phần tử chỉ neo giữ nguyên cỡ, chỉ dời vị trí;
+             nhóm nút đáy playlist chỉ giãn rộng, cao giữ 21px. Nền
+             backgroundSize/Position co giãn theo đúng chiều giãn. */
+          if (pv.stretchW && pv.w) pv.el.style.width = Math.max(0, Math.round(c.w - (pv.offW || 0))) + "px";
+          if (pv.stretchH && pv.h) pv.el.style.height = Math.max(0, Math.round(c.h - (pv.offH || 0))) + "px";
+          if (pv.stretchW || pv.stretchH) {
+            var bfx = pv.stretchW ? fx : 1, bfy = pv.stretchH ? fy : 1;
+            var bs = scalePxPair(pv.bgSize, bfx, bfy);
             if (bs) pv.el.style.backgroundSize = bs;
-            var bp = scalePxPair(pv.bgPos, fx, fy);
+            var bp = scalePxPair(pv.bgPos, bfx, bfy);
             if (bp) pv.el.style.backgroundPosition = bp;
+          }
+          /* v10.22 (1) — Phần tử neo mép phải/đáy: dời left/top để giữ
+             nguyên khoảng cách tới mép phải/dưới của nhóm cha. Rộng/cao
+             cha lấy từ style hiện tại (cha co giãn đã cập nhật trước vì
+             duyệt theo thứ tự tài liệu; cha không đổi thì giữ nguyên vị
+             trí). Nhờ vậy hàng nút đáy playlist + nút titlebar + khung
+             frame đi theo khung mới, không ở lại vị trí cũ gây vệt. */
+          if (pv.anchorR !== null || pv.anchorB !== null) {
+            var _par = pv.el.parentElement;
+            var _pW = c.w, _pH = c.h;
+            if (_par) {
+              var _pw = parseInt(_par.style.width || "", 10);
+              if (!isNaN(_pw)) _pW = _pw; else if (pv.pW0) _pW = pv.pW0;
+              var _ph = parseInt(_par.style.height || "", 10);
+              if (!isNaN(_ph)) _pH = _ph; else if (pv.pH0) _pH = pv.pH0;
+            }
+            if (pv.anchorR !== null) pv.el.style.left = Math.round(_pW - pv.anchorR) + "px";
+            if (pv.anchorB !== null) pv.el.style.top = Math.round(_pH - pv.anchorB) + "px";
           }
         }
         /* v10.20 (1) — stage bám theo CẢ 2 CHIỀU (trước đây chỉ nới khi
@@ -775,6 +802,19 @@
             var wrap2 = stageEl.parentElement;
             if (wrap2 && wrap2.id === "stage-wrap" && s.baseWrapH) wrap2.style.height = (s.baseWrapH + dh) + "px";
           }
+          /* v10.22 (1) — nền texture của stage (wasabi.frame.basetexture,
+             lót sau mọi cửa sổ) giãn theo stage để dải trống bên phải
+             cửa sổ chính không hiện đen khi kéo rộng stage. */
+          try {
+            var _bgKids = stageEl.children || [];
+            for (var _bi = 0; _bi < _bgKids.length; _bi++) {
+              if (_bgKids[_bi].dataset && _bgKids[_bi].dataset.bitmap === "wasabi.frame.basetexture") {
+                if (stageEl.style.width) _bgKids[_bi].style.width = stageEl.style.width;
+                if (stageEl.style.height) _bgKids[_bi].style.height = stageEl.style.height;
+                break;
+              }
+            }
+          } catch (e22c) { /* bỏ qua */ }
         }
       } catch (err) { /* bỏ qua */ }
       if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
@@ -824,9 +864,12 @@
           s.live.style.height = s.startH + "px";
           for (var pi = 0; pi < (s.preview || []).length; pi++) {
             var pv = s.preview[pi];
-            if (pv.w) pv.el.style.width = Math.max(0, Math.round(s.startW - (pv.offW || 0))) + "px";
-            if (pv.h) pv.el.style.height = Math.max(0, Math.round(s.startH - (pv.offH || 0))) + "px";
-            if (pv.stretch) { pv.el.style.backgroundSize = pv.bgSize || ""; pv.el.style.backgroundPosition = pv.bgPos || ""; }
+            if (pv.stretchW && pv.w) pv.el.style.width = Math.max(0, Math.round(s.startW - (pv.offW || 0))) + "px";
+            if (pv.stretchH && pv.h) pv.el.style.height = Math.max(0, Math.round(s.startH - (pv.offH || 0))) + "px";
+            if (pv.stretchW || pv.stretchH) { pv.el.style.backgroundSize = pv.bgSize || ""; pv.el.style.backgroundPosition = pv.bgPos || ""; }
+            /* v10.22 (1): hoàn cả vị trí neo mép phải/đáy về như cũ. */
+            if (pv.anchorR !== null) pv.el.style.left = (pv.left0 || 0) + "px";
+            if (pv.anchorB !== null) pv.el.style.top = (pv.top0 || 0) + "px";
           }
           var stageEl = s.live;
           if (stageEl && stageEl.id !== "stage") stageEl = stageEl.parentElement;
@@ -845,7 +888,12 @@
       }
       if (s.w !== s.startW || s.h !== s.startH) {
         setWinSize(s.container, s.layoutId, s.w, s.h);
-        requestRerender();
+        /* v10.22 (2) — Thả tay sau khi kéo: vẽ lại + tỉ lệ Fit trượt
+           mượt về (animateZoom) thay vì nhảy tức thì như v10.21 — lúc
+           kéo tỉ lệ Fit bị đóng băng (khung theo đúng ngón tay), thả ra
+           tính lại Fit theo cỡ mới nên tỉ lệ đổi; trượt 150ms ease-out
+           cho cảm giác như Winamp thật, không nhảy. */
+        requestRerender({ animateZoom: true });
       }
     }
     function wireResizeDocOnce() {
@@ -971,7 +1019,7 @@
             var trackH = !!stageEl0 && stageEl0 !== live && baseStageH > 0 && (liveTop0 + startH) >= (baseStageH - 1);
             var preview = [];
             try {
-              var nodes = live.querySelectorAll('[data-stretch="1"], .pl-list, .ml-content, .ml-list, .ml-tree, video, canvas');
+              var nodes = live.querySelectorAll('[data-stretch="1"], [data-anchor-r], [data-anchor-b], .pl-list, .ml-content, .ml-list, .ml-tree, video, canvas');
               for (var ni = 0; ni < nodes.length; ni++) {
                 var nd = nodes[ni];
                 var w0 = parseInt(nd.style.width || "0", 10) || 0, h0 = parseInt(nd.style.height || "0", 10) || 0;
@@ -980,7 +1028,52 @@
                    mới − offset cố định (playlist −65, ML −50 theo XML),
                    không scale theo tỉ lệ. .ml-list/.ml-tree cũng snapshot
                    riêng để có chiều cao px tường minh trong lúc kéo. */
-                preview.push({ el: nd, w: w0, h: h0, offW: startW - w0, offH: startH - h0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: !!(nd.dataset && nd.dataset.stretch === "1") });
+                /* v10.22 (1) — phần tử neo mép phải/đáy (data-anchor-r/b,
+                   ghi lúc vẽ = khoảng cách từ mép trái/trên tới mép
+                   phải/dưới của nhóm cha): lưu left/top gốc để hoàn lại
+                   khi bấm (không kéo), và offset neo để resizeMove dời
+                   theo rộng/cao mới của nhóm cha (cha đã cập nhật trước
+                   vì querySelectorAll trả theo thứ tự tài liệu). */
+                var _aR = null, _aB = null;
+                try {
+                  if (nd.dataset) {
+                    if (nd.dataset.anchorR !== undefined && nd.dataset.anchorR !== "") _aR = parseInt(nd.dataset.anchorR, 10);
+                    if (nd.dataset.anchorB !== undefined && nd.dataset.anchorB !== "") _aB = parseInt(nd.dataset.anchorB, 10);
+                  }
+                } catch (e22a) { _aR = null; _aB = null; }
+                /* Rộng/cao nhóm cha lúc bắt đầu kéo (dự phòng khi cha
+                   không có style.width/height tường minh: lúc đó neo
+                   giữ nguyên vị trí, không dời theo cửa sổ). */
+                var _pW0 = startW, _pH0 = startH;
+                try {
+                  var _par0 = nd.parentElement;
+                  if (_par0) {
+                    var _pw0 = parseInt(_par0.style.width || "", 10);
+                    if (!isNaN(_pw0)) _pW0 = _pw0;
+                    var _ph0 = parseInt(_par0.style.height || "", 10);
+                    if (!isNaN(_ph0)) _pH0 = _ph0;
+                  }
+                } catch (e22b) { /* giữ mặc định */ }
+                /* v10.22 (1) — Co giãn THEO CHIỀU: phần tử chỉ giãn
+                   chiều nào relat chiều đó (data-stretch-w/h ghi lúc
+                   vẽ). List/media (.pl-list, video, canvas) giãn cả 2
+                   chiều như cũ. Tương thích ngược: data-stretch cũ (chỉ
+                   layer/rect relatw) thì hiểu là giãn rộng. Nhờ vậy
+                   phần tử chỉ neo (vd nút Manage Playlist) giữ nguyên
+                   cỡ, chỉ dời vị trí; nhóm nút đáy playlist chỉ giãn
+                   rộng, không bị kéo cao theo cửa sổ. */
+                var _sw22 = false, _sh22 = false;
+                try {
+                  if (nd.dataset) {
+                    if (nd.dataset.stretchW === "1") _sw22 = true;
+                    if (nd.dataset.stretchH === "1") _sh22 = true;
+                    if (!_sw22 && !_sh22 && nd.dataset.stretch === "1") _sw22 = true;
+                  }
+                } catch (e22d) { /* giữ false */ }
+                var _tag22 = (nd.tagName || "").toUpperCase();
+                var _isLM22 = _tag22 === "VIDEO" || _tag22 === "CANVAS" || (nd.classList && (nd.classList.contains("pl-list") || nd.classList.contains("ml-content") || nd.classList.contains("ml-list") || nd.classList.contains("ml-tree")));
+                if (_isLM22) { _sw22 = true; _sh22 = true; }
+                preview.push({ el: nd, w: w0, h: h0, offW: startW - w0, offH: startH - h0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: (_sw22 || _sh22), stretchW: _sw22, stretchH: _sh22, anchorR: (_aR === null || isNaN(_aR)) ? null : _aR, anchorB: (_aB === null || isNaN(_aB)) ? null : _aB, left0: parseInt(nd.style.left || "0", 10) || 0, top0: parseInt(nd.style.top || "0", 10) || 0, pW0: _pW0, pH0: _pH0 });
               }
             } catch (err2) { preview = []; }
             resizeSession = {
@@ -4527,7 +4620,51 @@
           if (avsRule && ctx.avsMode && avsRule !== ctx.avsMode) continue;
         }
         var x = relPos(el, "x", parentW), y = relPos(el, "y", parentH);
+        var _childBefore = parentEl.children ? parentEl.children.length : 0;
         await renderNode(el, tag, parentEl, parentW, parentH, x, y, ctx, depth);
+        /* v10.22 (1) — Đánh dấu phần tử neo mép phải/đáy + co giãn để xem
+           trước khi kéo (resizeMove) dời đúng theo khung mới. Trước đây
+           chỉ layer/rect relatw được data-stretch, còn phần tử relatx/
+           relaty (hàng nút đáy playlist y=-23 relaty=1, nút Manage
+           Playlist/time/resizer x<0 relatx=1, nút titlebar, khung frame)
+           KHÔNG được đánh dấu nên lúc kéo chúng ở yên vị trí cũ, list
+           giãn đè lên → vệt đen/bóng ma + hàng nút biến mất khỏi đáy
+           (Hải 04/11 21:03, video f018). Ghi ở div cấp cao nhất mà
+           renderNode vừa gắn vào parentEl (con mới đầu tiên); nhóm
+           relatw/relath cũng được data-stretch để giãn theo khung. */
+        try {
+          var _rx22 = el.getAttribute("relatx"), _ry22 = el.getAttribute("relaty");
+          var _rw22 = el.getAttribute("relatw"), _rh22 = el.getAttribute("relath");
+          /* Nhóm <group>: cỡ relatw/relath thường nằm ở GROUPDEF chứ
+             không ở instance (vd pledit.buttons.group relatw=1 w=0,
+             pl.frame.layout relath=1 h=-35 — instance chỉ có x/y/relaty).
+             Lấy theo đúng luật renderGroupInstance/groupSize: instance
+             có w/h thì dùng relat của instance, không thì của groupdef. */
+          if (tag === "group") {
+            var _gd22 = null;
+            try { _gd22 = RES.groupdefEls ? (RES.groupdefEls[el.getAttribute("id") || ""] || null) : null; } catch (e22g) { _gd22 = null; }
+            if (_gd22) {
+              if (el.getAttribute("w") === null && !_rw22) _rw22 = _gd22.getAttribute("relatw");
+              if (el.getAttribute("h") === null && !_rh22) _rh22 = _gd22.getAttribute("relath");
+            }
+          }
+          if ((_rx22 === "1" || _ry22 === "1" || _rw22 === "1" || _rh22 === "1") && parentEl.children && parentEl.children.length > _childBefore) {
+            var _top22 = parentEl.children[_childBefore];
+            /* Khoảng cách từ mép trái/trên của div tới mép phải/dưới của
+               nhóm cha (tính từ left/top THẬT của div, vì vài nhánh dời x
+               trước khi vẽ — vd overlay titlebar). Lúc kéo, left mới =
+               rộng cha mới − khoảng cách này (neo đúng mép phải/đáy). */
+            if (_rx22 === "1") _top22.dataset.anchorR = String(parentW - (parseInt(_top22.style.left || "0", 10) || 0));
+            if (_ry22 === "1") _top22.dataset.anchorB = String(parentH - (parseInt(_top22.style.top || "0", 10) || 0));
+            /* Co giãn THEO CHIỀU (v10.22): chỉ chiều nào relat mới giãn
+               chiều đó. Trước đây data-stretch chung làm preview đổi cả
+               rộng lẫn cao cho mọi phần tử (nhóm nút đáy playlist cao
+               21px bị kéo cao theo cửa sổ -> nút kẹt giữa list). */
+            if (_rw22 === "1") _top22.dataset.stretchW = "1";
+            if (_rh22 === "1") _top22.dataset.stretchH = "1";
+            if ((_rw22 === "1" || _rh22 === "1") && !_top22.dataset.stretch) _top22.dataset.stretch = "1";
+          }
+        } catch (e22) { /* bỏ qua */ }
       }
     }
 

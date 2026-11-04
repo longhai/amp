@@ -5,7 +5,7 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.21". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.22". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Đợt v10.12: layout thiếu w/h đo từ ảnh nền (background) rồi mới tới
    bao nội dung rồi 354×280; lưu background/alphabackground của layout;
@@ -24,8 +24,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.21";
-  var EXPECTED_LOADER_VERSION = "10.21";
+  var LOADER_VERSION = "10.22";
+  var EXPECTED_LOADER_VERSION = "10.22";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
@@ -694,6 +694,23 @@
         if (/playlist/i.test(gdKeys21[gi21])) { hasPlaylistContent21 = true; break; }
       }
     } catch (e21) { hasPlaylistContent21 = false; }
+    /* v10.22 (2) — Skin trình phát đầy đủ (có container main + ít nhất
+       1 container khác ngoài main: eq/notifier/thinger...) nhưng KHÔNG
+       có layout Pledit nào và không có nội dung playlist nào (Braun:
+       file xml/pledit*.xml mồ côi, skin.xml không include pledit.xml nên
+       pledit.content.group không được nạp; DreddfulAmp: không có pledit
+       gì cả). Vẫn dựng playlist mặc định để đổi sang skin nào playlist
+       cũng có tay nắm kéo. Skin tối thiểu chỉ có mỗi main (vd
+       s1-size500.wal — test S1 chốt "thiếu Pledit thì bỏ qua playlist")
+       thì KHÔNG dựng, giữ hành vi cũ. */
+    var hasMain22 = false, hasOtherContainer22 = false;
+    try {
+      var cKeys22 = Object.keys(containers || {});
+      for (var ci22 = 0; ci22 < cKeys22.length; ci22++) {
+        if (String(cKeys22[ci22]).toLowerCase() === "main") hasMain22 = true;
+        else hasOtherContainer22 = true;
+      }
+    } catch (e22c) { hasMain22 = false; hasOtherContainer22 = false; }
     if (!layouts["pledit|normal"]) {
       if (groupdefs["pledit.content.group"]) {
       try {
@@ -729,6 +746,24 @@
         layoutList.push(plEntry2);
         report.notes.push("không có layout Pledit — dựng cửa sổ playlist mặc định 436×164 với <list> (ruột playlist của Amp)");
       } catch (e2) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
+      } else if (hasMain22 && hasOtherContainer22) {
+      /* v10.22 (2): xem ghi chú ở hasMain22/hasOtherContainer22. */
+      try {
+        var plDoc3 = parseXmlText('<layout id="normal"><list x="6" y="6" w="424" h="152"/></layout>', "pledit-synthesized-bare22", DOMParserImpl);
+        var plEntry3 = {
+          el: plDoc3.documentElement, container: "Pledit", layoutId: "normal",
+          key: "pledit|normal", order: layoutOrder++,
+          w: 436, h: 164, background: null, alphabackground: null,
+          wFallback: false, hFallback: false,
+          minW: null, minH: null, maxW: null, maxH: null,
+          snapadjustbottom: 0, frameOffsetY: 0, contentH: 164, drawerRestY: 0,
+          synthesizedPledit: true
+        };
+        layouts["pledit|normal"] = plEntry3;
+        layouts["Pledit|normal"] = plEntry3;
+        layoutList.push(plEntry3);
+        report.notes.push("không có layout Pledit và không có nội dung playlist — skin trình phát đầy đủ nên dựng cửa sổ playlist mặc định 436×164 với <list> (ruột playlist của Amp)");
+      } catch (e3) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
       }
     }
     /* v10.12 (P1 E): groupdef bị tham chiếu mà thiếu trong skin — groupdef
