@@ -5,7 +5,7 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.22". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.23". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Đợt v10.12: layout thiếu w/h đo từ ảnh nền (background) rồi mới tới
    bao nội dung rồi 354×280; lưu background/alphabackground của layout;
@@ -24,8 +24,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.22";
-  var EXPECTED_LOADER_VERSION = "10.22";
+  var LOADER_VERSION = "10.23";
+  var EXPECTED_LOADER_VERSION = "10.23";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
@@ -694,7 +694,7 @@
         if (/playlist/i.test(gdKeys21[gi21])) { hasPlaylistContent21 = true; break; }
       }
     } catch (e21) { hasPlaylistContent21 = false; }
-    /* v10.22 (2) — Skin trình phát đầy đủ (có container main + ít nhất
+    /* v10.23 (2) — Skin trình phát đầy đủ (có container main + ít nhất
        1 container khác ngoài main: eq/notifier/thinger...) nhưng KHÔNG
        có layout Pledit nào và không có nội dung playlist nào (Braun:
        file xml/pledit*.xml mồ côi, skin.xml không include pledit.xml nên
@@ -747,7 +747,7 @@
         report.notes.push("không có layout Pledit — dựng cửa sổ playlist mặc định 436×164 với <list> (ruột playlist của Amp)");
       } catch (e2) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
       } else if (hasMain22 && hasOtherContainer22) {
-      /* v10.22 (2): xem ghi chú ở hasMain22/hasOtherContainer22. */
+      /* v10.23 (2): xem ghi chú ở hasMain22/hasOtherContainer22. */
       try {
         var plDoc3 = parseXmlText('<layout id="normal"><list x="6" y="6" w="424" h="152"/></layout>', "pledit-synthesized-bare22", DOMParserImpl);
         var plEntry3 = {

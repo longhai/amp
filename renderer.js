@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.22";
-  var EXPECTED_RENDERER_VERSION = "10.22";
+  var RENDERER_VERSION = "10.23";
+  var EXPECTED_RENDERER_VERSION = "10.23";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -435,7 +435,7 @@
       optionsPage: "optionsgroup.drawers", bucketScroll: 0,
       colorThemeIdx: 0, cfgSliders: {}
     };
-    /* v10.22 (2) — requestRerender(hint): gợi ý cho lần vẽ lại (vd
+    /* v10.23 (2) — requestRerender(hint): gợi ý cho lần vẽ lại (vd
        resizeEnd thả tay sau khi kéo đổi cỡ -> {animateZoom:true} để
        tỉ lệ Fit trượt mượt về thay vì nhảy tức thì; các lời gọi khác
        không truyền hint -> vẽ như cũ, không đổi hành vi. */
@@ -628,6 +628,16 @@
       return mm.minW < mm.w || mm.minH < mm.h;
     }
     function clampWinSize(container, layoutId, w, h) {
+      /* v10.23 — Playlist Classic: lượng tử hoá theo ĐOẠN của Webamp gốc
+         (ResizeTarget.tsx + constants: WINDOW_RESIZE_SEGMENT_WIDTH=25,
+         HEIGHT=29; chỉ playlist kéo được, main 275×116 + EQ cố định):
+         rộng 275+25*wSeg, cao 116+29*hSeg; min [0,0] = 275×116, không
+         max (Webamp gốc chỉ kẹp dưới bằng Math.max(0,...)). */
+      if (lowerStr(container) === "classic" && lowerStr(layoutId) === "playlist") {
+        var wSeg = Math.max(0, Math.round((w - 275) / 25));
+        var hSeg = Math.max(0, Math.round((h - 116) / 29));
+        return { w: 275 + wSeg * 25, h: 116 + hSeg * 29 };
+      }
       var mm = layoutMinMax(container, layoutId);
       if (!mm) return null;
       return {
@@ -745,7 +755,7 @@
         var fx = c.w / (s.startW || 1), fy = c.h / (s.startH || 1);
         for (var pi = 0; pi < (s.preview || []).length; pi++) {
           var pv = s.preview[pi];
-          /* v10.22 (1) — Chỉ đổi cỡ chiều nào relat chiều đó (stretchW/
+          /* v10.23 (1) — Chỉ đổi cỡ chiều nào relat chiều đó (stretchW/
              stretchH): phần tử chỉ neo giữ nguyên cỡ, chỉ dời vị trí;
              nhóm nút đáy playlist chỉ giãn rộng, cao giữ 21px. Nền
              backgroundSize/Position co giãn theo đúng chiều giãn. */
@@ -758,7 +768,7 @@
             var bp = scalePxPair(pv.bgPos, bfx, bfy);
             if (bp) pv.el.style.backgroundPosition = bp;
           }
-          /* v10.22 (1) — Phần tử neo mép phải/đáy: dời left/top để giữ
+          /* v10.23 (1) — Phần tử neo mép phải/đáy: dời left/top để giữ
              nguyên khoảng cách tới mép phải/dưới của nhóm cha. Rộng/cao
              cha lấy từ style hiện tại (cha co giãn đã cập nhật trước vì
              duyệt theo thứ tự tài liệu; cha không đổi thì giữ nguyên vị
@@ -802,7 +812,7 @@
             var wrap2 = stageEl.parentElement;
             if (wrap2 && wrap2.id === "stage-wrap" && s.baseWrapH) wrap2.style.height = (s.baseWrapH + dh) + "px";
           }
-          /* v10.22 (1) — nền texture của stage (wasabi.frame.basetexture,
+          /* v10.23 (1) — nền texture của stage (wasabi.frame.basetexture,
              lót sau mọi cửa sổ) giãn theo stage để dải trống bên phải
              cửa sổ chính không hiện đen khi kéo rộng stage. */
           try {
@@ -817,6 +827,12 @@
           } catch (e22c) { /* bỏ qua */ }
         }
       } catch (err) { /* bỏ qua */ }
+      /* v10.23 — Móc vẽ lại live cho cửa sổ có nội dung rời rạc theo đoạn
+         (playlist Classic: nền lát tile theo đoạn 25×29, xem trước nhẹ
+         bằng stretch/anchor không đủ — tile phải thêm/bớt ô, nút phải
+         dời theo cỡ mới). Callback tự bỏ qua khi cỡ lượng tử hoá không
+         đổi, nên chỉ chạy mỗi lần qua mốc đoạn. */
+      if (s.onLiveSize) { try { s.onLiveSize(s.w, s.h); } catch (eL) { /* bỏ qua */ } }
       if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
     }
     /* v10.19 (2), v10.20 (1) — CHẠM XUYÊN TAY NẮM (tap-through): tay nắm
@@ -867,7 +883,7 @@
             if (pv.stretchW && pv.w) pv.el.style.width = Math.max(0, Math.round(s.startW - (pv.offW || 0))) + "px";
             if (pv.stretchH && pv.h) pv.el.style.height = Math.max(0, Math.round(s.startH - (pv.offH || 0))) + "px";
             if (pv.stretchW || pv.stretchH) { pv.el.style.backgroundSize = pv.bgSize || ""; pv.el.style.backgroundPosition = pv.bgPos || ""; }
-            /* v10.22 (1): hoàn cả vị trí neo mép phải/đáy về như cũ. */
+            /* v10.23 (1): hoàn cả vị trí neo mép phải/đáy về như cũ. */
             if (pv.anchorR !== null) pv.el.style.left = (pv.left0 || 0) + "px";
             if (pv.anchorB !== null) pv.el.style.top = (pv.top0 || 0) + "px";
           }
@@ -888,7 +904,7 @@
       }
       if (s.w !== s.startW || s.h !== s.startH) {
         setWinSize(s.container, s.layoutId, s.w, s.h);
-        /* v10.22 (2) — Thả tay sau khi kéo: vẽ lại + tỉ lệ Fit trượt
+        /* v10.23 (2) — Thả tay sau khi kéo: vẽ lại + tỉ lệ Fit trượt
            mượt về (animateZoom) thay vì nhảy tức thì như v10.21 — lúc
            kéo tỉ lệ Fit bị đóng băng (khung theo đúng ngón tay), thả ra
            tính lại Fit theo cỡ mới nên tỉ lệ đổi; trượt 150ms ease-out
@@ -912,8 +928,9 @@
         }
       } catch (err) { /* môi trường test không có document đầy đủ */ }
     }
-    function attachResizeHandles(live, container, layoutId) {
+    function attachResizeHandles(live, container, layoutId, opts) {
       if (!live) return;
+      opts = opts || {};
       /* v10.21 (2) — Tay nắm gắn cho MỌI cửa sổ co giãn được (Pledit/
          MLibrary/Video/AVS), kể cả skin không khai minimum trong XML.
          Bỏ cổng isLayoutResizable (minW<w) làm điều kiện gắn: min/max
@@ -968,9 +985,13 @@
              ảnh của chính skin là gờ, không vẽ thêm gì (không tràn
              khung, không che nút). Skin không có ảnh gờ thì vẽ 1 miếng
              NHỎ 24×24 ở góc (vạch chéo 0.45 + 0.30, gọn trong khung);
-             vùng chạm vẫn 48×48 (trong suốt) để ngón tay nắm được. */
+             vùng chạm vẫn 48×48 (trong suốt) để ngón tay nắm được.
+             v10.23 — opts.transparentCorner: skin Classic luôn có gờ
+             chéo của chính skin ở góc đáy-phải pledit.bmp (đã kiểm bằng
+             mắt: cả base-2.91 lẫn Winamp5 Classified đều vẽ sẵn vạch
+             chéo ở góc đó) nên tay nắm trong suốt hẳn, không vẽ thêm. */
           if (spec.edge === "corner") {
-            var hasSkinGrip = false;
+            var hasSkinGrip = !!opts.transparentCorner;
             try {
               var sprs = live.querySelectorAll("[data-bitmap]");
               for (var si = 0; si < sprs.length; si++) {
@@ -1028,7 +1049,7 @@
                    mới − offset cố định (playlist −65, ML −50 theo XML),
                    không scale theo tỉ lệ. .ml-list/.ml-tree cũng snapshot
                    riêng để có chiều cao px tường minh trong lúc kéo. */
-                /* v10.22 (1) — phần tử neo mép phải/đáy (data-anchor-r/b,
+                /* v10.23 (1) — phần tử neo mép phải/đáy (data-anchor-r/b,
                    ghi lúc vẽ = khoảng cách từ mép trái/trên tới mép
                    phải/dưới của nhóm cha): lưu left/top gốc để hoàn lại
                    khi bấm (không kéo), và offset neo để resizeMove dời
@@ -1054,7 +1075,7 @@
                     if (!isNaN(_ph0)) _pH0 = _ph0;
                   }
                 } catch (e22b) { /* giữ mặc định */ }
-                /* v10.22 (1) — Co giãn THEO CHIỀU: phần tử chỉ giãn
+                /* v10.23 (1) — Co giãn THEO CHIỀU: phần tử chỉ giãn
                    chiều nào relat chiều đó (data-stretch-w/h ghi lúc
                    vẽ). List/media (.pl-list, video, canvas) giãn cả 2
                    chiều như cũ. Tương thích ngược: data-stretch cũ (chỉ
@@ -1082,7 +1103,8 @@
               startX: p.x, startY: p.y, startW: startW, startH: startH,
               scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH,
               baseStageH: baseStageH, baseWrapH: baseWrapH, preview: preview,
-              stageW0: stageW0, trackW: trackW, trackH: trackH /* v10.20 (1): stage bám 2 chiều */
+              stageW0: stageW0, trackW: trackW, trackH: trackH, /* v10.20 (1): stage bám 2 chiều */
+              onLiveSize: opts.onLiveSize || null /* v10.23: móc vẽ lại live (playlist Classic) */
             };
             if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
             if (e.stopPropagation) { try { e.stopPropagation(); } catch (err) { /* bỏ qua */ } }
@@ -4622,7 +4644,7 @@
         var x = relPos(el, "x", parentW), y = relPos(el, "y", parentH);
         var _childBefore = parentEl.children ? parentEl.children.length : 0;
         await renderNode(el, tag, parentEl, parentW, parentH, x, y, ctx, depth);
-        /* v10.22 (1) — Đánh dấu phần tử neo mép phải/đáy + co giãn để xem
+        /* v10.23 (1) — Đánh dấu phần tử neo mép phải/đáy + co giãn để xem
            trước khi kéo (resizeMove) dời đúng theo khung mới. Trước đây
            chỉ layer/rect relatw được data-stretch, còn phần tử relatx/
            relaty (hàng nút đáy playlist y=-23 relaty=1, nút Manage
@@ -4656,7 +4678,7 @@
                rộng cha mới − khoảng cách này (neo đúng mép phải/đáy). */
             if (_rx22 === "1") _top22.dataset.anchorR = String(parentW - (parseInt(_top22.style.left || "0", 10) || 0));
             if (_ry22 === "1") _top22.dataset.anchorB = String(parentH - (parseInt(_top22.style.top || "0", 10) || 0));
-            /* Co giãn THEO CHIỀU (v10.22): chỉ chiều nào relat mới giãn
+            /* Co giãn THEO CHIỀU (v10.23): chỉ chiều nào relat mới giãn
                chiều đó. Trước đây data-stretch chung làm preview đổi cả
                rộng lẫn cao cho mọi phần tử (nhóm nút đáy playlist cao
                21px bị kéo cao theo cửa sổ -> nút kẹt giữa list). */
@@ -10536,16 +10558,49 @@
       z.onclick = fn;
       return z;
     }
-    /* Vẽ cửa sổ Playlist Classic (275×116) tại topY trong T. Trả 116. */
-    async function renderClassicPlaylistWindow(T, topY) {
-      var W = CLASSIC_PL_W, H = CLASSIC_PL_H;
-      var win = document.createElement("div");
-      win.style.position = "absolute";
-      win.style.left = "0px"; win.style.top = topY + "px";
-      win.style.width = W + "px"; win.style.height = H + "px";
-      win.dataset.classicWindow = "playlist";
-      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
-      T.appendChild(win);
+    /* v10.23 — Cỡ playlist Classic theo ĐOẠN của Webamp gốc (xem
+       clampWinSize: rộng 275+25*wSeg, cao 116+29*hSeg); lưu trong
+       winSizes khóa "classic|playlist" (cùng kho localStorage
+       amp9-winsize-v9 với Modern, khôi phục qua restoreWinSizes). */
+    function classicPlSize() {
+      var ov = winSizes[winSizeKey("classic", "playlist")];
+      if (ov) { var c = clampWinSize("classic", "playlist", ov.w, ov.h); if (c) return c; }
+      return { w: CLASSIC_PL_W, h: CLASSIC_PL_H };
+    }
+    /* Cỡ đã vẽ live trong lần kéo hiện tại (để classicPlLiveResize bỏ
+       qua khi cỡ lượng tử hoá không đổi — chỉ vẽ lại mỗi lần qua mốc
+       đoạn 25×29, như Winamp thật nhảy theo đoạn). */
+    var classicPlLiveSize = null;
+    /* Vẽ lại nội dung playlist Classic ở cỡ mới TRONG LÚC KÉO (gọi từ
+       resizeMove qua onLiveSize): gỡ hết con của win TRỪ tay nắm đang
+       kéo (tay nắm là con trực tiếp của win, không nằm trong nội dung),
+       vẽ lại nội dung ở cỡ mới, giữ vị trí cuộn của danh sách. Không
+       chạm tới stage hay cửa sổ khác (EQ dưới playlist chỉ dời lúc thả
+       tay qua requestRerender, như bên Modern). */
+    function rebuildClassicPlaylistContent(w, h) {
+      var rec = classicPlRec;
+      if (!rec || !rec.win) return;
+      var win = rec.win;
+      var st = 0;
+      try { st = classicPlListDiv ? (classicPlListDiv.scrollTop || 0) : 0; } catch (e) { st = 0; }
+      var kids = win.children ? Array.prototype.slice.call(win.children) : [];
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i].dataset && kids[i].dataset.resizeEdge) continue;
+        if (kids[i].parentElement === win) win.removeChild(kids[i]);
+      }
+      buildClassicPlaylistContent(win, w, h);
+      try { if (classicPlListDiv) classicPlListDiv.scrollTop = st; } catch (e) { /* bỏ qua */ }
+    }
+    function classicPlLiveResize(w, h) {
+      if (classicPlLiveSize && classicPlLiveSize[0] === w && classicPlLiveSize[1] === h) return;
+      classicPlLiveSize = [w, h];
+      rebuildClassicPlaylistContent(w, h);
+    }
+    /* Nội dung cửa sổ Playlist Classic ở cỡ W×H (top bar 20 + giữa
+       H-58 + đáy 38; danh sách 12..W-20 × 20..H-38). Tách riêng để vẽ
+       lại live trong lúc kéo (rebuildClassicPlaylistContent) lẫn vẽ
+       mới (renderClassicPlaylistWindow). */
+    function buildClassicPlaylistContent(win, W, H) {
       var rec = { win: win, w: W, h: H, buttons: {} };
       var st = classicPlStyle();
       /* --- top bar 20px: góc trái + 2 dải tile + title 100px + góc phải
@@ -10600,26 +10655,28 @@
       setAbs(titleZone, win, 0, 0);
       win.appendChild(titleZone);
       titleZone.ondblclick = function () { classicPlShade = true; if (requestRerender) requestRerender(); };
-      rec.buttons.collapse = classicButton(win, { x: 254, y: 3, w: 9, h: 9 }, "PLEDIT", {
+      rec.buttons.collapse = classicButton(win, { x: W - 21, y: 3, w: 9, h: 9 }, "PLEDIT", {
         id: "playlist-shade", sprite: "PLAYLIST_COLLAPSE_SELECTED",
         title: "Thu gọn playlist", onClick: function () { classicPlShade = true; if (requestRerender) requestRerender(); }
       });
-      rec.buttons.close = classicButton(win, { x: 264, y: 3, w: 9, h: 9 }, "PLEDIT", {
+      rec.buttons.close = classicButton(win, { x: W - 11, y: 3, w: 9, h: 9 }, "PLEDIT", {
         id: "playlist-close", sprite: "PLAYLIST_CLOSE_SELECTED",
         title: "Đóng playlist", onClick: function () { classicTogglePlaylist(); }
       });
-      /* --- giữa (y=20, cao 58): tile trái/phải + danh sách ---
+      /* --- giữa (y=20, cao H-58): tile trái/phải + danh sách ---
          v10.5: lát tile bằng tileSprite (như fill trên) — trước đây
          repeat-y trên cả sheet nên nửa dưới mỗi tile lôi theo mẩu
-         góc đáy (PLAYLIST_BOTTOM_LEFT_CORNER) vào mép danh sách. */
-      tileSprite("PLAYLIST_LEFT_TILE", 0, 20, 12, 58);
-      tileSprite("PLAYLIST_RIGHT_TILE", 255, 20, 20, 58);
+         góc đáy (PLAYLIST_BOTTOM_LEFT_CORNER) vào mép danh sách.
+         v10.23: cao giữa = H-58 (luôn bội số 29 theo đoạn) nên tile
+         29px lát vừa khít, không cắt lẻ. */
+      tileSprite("PLAYLIST_LEFT_TILE", 0, 20, 12, H - 58);
+      tileSprite("PLAYLIST_RIGHT_TILE", W - 20, 20, 20, H - 58);
       var list = document.createElement("div");
       list.className = "pl-list";
       list.dataset.classicPlList = "1";
       list.style.position = "absolute";
       list.style.left = "12px"; list.style.top = "20px";
-      list.style.width = "243px"; list.style.height = "58px";
+      list.style.width = (W - 32) + "px"; list.style.height = (H - 58) + "px";
       list.style.overflowY = "auto"; list.style.overflowX = "hidden";
       list.style.background = st.normalbg; list.style.color = st.normal;
       list.style.fontSize = "9px";
@@ -10628,11 +10685,16 @@
       win.appendChild(list);
       classicPlListDiv = list;
       buildClassicPlRows(list);
-      /* --- đáy 38px (y=78): góc trái/phải + giờ chạy + 5 nút menu --- */
+      /* --- đáy 38px (y=H-38): góc trái/phải + giờ chạy + 5 nút menu ---
+         v10.23: góc trái 125 + góc phải 150 = 275 (đúng cỡ mặc định);
+         cửa sổ rộng hơn thì khoảng giữa (125..W-150) lát thêm
+         PLAYLIST_BOTTOM_TILE (nền của cả đáy playlist theo fork:
+         skinSelectors PLAYLIST_BOTTOM_TILE -> ".playlist-bottom"). */
+      tileSprite("PLAYLIST_BOTTOM_TILE", 125, H - 38, W - 275, 38);
       var bl = classicSpriteDiv("PLEDIT", "PLAYLIST_BOTTOM_LEFT_CORNER");
-      if (bl) { bl.style.left = "0px"; bl.style.top = "78px"; setAbs(bl, win, 0, 78); win.appendChild(bl); }
+      if (bl) { bl.style.left = "0px"; bl.style.top = (H - 38) + "px"; setAbs(bl, win, 0, H - 38); win.appendChild(bl); }
       var br = classicSpriteDiv("PLEDIT", "PLAYLIST_BOTTOM_RIGHT_CORNER");
-      if (br) { br.style.left = "125px"; br.style.top = "78px"; setAbs(br, win, 125, 78); win.appendChild(br); }
+      if (br) { br.style.left = (W - 150) + "px"; br.style.top = (H - 38) + "px"; setAbs(br, win, W - 150, H - 38); win.appendChild(br); }
       var timeDiv = document.createElement("div");
       timeDiv.dataset.classicPlTime = "1";
       timeDiv.style.position = "absolute";
@@ -10642,30 +10704,60 @@
          nền hộp vis đen. Trước đây đặt (7,88) nên chữ "0:00" + dải 18
          ô nền font đè lên nút ADD/REM/SEL (ảnh 03:23: chữ nhòe, nút
          bị cắt). Giữ đệm 18 ký tự như fork (rightPad 18). */
-      timeDiv.style.left = "132px"; timeDiv.style.top = "88px";
+      timeDiv.style.left = "132px"; timeDiv.style.top = (H - 28) + "px";
       timeDiv.style.width = "90px"; timeDiv.style.height = "10px";
       timeDiv.style.overflow = "hidden";
-      setAbs(timeDiv, win, 7, 88);
+      setAbs(timeDiv, win, 132, H - 28);
       win.appendChild(timeDiv);
       classicPlTimeDiv = timeDiv;
       refreshClassicPlTime();
       /* Nút menu đáy: icon đã vẽ sẵn trong ảnh góc đáy, chỉ cần vùng
-         bấm trong suốt (vị trí theo fork css: bottom:12 → top=78+8). */
-      classicHotZone(win, { x: 14, y: 86, w: 22, h: 18 }, "pl-add", "Thêm (nguồn mặc định / nhạc local / URL)", function (ev) { showPlaylistMenu(this, addMenuItems(this)); });
-      classicHotZone(win, { x: 43, y: 86, w: 22, h: 18 }, "pl-remove", "Xóa mục", function () {
+         bấm trong suốt (vị trí theo fork css: bottom:12 → top=H-38+8).
+         v10.23: y theo H (H-30); x không đổi (nút nằm trong góc trái
+         125px, trừ nút List ở góc phải). */
+      classicHotZone(win, { x: 14, y: H - 30, w: 22, h: 18 }, "pl-add", "Thêm (nguồn mặc định / nhạc local / URL)", function (ev) { showPlaylistMenu(this, addMenuItems(this)); });
+      classicHotZone(win, { x: 43, y: H - 30, w: 22, h: 18 }, "pl-remove", "Xóa mục", function () {
         showPlaylistMenu(this, removeMenuItems());
       });
-      classicHotZone(win, { x: 72, y: 86, w: 22, h: 18 }, "pl-select", "Chọn", function () { showPlaylistMenu(this, selectMenuItems()); });
-      classicHotZone(win, { x: 101, y: 86, w: 22, h: 18 }, "pl-misc", "Tùy chọn", function () { showPlaylistMenu(this, miscMenuItems()); });
-      classicHotZone(win, { x: 231, y: 86, w: 22, h: 18 }, "pl-list", "Danh sách (lưu playlist)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
+      classicHotZone(win, { x: 72, y: H - 30, w: 22, h: 18 }, "pl-select", "Chọn", function () { showPlaylistMenu(this, selectMenuItems()); });
+      classicHotZone(win, { x: 101, y: H - 30, w: 22, h: 18 }, "pl-misc", "Tùy chọn", function () { showPlaylistMenu(this, miscMenuItems()); });
+      classicHotZone(win, { x: 231, y: H - 30, w: 22, h: 18 }, "pl-list", "Danh sách (lưu playlist)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
       /* Nút cuộn lên/xuống (fork: right:7, top:2/8 trong đáy-phải):
-         mũi tên đã vẽ sẵn trong ảnh góc đáy-phải, chỉ cần vùng bấm. */
-      classicHotZone(win, { x: 260, y: 80, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
-      classicHotZone(win, { x: 260, y: 86, w: 8, h: 5 }, "pl-scroll-down", "Cuộn xuống 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = (classicPlListDiv.scrollTop || 0) + 52; } catch (e) { /* bỏ qua */ } } });
+         mũi tên đã vẽ sẵn trong ảnh góc đáy-phải, chỉ cần vùng bấm.
+         v10.23: x = W-15 (cách mép phải 7px + rộng 8px), y theo H. */
+      classicHotZone(win, { x: W - 15, y: H - 36, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
+      classicHotZone(win, { x: W - 15, y: H - 30, w: 8, h: 5 }, "pl-scroll-down", "Cuộn xuống 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = (classicPlListDiv.scrollTop || 0) + 52; } catch (e) { /* bỏ qua */ } } });
       classicPlRec = rec;
+      classicPlLiveSize = [W, H];
+    }
+    /* Vẽ cửa sổ Playlist Classic (275×116 mặc định, kéo được theo đoạn
+       25×29 như Webamp gốc) tại topY trong T. Trả chiều cao H. */
+    async function renderClassicPlaylistWindow(T, topY) {
+      var sz = classicPlSize();
+      var W = sz.w, H = sz.h;
+      var win = document.createElement("div");
+      win.style.position = "absolute";
+      win.style.left = "0px"; win.style.top = topY + "px";
+      win.style.width = W + "px"; win.style.height = H + "px";
+      win.dataset.classicWindow = "playlist";
+      win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
+      T.appendChild(win);
+      buildClassicPlaylistContent(win, W, H);
+      /* v10.23 — 3 tay nắm (mép phải / mép đáy / góc dưới-phải) như
+         Modern; gờ góc trong suốt (ảnh chéo của chính skin ở góc đáy-
+         phải pledit.bmp, đã kiểm bằng mắt ở cả 2 skin); kéo thì khung
+         đổi cỡ live theo đoạn + vẽ lại nội dung mỗi lần qua mốc đoạn. */
+      attachResizeHandles(win, "classic", "playlist", {
+        transparentCorner: true,
+        onLiveSize: function (w, h) { classicPlLiveResize(w, h); }
+      });
       return H;
     }
-    /* Playlist shade 275×14: tên bài + giờ (chữ TEXT.bmp) + nút mở lại. */
+    /* Playlist shade 275×14: tên bài + giờ (chữ TEXT.bmp) + nút mở lại.
+       (Rộng shade giữ 275 — Webamp gốc có kéo rộng shade (widthOnly)
+       nhưng nền shade của Amp lát bằng 2 sprite co giãn theo W, chưa
+       kiểm chứng ở W khác 275 nên v10.23 không đổi; playlist thu gọn
+       về 275 là hành vi chấp nhận được, ghi nợ cho bản sau.) */
     async function renderClassicPlaylistShadeWindow(T, topY) {
       var W = 275, H = 14;
       var win = document.createElement("div");
@@ -10940,6 +11032,18 @@
         if (plOpen) {
           totalH += classicPlShade ? await renderClassicPlaylistShadeWindow(T, totalH)
             : await renderClassicPlaylistWindow(T, totalH);
+          /* v10.23 — playlist Classic (khong shade) keo rong hon main
+             (275): mo rong stage theo be rong that cua playlist, nhu cua
+             so roi (v10.7). Khong thi renderCurrent dat lai stage = 275,
+             Fit tinh theo 275 (1.31x tren man 360), playlist tran khoi
+             viewport, tay nam goc ra ngoai man hinh nen khong keo thu
+             nho lai duoc. Chi khi khong shade (cua so shade co dinh
+             275, khong keo duoc). */
+          if (!classicPlShade) {
+            var plW23 = classicPlSize().w;
+            var curW23 = parseInt(T.style.width || "0", 10) || 0;
+            if (plW23 > curW23) T.style.width = plW23 + "px";
+          }
         }
         if (classicEqOpen) {
           totalH += classicEqShade ? await renderClassicEqShadeWindow(T, totalH)
