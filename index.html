@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.7 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.8 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -121,7 +121,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.7" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.8" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -130,26 +130,26 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.7";
+window.AMP_VERSION = "10.8";
 </script>
-<script src="classic.js?v=10.7"></script>
-<script src="skin-loader.js?v=10.7"></script>
-<script src="audio.js?v=10.7"></script>
-<script src="eqf.js?v=10.7"></script>
+<script src="classic.js?v=10.8"></script>
+<script src="skin-loader.js?v=10.8"></script>
+<script src="audio.js?v=10.8"></script>
+<script src="eqf.js?v=10.8"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
      GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
      cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
      (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
      milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
      / PRESETS_* / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.7"></script>
-<script src="metadata.js?v=10.7"></script>
-<script src="maki.js?v=10.7"></script>
-<script src="renderer.js?v=10.7"></script>
+<script src="milkdrop.js?v=10.8"></script>
+<script src="metadata.js?v=10.8"></script>
+<script src="maki.js?v=10.8"></script>
+<script src="renderer.js?v=10.8"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.7" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.8" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -161,18 +161,22 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.7";
+var VERSION = "10.8";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* crossfade + Milkdrop — chỉnh từ menu trong giao diện skin (File/
    Play/Options/View/Help của skin Modern, nút O của skin Classic),
    lưu localStorage.
-   crossfadeMs: 0 = tắt, mặc định 2000 (2s); milkdropOn: mặc định TẮT
-   (tốn GPU/pin — bật từ menu View khi cần). */
+   crossfadeMs: 0 = tắt, mặc định 2000 (2s); milkdropOn: mặc định BẬT
+   (v10.8, theo yêu cầu của Hải 04/11 — mở cửa sổ AVS/Video là thấy
+   hiệu ứng ngay, không cần bật tay; chưa mở cửa sổ thì vòng render
+   không chạy nên không tốn CPU/GPU, chỉ giữ ~850KB thư viện
+   butterchurn đã nạp lazy — xem milkdrop.js. Tắt được từ menu View /
+   Vis / Video, lưu localStorage "amp9-milkdrop-v1" ("0" = tắt). */
 var crossfadeMs = 2000;
-var milkdropOn = false, milkdropCtl = null, milkdropLastErrorShown = "";
+var milkdropOn = true, milkdropCtl = null, milkdropLastErrorShown = "";
 try { var _xf = parseInt(localStorage.getItem("amp9-xfade-ms") || "2000", 10); if (isFinite(_xf) && _xf >= 0 && _xf <= 10000) crossfadeMs = _xf; } catch (e) { /* bỏ qua */ }
-try { milkdropOn = localStorage.getItem("amp9-milkdrop-v1") === "1"; } catch (e) { milkdropOn = false; }
+try { milkdropOn = localStorage.getItem("amp9-milkdrop-v1") !== "0"; } catch (e) { milkdropOn = true; }
 var drawerOpen = false; /* ngăn kéo mặc định đóng (chỉ lộ 3px dưới đáy main + nút mở) */
 var shadeMode = false; /* shade mode mặc định tắt; khôi phục từ localStorage trước lần render đầu */
 var playlistOpen = false; /* playlist mặc định đóng; mở bằng nút PL, menu View, nút Xếp chồng */
@@ -199,7 +203,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.7 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.8 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -209,7 +213,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.7 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.8 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -303,11 +307,23 @@ function setZoom(mode) {
   var mt = 0;
   if (window.innerWidth >= 700) mt = Math.max(0, Math.round((window.innerHeight - LH * s) / 2));
   stageWrap.style.marginTop = mt + "px";
-  /* margin 0 khi stage (đã scale) gần lấp đầy wrap
-     (trong 1px) — trước đây chỉ khi ">" nên trường hợp vừa khít
-     (LW*s == clientWidth, vd 354×1.017=360) vẫn giữ "0 auto" (3px mỗi
-     bên), cộng scale khiến mép phải tràn 3px ra ngoài wrap. */
-  stage.style.margin = (LW * s > stageWrap.clientWidth - 1) ? "0" : "0 auto";
+  /* v10.8 (108, 04/11 — Hải 08:24 "trên pc nó không ở giữa khi mở
+     nhiều cái mới vào giữa"): căn giữa NGANG theo bề rộng ĐÃ ZOOM
+     (visual LW*s), không theo bề rộng layout LW chưa zoom. .stage có
+     margin:0 auto (CSS) + transform scale(s) với origin 0 0 nên "auto"
+     chỉ căn giữa hộp layout LW — cửa sổ nhìn thấy rộng LW*s, lệch phải
+     LW*(s−1)/2 (PC fit main-only 354×2.5 lệch +265px; xếp chồng s≈1
+     thì gần như vào giữa — đúng 2 ảnh 08:24, mép trái cùng ~742px).
+     Vị trí đã lưu (localStorage) KHÔNG liên quan: Amp chỉ lưu kích
+     thước cửa sổ đã kéo, không lưu vị trí kéo (không có kéo-di-chuyển
+     cửa sổ). Nay đặt marginLeft/marginRight tường minh theo bề rộng
+     đã scale; tràn thì 0 như cũ (vuốt ngang xem). Giữ nguyên "vừa khít
+     trong 1px thì 0" (354×1.017=360 vẫn 0, khỏi tràn 3px mép phải). */
+  var scaledW = LW * s;
+  var side = 0;
+  if (scaledW <= stageWrap.clientWidth - 1) side = Math.max(0, Math.round((stageWrap.clientWidth - scaledW) / 2));
+  stage.style.marginTop = "0px"; stage.style.marginBottom = "0px";
+  stage.style.marginLeft = side + "px"; stage.style.marginRight = side + "px";
   /* Dấu ✓ chế độ zoom KHÔNG cập nhật ở đây nữa: menu trong giao diện
      skin (viewMenuItems trong renderer.js) dựng NHÃN MỚI mỗi lần mở,
      đọc trạng thái zoom hiện tại qua isZoomFit() nên luôn đúng. */

@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.7";
-  var EXPECTED_RENDERER_VERSION = "10.7";
+  var RENDERER_VERSION = "10.8";
+  var EXPECTED_RENDERER_VERSION = "10.8";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -731,12 +731,20 @@
       if (!live || !isLayoutResizable(container, layoutId)) return;
       wireResizeDocOnce();
       var edges = [
-        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "10px", height: "100%" },
-          bg: "linear-gradient(90deg, transparent 0px 4px, rgba(255,255,255,0.55) 4px 6px, transparent 6px 10px)" },
-        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "10px" },
-          bg: "linear-gradient(0deg, transparent 0px 4px, rgba(255,255,255,0.55) 4px 6px, transparent 6px 10px)" },
-        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "24px", height: "24px" },
-          bg: "repeating-linear-gradient(135deg, rgba(255,255,255,0.6) 0px 2px, transparent 2px 7px)" }
+        /* v10.8 (108, 04/11 — chốt của Hải 08:22 "sao không giống của
+           webamp"): tay kéo co giãn VÔ HÌNH như Webamp — KHÔNG vạch
+           trắng, KHÔNG viền: nền trong suốt, không box-shadow. Trước đây
+           mỗi mép có linear-gradient vạch trắng rgba(255,255,255,0.55)
+           + box-shadow inset 1px nên tay kéo HIỆN RÕ trên mép cửa sổ,
+           còn Webamp chỉ kéo mép là co giãn, không thấy tay kéo. Chỉ bỏ
+           phần NHÌN THẤY; chức năng giữ nguyên: pointer-events, cursor
+           ew/ns/nwse-resize, touch-action none, z-index 30, vùng kéo
+           10px (mép) / 24x24 (góc) để dễ bấm. Hàm này dùng chung cho mọi
+           cửa sổ co giãn được (playlist, ML, Video rời, cả Modern lẫn
+           Classic — xem 2 nơi gọi). */
+        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "10px", height: "100%" } },
+        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "10px" } },
+        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "24px", height: "24px" } }
       ];
       for (var i = 0; i < edges.length; i++) {
         (function (spec) {
@@ -754,8 +762,8 @@
           hd.style.cursor = spec.cursor;
           hd.style.zIndex = "30";
           hd.style.pointerEvents = "auto";
-          hd.style.background = spec.bg;
-          hd.style.boxShadow = "inset 0 0 0 1px rgba(0,0,0,0.2)";
+          hd.style.background = "transparent"; /* v10.8 (108): vô hình như Webamp — xem ghi chú ở bảng edges trên */
+          hd.style.boxShadow = "none"; /* v10.8 (108): bỏ viền inset 1px (cùng vạch trắng, tay kéo hiện rõ trên mép) */
           hd.style.touchAction = "none";
           function start(e) {
             var p = resizeClientPos(e);
@@ -2420,11 +2428,13 @@
     function showLocalAddMenu(anchorDiv) {
       var T = lastStage;
       if (!T) return false;
-      var old = null;
-      try { old = T.querySelector("[data-local-add-menu]"); } catch (e) { old = null; }
-      if (old && old.parentElement) old.parentElement.removeChild(old);
+      /* v10.8: dùng closer CHUNG (closePlaylistMenus/armPanelCloser) thay
+         cho closer riêng cũ — menu này cũng mang [data-pl-menu] (giữ
+         nguyên [data-local-add-menu] để test/truy vấn cũ vẫn thấy). */
+      closePlaylistMenus();
       var menu = document.createElement("div");
       menu.dataset.localAddMenu = "1";
+      menu.dataset.plMenu = "1";
       menu.style.position = "absolute";
       menu.style.left = ((anchorDiv && anchorDiv._absX) || 0) + "px";
       menu.style.top = (((anchorDiv && anchorDiv._absY) || 0) + 12) + "px";
@@ -2445,7 +2455,7 @@
           row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
-            if (menu.parentElement) menu.parentElement.removeChild(menu);
+            closePlaylistMenus();
             ch.fn();
           };
           menu.appendChild(row);
@@ -2453,11 +2463,7 @@
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, choices.length);
-      var close = function () {
-        if (menu.parentElement) menu.parentElement.removeChild(menu);
-        try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
-      };
-      try { setTimeout(function () { document.addEventListener("click", close); }, 0); } catch (e) { /* jsdom */ }
+      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
       return true;
     }
 
@@ -2880,13 +2886,19 @@
       }
       if (attrib === "EQ_AUTO") drawerState.eqAuto = cfgOn(attrib);
       if (attrib && attrib.indexOf("Enable crossfading") >= 0) drawerState.crossfadeOn = cfgOn(attrib);
+      /* v10.8 — SUA LOI: `var suf` truoc day khai bao SAU cho nay (hoisting
+         -> suf === undefined o dong check Beat) nen bam checkbox "Enable
+         Beat Visualization" trong ngan keo Options chi doi cfgState ma
+         KHONG doi beatVisOn -> nhom beat khong hien/an theo. Chuyen
+         khai bao suf len truoc moi cho dung (Detach/ticker ben duoi van
+         dung chung bien nay). */
+      var suf = attribSuffix(attrib);
       /* Đợt D (9.9): "Enable Beat Visualization" — bật/tắt nhóm beat trong
          display (xem setBeatVisOn; toggleCfg đã requestRerender ở cuối nên
          nhóm hiện/ẩn theo ngay). */
       if (suf === "Enable Beat Visualization") beatVisOn = cfgOn(attrib);
       /* Đợt B (9.9): "Detach Vis/Video Window" (optionsgroup.misc) — bật thì
          tách rời ngay nếu AVS đang mở ở chế độ đó; tắt thì gắn lại. */
-      var suf = attribSuffix(attrib);
       if (suf === "Detach Vis Window") applyDetachOption("vis");
       if (suf === "Detach Video Window") applyDetachOption("video");
       /* Đợt B (9.9): đổi chế độ cuộn ticker thì đồng bộ vòng ticker. */
@@ -2933,35 +2945,54 @@
        winamp.q1 thật (17 preset, 0 giá trị khác); đổi từ thang .eqf
        1..64 bằng eqfValueToDb của Amp (33 = 0 dB), làm tròn 1 số lẻ.
        [preamp, eq1..eq10] theo dB; frac = (dB + 12) / 24.
-       5 preset tự định nghĩa cũ giữ lại phía dưới. */
+       5 preset tự định nghĩa cũ giữ lại phía dưới, cộng "Default"
+       (v10.8) đứng đầu — tổng 23 preset. */
     var EQ_PRESETS = {
-      "Cổ điển":            [0, 0, 0, 0, 0, 0, 0, -4.9, -4.9, -4.9, -6.4],
-      "Club":               [0, 0, 0, 1.9, 3.5, 3.5, 3.5, 1.9, 0, 0, 0],
-      "Dance":              [0, 5.8, 4.3, 1.2, -0.4, -0.4, -4.1, -4.9, -4.9, -0.4, -0.4],
-      "Loa laptop/Tai nghe":[0, 2.7, 6.6, 3.1, -2.6, -1.9, 0.8, 2.7, 5.8, 7.7, 8.9],
-      "Hội trường lớn":     [0, 6.2, 6.2, 3.5, 3.5, 0, -3.4, -3.4, -3.4, 0, 0],
-      "Party":              [0, 4.3, 4.3, 0, 0, 0, 0, 0, 0, 4.3, 4.3],
-      "Pop":                [0, -1.5, 2.7, 4.3, 4.6, 3.1, -1.1, -1.9, -1.9, -1.5, -1.5],
-      "Reggae":             [0, 0, 0, -0.8, -4.1, 0, 3.9, 3.9, 0, 0, 0],
-      "Rock":               [0, 4.6, 2.7, -3.8, -5.2, -2.6, 2.3, 5.4, 6.6, 6.6, 6.6],
-      "Nhẹ nhàng":          [0, 2.7, 0.8, -1.1, -1.9, -1.1, 2.3, 5, 5.8, 6.6, 7.4],
-      "Ska":                [0, -1.9, -3.4, -3, -0.8, 2.3, 3.5, 5.4, 5.8, 6.6, 5.8],
-      "Bass mạnh":          [0, 5.8, 5.8, 5.8, 3.5, 0.8, -3, -5.6, -6.8, -7.1, -7.1],
-      "Rock nhẹ":           [0, 2.3, 2.3, 1.2, -0.8, -3, -3.8, -2.6, -0.8, 1.5, 5.4],
-      "Treble mạnh":        [0, -6.4, -6.4, -6.4, -3, 1.5, 6.6, 9.7, 9.7, 9.7, 10.5],
-      "Bass & Treble mạnh": [0, 4.3, 3.5, 0, -4.9, -3.4, 0.8, 5, 6.6, 7.4, 7.4],
-      "Trực tiếp":          [0, -3.4, 0, 2.3, 3.1, 3.5, 3.5, 2.3, 1.5, 1.5, 1.2],
-      "Techno":             [0, 4.6, 3.5, 0, -3.8, -3.4, 0, 4.6, 5.8, 5.8, 5.4],
-      "Flat":               [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      "Bass Boost":         [0, 6, 5, 3, 0, 0, 0, 0, 0, 0, 0],
-      "Treble Boost":       [0, 0, 0, 0, 0, 0, 0, 3, 5, 6, 6],
-      "Loudness":           [0, 5, 4, 2, 0, -1, -1, 0, 2, 4, 5],
-      "Vocal":              [0, -3, -2, 0, 2, 4, 4, 2, 0, -1, -2]
+      /* v10.8 (108, 04/11 — chốt của Hải 08:20 "giống như cổ điển hay
+         dance đó"): "Default" là 1 preset BÌNH THƯỜNG, liệt kê cùng
+         các preset khác (đầu menu, như Classical/Dance/Rock), KHÔNG phải
+         nút riêng hay mục đặc biệt. Đường cong phẳng như "Flat"; khác
+         Flat ở chỗ chọn nó còn đưa balance về giữa (xem applyEqPreset
+         -> resetEqToDefault), và khi EQ phẳng + balance giữa thì
+         matchEqPresetName suy ra "Default" thay vì "Flat".
+         v10.8 (09:08 — "các hiệu ứng bên trong eq để tiếng anh"): tên
+         preset để TIẾNG ANH gốc của Winamp (Classical, Full Bass,
+         Large Hall...) thay vì tiếng Việt; "Mặc định" đổi thành
+         "Default". Chỉ đổi phần hiệu ứng trong EQ — menu chung
+         (File/Play/Options/View/Help) vẫn tiếng Việt. */
+      "Default":              [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "Classical":            [0, 0, 0, 0, 0, 0, 0, -4.9, -4.9, -4.9, -6.4],
+      "Club":                 [0, 0, 0, 1.9, 3.5, 3.5, 3.5, 1.9, 0, 0, 0],
+      "Dance":                [0, 5.8, 4.3, 1.2, -0.4, -0.4, -4.1, -4.9, -4.9, -0.4, -0.4],
+      "Laptop Speakers/Headphone": [0, 2.7, 6.6, 3.1, -2.6, -1.9, 0.8, 2.7, 5.8, 7.7, 8.9],
+      "Large Hall":           [0, 6.2, 6.2, 3.5, 3.5, 0, -3.4, -3.4, -3.4, 0, 0],
+      "Party":                [0, 4.3, 4.3, 0, 0, 0, 0, 0, 0, 4.3, 4.3],
+      "Pop":                  [0, -1.5, 2.7, 4.3, 4.6, 3.1, -1.1, -1.9, -1.9, -1.5, -1.5],
+      "Reggae":               [0, 0, 0, -0.8, -4.1, 0, 3.9, 3.9, 0, 0, 0],
+      "Rock":                 [0, 4.6, 2.7, -3.8, -5.2, -2.6, 2.3, 5.4, 6.6, 6.6, 6.6],
+      "Soft":                 [0, 2.7, 0.8, -1.1, -1.9, -1.1, 2.3, 5, 5.8, 6.6, 7.4],
+      "Ska":                  [0, -1.9, -3.4, -3, -0.8, 2.3, 3.5, 5.4, 5.8, 6.6, 5.8],
+      "Full Bass":            [0, 5.8, 5.8, 5.8, 3.5, 0.8, -3, -5.6, -6.8, -7.1, -7.1],
+      "Soft Rock":            [0, 2.3, 2.3, 1.2, -0.8, -3, -3.8, -2.6, -0.8, 1.5, 5.4],
+      "Full Treble":          [0, -6.4, -6.4, -6.4, -3, 1.5, 6.6, 9.7, 9.7, 9.7, 10.5],
+      "Full Bass & Treble":   [0, 4.3, 3.5, 0, -4.9, -3.4, 0.8, 5, 6.6, 7.4, 7.4],
+      "Live":                 [0, -3.4, 0, 2.3, 3.1, 3.5, 3.5, 2.3, 1.5, 1.5, 1.2],
+      "Techno":               [0, 4.6, 3.5, 0, -3.8, -3.4, 0, 4.6, 5.8, 5.8, 5.4],
+      "Flat":                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "Bass Boost":           [0, 6, 5, 3, 0, 0, 0, 0, 0, 0, 0],
+      "Treble Boost":         [0, 0, 0, 0, 0, 0, 0, 3, 5, 6, 6],
+      "Loudness":             [0, 5, 4, 2, 0, -1, -1, 0, 2, 4, 5],
+      "Vocal":                [0, -3, -2, 0, 2, 4, 4, 2, 0, -1, -2]
     };
     var EQ_BAND_IDS = ["preamp", "eq1", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7", "eq8", "eq9", "eq10"];
     function applyEqPreset(name) {
       var vals = EQ_PRESETS[name];
       if (!vals) return false;
+      /* v10.8 (108): "Default" là preset bình thường nhưng khác Flat ở
+         balance — chọn nó thì EQ phẳng + balance về giữa
+         (resetEqToDefault; hàm khai báo phía dưới nhưng là function
+         declaration trong cùng scope nên gọi được nhờ hoisting). */
+      if (name === "Default") return resetEqToDefault();
       for (var i = 0; i < EQ_BAND_IDS.length; i++) {
         drawerState.eqBands[EQ_BAND_IDS[i]] = Math.max(0, Math.min(1, (vals[i] + 12) / 24));
       }
@@ -2981,129 +3012,65 @@
       }
     }
 
-    /* v10.7 (107, 04/11 — preset EQ + cân bằng ngang + "Mặc định", theo
-       yêu cầu của Hải 07:28): 3 control mới trong ngăn kéo EQ, NGOÀI XML
-       skin (skin 566 không định nghĩa — xem renderEqExtras). Chỉ dùng
-       lại dữ liệu/hàm có sẵn (EQ_PRESETS, setAllEqBands, setBalance,
-       applyBalance, showEqPresetsMenu); không tạo hệ preset thứ hai.
+    /* v10.8 (108, 04/11 — gỡ thanh extras theo chốt của Hải 08:19
+       "trở về như trước cái mặc định nằm trong menu bên trong mà"):
+       thanh preset + "Mặc định" NGOÀI XML (v10.7) đã
+       GỠ HẲN — nhãn bị cắt ("Preset: Fl...") và thanh lòi ra ngoài tab,
+       chồng lên dải tab EQUALIZER/OPTIONS (ảnh điện thoại thật 08:19).
+       "Default" (09:08 đổi tên từ "Mặc định" — hiệu ứng trong EQ để
+       tiếng Anh) nay là 1 preset BÌNH THƯỜNG đầu EQ_PRESETS (xem trên),
+       chọn trong đúng menu PRESETS của skin như Classical/Dance/Rock.
+       Chỉ giữ lại dữ liệu/hàm có sẵn (EQ_PRESETS, setAllEqBands,
+       setBalance, showEqPresetsMenu); không tạo hệ preset thứ hai.
        - matchEqPresetName(): tên preset đang chọn, suy từ 11 dải hiện
-         tại (khớp tuyệt đối 1 preset trong EQ_PRESETS thì trả tên đó,
-         không thì null = "Tùy chỉnh"). Không lưu riêng — dải/balance đã
-         lưu trong playback state nên nạp lại vẫn suy đúng; kéo tay 1
-         dải là lệch khỏi preset ngay. Sau "Mặc định" thì khớp "Flat". */
+         tại + balance (khớp tuyệt đối 1 preset trong EQ_PRESETS thì trả
+         tên đó, không thì null). "Default" và "Flat" trùng đường cong
+         phẳng nên xét balance trước: phẳng + balance giữa 0.5 thì là
+         "Default", phẳng nhưng balance lệch thì là "Flat". Không lưu
+         riêng — dải/balance đã lưu trong playback state nên nạp lại vẫn
+         suy đúng; kéo tay 1 dải là lệch khỏi preset ngay. Sau "Default"
+         thì khớp "Default". Dùng để in đậm hàng đang chọn trong menu
+         PRESETS (xem showEqPresetsMenu). */
     function matchEqPresetName() {
+      var allFlat = true;
+      for (var i = 0; i < EQ_BAND_IDS.length; i++) {
+        var got = drawerState.eqBands[EQ_BAND_IDS[i]];
+        if (got == null) got = 0.5;
+        if (Math.abs(got - 0.5) > 0.001) { allFlat = false; break; }
+      }
+      if (allFlat) {
+        var bal = (drawerState.balance == null) ? 0.5 : drawerState.balance;
+        return (Math.abs(bal - 0.5) < 0.001) ? "Default" : "Flat";
+      }
       for (var name in EQ_PRESETS) {
+        if (name === "Default" || name === "Flat") continue;
         var vals = EQ_PRESETS[name], ok = true;
-        for (var i = 0; i < EQ_BAND_IDS.length; i++) {
-          var want = Math.max(0, Math.min(1, (vals[i] + 12) / 24));
-          var got = drawerState.eqBands[EQ_BAND_IDS[i]];
-          if (got == null) got = 0.5;
-          if (Math.abs(got - want) > 0.001) { ok = false; break; }
+        for (var j = 0; j < EQ_BAND_IDS.length; j++) {
+          var want = Math.max(0, Math.min(1, (vals[j] + 12) / 24));
+          var got2 = drawerState.eqBands[EQ_BAND_IDS[j]];
+          if (got2 == null) got2 = 0.5;
+          if (Math.abs(got2 - want) > 0.001) { ok = false; break; }
         }
         if (ok) return name;
       }
       return null;
     }
-    /* "Mặc định": 1 bấm về EQ phẳng (preamp 0 dB + 10 dải 0 dB — khớp
-       preset "Flat") + balance về giữa 0.5; thumb các slider + engine +
-       state lưu đều cập nhật (setAllEqBands đẩy xuống sliderRecords kể
-       cả dải Classic + engine qua setFrac; setBalance đồng bộ thumb
-       PAN + StereoPannerNode). */
+    /* "Default": 1 bấm về EQ phẳng (preamp 0 dB + 10 dải 0 dB — khớp
+       đường cong preset "Flat") + balance về giữa 0.5; thumb các slider
+       + engine + state lưu đều cập nhật (setAllEqBands đẩy xuống
+       sliderRecords kể cả dải Classic + engine qua setFrac; setBalance
+       đồng bộ thumb PAN + StereoPannerNode). */
     function resetEqToDefault() {
       setAllEqBands(0);
       setBalance(0.5);
       persistPlayback();
       try { drawClassicEqGraph(); } catch (e) { /* Classic không mở */ }
-      refreshEqExtrasBar();
       return true;
     }
-    /* Cập nhật nhãn preset trên thanh extras (không re-render): gọi sau
-       "Mặc định" và sau mỗi lần kéo dải EQ tay. Chỉ ghi khi chữ đổi. */
-    function refreshEqExtrasBar() {
-      var T = lastStage;
-      if (!T) return;
-      var lab = null;
-      try { lab = T.querySelector("[data-eq-preset-label]"); } catch (e) { lab = null; }
-      if (!lab) return;
-      var name = matchEqPresetName();
-      var txt = "Preset: " + (name || "Tùy chỉnh") + " ▾";
-      if (lab.textContent !== txt) lab.textContent = txt;
-      var ttl = "Chọn preset EQ — đang dùng: " + (name || "Tùy chỉnh");
-      if (lab.title !== ttl) lab.title = ttl;
-    }
-    /* Thanh preset + "Mặc định" trong tab EQUALIZER của ngăn kéo (kiểu
-       menu Winamp thật: nền sáng #ECE9D8, viền #ACA899, Arial 11px —
-       như showEqPresetsMenu). Đặt ở đáy-trái tab (0,75) 132×14, theo mẫu
-       renderOptionsExtras/renderColorThemesExtras (thêm sau con XML).
-       Vì sao ở đây: tab EQ 318×89 của skin 566 đã kín — cột trái
-       balance (0..21) / crossfade (24..34) / ON (45..54) / AUTO
-       (59..68) / PRESETS (75..84), 11 dải dọc chiếm hết phần phải tới
-       x=309, nhãn tần số ở đáy y=82..89 (x≥135), khe giữa đáy tab
-       (y=104) và dải tab (y=108) chỉ 4px — không còn ô trống nào cho
-       hàng mới. Thanh này CHỒNG lên đúng nút PRESETS của skin (16,75,
-       49×9) nhưng thay thế đúng chức năng của nó (nhãn preset bấm mở
-       đúng menu 17 preset cũ), và chồng 6px cuối rãnh preamp
-       (x=82..95, y=75..81 — thumb preamp ở -12dB chìm 6px dưới thanh,
-       vẫn kéo được ở phần còn lại; các dải eq1..eq10 không bị che).
-       - Nhãn "Preset: <tên> ▾": bấm mở menu 17 preset (neo ở thanh);
-         tên suy từ dải hiện tại (matchEqPresetName), kéo tay 1 dải là
-         thành "Tùy chỉnh". Preset đang chọn in đậm trong menu.
-       - Nút "Mặc định": bấm gọi resetEqToDefault().
-       - Cân bằng ngang: KHÔNG thêm thanh mới — slider PAN của skin đã
-         là thanh NGANG (77×13, góc trên-trái tab, nền có sẵn chữ L/R +
-         vạch giữa, kéo đổi StereoPannerNode thật qua applyBalance);
-         chỉ xác minh bằng test (xem eq-preset-balance-107-test.js).
-       Skin Classic: KHÔNG thêm — cửa sổ EQ 275×116 cũng kín (dải +
-       graph + hotzone 0dB) và nút PRESETS Classic đã mở chung menu này;
-       hotzone "Tất cả 0dB" của Classic vẫn chỉ phẳng EQ, không đụng
-       balance (giữ nguyên). */
-    async function renderEqExtras(div, gw, gh, ctx) {
-      var bar = document.createElement("div");
-      bar.style.position = "absolute";
-      bar.style.left = "0px"; bar.style.top = "75px";
-      bar.style.width = "132px"; bar.style.height = "14px";
-      bar.style.background = "#ECE9D8"; bar.style.border = "1px solid #ACA899";
-      bar.style.zIndex = "3"; bar.style.pointerEvents = "auto";
-      bar.style.font = "11px Arial, sans-serif"; bar.style.color = "#000";
-      setAbs(bar, div, 0, 75);
-      bar.dataset.eqExtrasBar = "1";
-      div.appendChild(bar);
-      var name = matchEqPresetName();
-      var lab = document.createElement("div");
-      lab.style.position = "absolute";
-      lab.style.left = "3px"; lab.style.top = "0px";
-      lab.style.width = "64px"; lab.style.height = "14px";
-      lab.style.lineHeight = "14px";
-      lab.style.whiteSpace = "nowrap"; lab.style.overflow = "hidden";
-      lab.style.textOverflow = "ellipsis";
-      lab.style.cursor = "pointer"; lab.style.pointerEvents = "auto";
-      lab.textContent = "Preset: " + (name || "Tùy chỉnh") + " ▾";
-      lab.title = "Chọn preset EQ — đang dùng: " + (name || "Tùy chỉnh");
-      lab.dataset.eqPresetLabel = "1";
-      setAbs(lab, bar, 3, 0);
-      lab.onclick = function (ev) {
-        if (ev && ev.stopPropagation) ev.stopPropagation();
-        showEqPresetsMenu(bar);
-      };
-      bar.appendChild(lab);
-      var def = document.createElement("div");
-      def.style.position = "absolute";
-      def.style.right = "2px"; def.style.top = "1px";
-      def.style.width = "56px"; def.style.height = "12px";
-      def.style.lineHeight = "12px"; def.style.textAlign = "center";
-      def.style.background = "#fff"; def.style.border = "1px solid #716F64";
-      def.style.cursor = "pointer"; def.style.pointerEvents = "auto";
-      def.textContent = "Mặc định";
-      def.title = "EQ phẳng + cân bằng về giữa";
-      def.dataset.eqDefault = "1";
-      setAbs(def, bar, 132 - 2 - 56, 1);
-      def.onclick = function (ev) {
-        if (ev && ev.stopPropagation) ev.stopPropagation();
-        resetEqToDefault();
-      };
-      bar.appendChild(def);
-    }
-
+    /* v10.8 (108): thanh extras ĐÃ GỠ (132x14 + nhãn "Preset: ..."
+       + nút "Mặc định" trong tab EQ) — xem ghi chú v10.8 ở matchEqPresetName
+       phía trên. Nút PRESETS của skin mở lại đúng menu showEqPresetsMenu;
+       "Default" là hàng preset thường đầu menu đó. */
     /* Đợt v10.0 (việc 1: winamp-eqf) — module .eqf/.q1 (eqf.js):
        index.html truyền qua opts.eqf (window.AmpEqf, nạp trước
        renderer.js); test tiêm qua opts hoặc global.AmpEqf. Không có
@@ -3179,12 +3146,14 @@
     function showEqfChooserMenu(presets) {
       var T = lastStage;
       if (!T || !presets || !presets.length) return;
-      var old = null;
-      try { old = T.querySelector("[data-eqf-chooser-menu]"); } catch (e) { old = null; }
-      if (old && old.parentElement) old.parentElement.removeChild(old);
+      /* v10.8: dùng closer CHUNG (closePlaylistMenus/armPanelCloser) thay
+         cho closer riêng cũ — menu này cũng mang [data-pl-menu] (giữ
+         nguyên [data-eqf-chooser-menu] để test/truy vấn cũ vẫn thấy). */
+      closePlaylistMenus();
       var anchor = lastEqPresetsAnchor || { _absX: 8, _absY: 8 };
       var menu = document.createElement("div");
       menu.dataset.eqfChooserMenu = "1";
+      menu.dataset.plMenu = "1";
       menu.style.position = "absolute";
       menu.style.left = (anchor._absX || 0) + "px";
       menu.style.top = ((anchor._absY || 0) + 12) + "px";
@@ -3201,8 +3170,8 @@
           row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
+            closePlaylistMenus();
             applyEqfPreset(preset);
-            if (menu.parentElement) menu.parentElement.removeChild(menu);
             requestRerender();
           };
           menu.appendChild(row);
@@ -3210,11 +3179,7 @@
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchor, presets.length);
-      var close = function () {
-        if (menu.parentElement) menu.parentElement.removeChild(menu);
-        try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
-      };
-      try { setTimeout(function () { document.addEventListener("click", close); }, 0); } catch (e) { /* jsdom */ }
+      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
     }
     /* Mở hộp chọn file .eqf/.q1 (accept .eqf,.q1), đọc bằng arrayBuffer
        (FileReader làm fallback), rồi loadEqfArrayBuffer. */
@@ -3432,6 +3397,10 @@
       var restY = (RES.drawer && RES.drawer.restY) || 17;
       var mainHeight = mainDiv ? (parseInt(mainDiv.style.height || "0", 10) || 0) : 0;
       var mainH = mainDiv ? (mainDiv._absY || 0) + mainHeight : (restY + mainHeight);
+      /* v10.8 (c): from-bottom + AVS mo thi ngan keo xep duoi AVS — day
+         tham chieu la day AVS (= day main + 116), khong phai day main
+         (xem mainB trong renderLayoutInner). */
+      if (avsState.open && !avsState.detached && RES.embeddedAvs && avsFromBottom()) mainH += VIDEO_SHIFT;
       var full = parseInt(drawerDiv.style.height || "0", 10) || ((RES.drawer && RES.drawer.fullH) || 129);
       var mainLaySnap = layoutEntry("main", "normal");
       var snap = (mainLaySnap && mainLaySnap.snapadjustbottom) || full;
@@ -3475,19 +3444,27 @@
         detWin = T.querySelector("[data-avs-detached]");
       } catch (e) { /* jsdom cu: bo qua */ }
       var isMainStage = !!mainDiv || RES.kind === "classic";
+      /* v10.8 (c): from-bottom thì AVS ở DƯỚI main — kỳ vọng đổi: AVSGroup
+         _absY = ea.y + mainH (đỉnh AVS chạm đáy main), main ở yên y=35,
+         video.group cũng lùi xuống mainH theo nhóm AVS. */
+      var fromBottomChk = avsFromBottom();
+      var mainHChk = mainDiv ? (parseInt(mainDiv.style.height || "0", 10) || 0) : 0;
       if (avsDiv) {
         if (!ea) errs.push("AVSGroup hien nhung skin khong co embeddedAvs");
         else {
-          if ((avsDiv._absY || 0) !== ea.y) errs.push("AVSGroup _absY " + (avsDiv._absY || 0) + ", dung ra " + ea.y);
+          var expAvsY = fromBottomChk ? ea.y + mainHChk : ea.y;
+          if ((avsDiv._absY || 0) !== expAvsY) errs.push("AVSGroup _absY " + (avsDiv._absY || 0) + ", dung ra " + expAvsY + (fromBottomChk ? " (from-bottom: ea.y + mainH)" : ""));
           var aw = parseInt(avsDiv.style.width || "0", 10) || 0, ah = parseInt(avsDiv.style.height || "0", 10) || 0;
           if (aw !== ea.w || ah !== ea.h) errs.push("AVSGroup " + aw + "x" + ah + ", dung ra " + ea.w + "x" + ea.h);
-          if (mainDiv && (mainDiv._absY || 0) !== 35 + VIDEO_SHIFT) errs.push("mo AVS nhung ma main _absY " + (mainDiv._absY || 0) + ", dung ra " + (35 + VIDEO_SHIFT) + " (35+116)");
+          var expMainY = fromBottomChk ? 35 : 35 + VIDEO_SHIFT;
+          if (mainDiv && (mainDiv._absY || 0) !== expMainY) errs.push("mo AVS nhung ma main _absY " + (mainDiv._absY || 0) + ", dung ra " + expMainY + (fromBottomChk ? " (from-bottom: main o yen)" : " (35+116)"));
           if (!vgDiv) errs.push("AVS mo nhung nhung khong thay video.group");
           else {
             var vx = vgDiv._absX || 0, vy = vgDiv._absY || 0;
             var vw = parseInt(vgDiv.style.width || "0", 10) || 0, vh = parseInt(vgDiv.style.height || "0", 10) || 0;
-            if (vx !== ea.videoRect.x || vy !== ea.y + ea.videoRect.y || vw !== ea.videoRect.w || vh !== ea.videoRect.h) {
-              errs.push("video.group (" + vx + "," + vy + "," + vw + "x" + vh + "), dung ra (" + ea.videoRect.x + "," + (ea.y + ea.videoRect.y) + "," + ea.videoRect.w + "x" + ea.videoRect.h + ")");
+            var expVy = ea.y + (fromBottomChk ? mainHChk : 0) + ea.videoRect.y;
+            if (vx !== ea.videoRect.x || vy !== expVy || vw !== ea.videoRect.w || vh !== ea.videoRect.h) {
+              errs.push("video.group (" + vx + "," + vy + "," + vw + "x" + vh + "), dung ra (" + ea.videoRect.x + "," + expVy + "," + ea.videoRect.w + "x" + ea.videoRect.h + ")");
             }
           }
         }
@@ -3726,13 +3703,26 @@
       if (detachOptionOn(mode)) { if (!avsState.detached) detachAvs(); }
       else { if (avsState.detached) reattachAvs(); }
     }
+    /* v10.8 — "Open Video/Vis from the bottom" (optionsgroup.misc):
+       AVS nhúng mở DƯỚI main thay vì trên (mặc định from-the-top: AVS
+       trên, main lùi 116). Hai radio cùng GUID nên độc quyền nhau (xem
+       toggleCfg); mặc định top=on/bottom=off (CFG_DEFAULTS). Chỉ tác
+       dụng với AVS nhúng (Modern); Classic không có AVS nhúng nên
+       không đổi gì. Xem renderLayoutInner (đẩy nhóm AVS xuống đáy main
+       thay vì đẩy main xuống) + runAvsSelfCheck. */
+    function avsFromBottom() {
+      return cfgSuffixOn("Open Video/Vis from the bottom", false);
+    }
     /* Đợt B (9.9) — nút Video/Vis trên cửa sổ chính làm gì, theo tùy chọn
        visbutton (optionsgroup.visbutton): "Open Configuration" -> mở ngăn
-       kéo ở tab Options/trang visbutton; còn lại -> mở vùng AVS.
-       v10.5: nhánh "Open Context Menu" (mở menu Video/Vis) ĐÃ BỎ theo
-       yêu cầu Hải 04/11 (nút Video chỉ mở video) — visButtonAction vẫn
-       trả "menu" khi tùy chọn đó bật, nhưng videoavs.open không mở menu
-       nữa mà mở video như mặc định; hàm visContextMenuItems() đã gỡ. */
+       kéo ở tab Options/trang visbutton; "Open Context Menu" -> mở menu
+       ngữ cảnh Video/Vis (visContextMenuItems); không chọn gì -> mở/đóng
+       AVS (mặc định, như Winamp thật).
+       v10.8: menu ngữ cảnh ĐÃ KHÔI PHỤC (từng gỡ ở v10.5) và NỐI ĐÚNG
+       TICK "Open Context Menu" — tick bật thì nút mở menu (đính chính
+       của Hải 08:48: nút oval ▼ ảnh 13 chính là videoavs.open, trước
+       đây bấm nó mở menu điều khiển bên trong); tick tắt (mặc định)
+       thì nút mở AVS như v10.5. */
     function visButtonAction() {
       if (cfgSuffixOn("Open Context Menu", false)) return "menu";
       if (cfgSuffixOn("Open Configuration", false)) return "config";
@@ -4493,14 +4483,10 @@
         }
         return;
       }
-      /* Tab Options / Color Themes: vẽ thêm phần bị SKIP_TAGS bỏ qua. */
-      /* v10.7 (107): tab Equalizer vẽ thêm thanh preset + "Mặc định"
-         (renderEqExtras — ngoài XML skin, theo yêu cầu Hải 04/11). */
-      if (gid === "player.normal.drawer.eq") {
-        await renderChildren(RES.groupdefs[gid], div, gw, gh, ctx, depth + 1);
-        await renderEqExtras(div, gw, gh, ctx);
-        return;
-      }
+      /* Tab Options / Color Themes: vẽ thêm phần bị SKIP_TAGS bỏ qua.
+         v10.8 (108): tab Equalizer KHÔNG vẽ thêm gì — thanh extras đã gỡ
+         hẳn (xem ghi chú v10.8 ở matchEqPresetName); nhánh này rơi xuống
+         renderChildren chung ở cuối hàm như mọi group khác. */
       if (gid === "player.normal.drawer.options") {
         await renderChildren(RES.groupdefs[gid], div, gw, gh, ctx, depth + 1);
         await renderOptionsExtras(div, gw, gh, ctx, depth);
@@ -5453,9 +5439,9 @@
             if (bi >= 0) audioEngine.setEqBand(bi, rec.frac);
           }
           persistPlayback();
-          /* v10.7 (107): kéo tay 1 dải là lệch khỏi preset — cập nhật
-             nhãn preset trên thanh extras ngay (chỉ ghi khi chữ đổi). */
-          refreshEqExtrasBar();
+          /* v10.8 (108): kéo tay 1 dải là lệch khỏi preset — không còn
+             nhãn ngoài để cập nhật; matchEqPresetName() suy lại tên ở
+             lần mở menu PRESETS sau (không hàng nào in đậm = lệch). */
         }
         else if (action === "PAN") applyBalance(rec.frac); /* Đợt D (9.9): kéo Balance đổi StereoPannerNode thật khi EQ bật (xem applyBalance) */
         else if (cfgattrib) drawerState.cfgSliders[cfgattrib] = rec.frac;
@@ -5716,15 +5702,16 @@
            videoavs.open/close mở/đóng vùng AVS.
            VID_TV (nút TV — trong skin 566 nút này BỊ COMMENT trong XML nên
            không vẽ ra; nối sẵn cho skin nào có nút): bật/tắt cửa sổ Video.
-           VID_Misc/Vis_Menu (v10.5 — Hải 04/11: nút Video góc phải CHỈ
-           mở video, cài đặt đã có trong menu View của skin nên không mở
-           menu nữa):
-           VID_Misc chỉ mở video (đang mở rồi thì ở yên), Vis_Menu chỉ
-           mở hiệu ứng; các cài đặt cũ của 2 menu này (giữ tỉ lệ, 1x/2x,
-           fullscreen, phóng to, tách rời, đóng, màu hiệu ứng, Milkdrop)
-           đã chuyển sang menu View của skin. videoMenuItems/
-           visMenuItems vẫn giữ làm API (export, test dùng để đối chiếu
-           đủ mục; viewMenuItems dùng lại đúng các hàm này).
+           VID_Misc/Vis_Menu:
+           - VID_Misc (v10.5 — Hải 04/11: nút Video CHỈ mở video): chỉ
+             mở video (đang mở rồi thì ở yên), KHÔNG mở menu — giữ nguyên
+             v10.5 (quyết này về nút VID_Misc, không phải videoavs.open).
+           - VIS_MENU (v10.8 — Hải 04/11, ảnh 12): mở menu HIỆU ỨNG
+             (visMenuItems — chỉ mục hiệu ứng: Màu hiệu ứng ×3 + Milkdrop;
+             menu đóng bằng closer chung: click ngoài/chạm/Esc/chọn mục;
+             bấm lần 2 thì đóng — togglePopupMenu kind "vis"). AVS chưa
+             mở thì bấm lần đầu mở vis trước (nút này chỉ có khi AVS đã
+             mở nên trường hợp này chỉ là phòng thủ).
            VID_MAX/Restore: phóng to/khôi phục cửa sổ Video/Vis rời. */
         if (action === "VID_TV") { toggleVideoWindow(); return; }
         if (action === "VID_1X") { setVideoScale(1); return; }
@@ -5733,7 +5720,11 @@
         if (action === "VIS_PREV") { cycleVisVariant(-1); return; }
         if (action === "VIS_NEXT") { cycleVisVariant(1); return; }
         if (action === "VID_MISC") { openAvs("video"); return; }
-        if (action === "VIS_MENU") { openAvs("vis"); return; }
+        if (action === "VIS_MENU") {
+          if (!avsState.open) { openAvs("vis"); return; }
+          togglePopupMenu(div, visMenuItems(), "vis");
+          return;
+        }
         if (id === "button.vid.max") { setVideoMaximized(true); return; }
         if (id === "button.vid.restore") { setVideoMaximized(false); return; }
         if (id === "button.vid.detach" || id === "button.vis.detach") { detachAvs(); return; }
@@ -5742,14 +5733,16 @@
         if (id === "videoavs.open") {
           /* Đợt B (9.9) — nút Video/Vis theo tùy chọn visbutton
              (optionsgroup.visbutton): "Open Configuration" -> mở ngăn kéo
-             ở tab Options, trang visbutton; còn lại -> mở vùng AVS.
-             v10.5 — Hải 04/11: nút Video CHỈ mở video nên NHÁNH MENU ĐÃ
-             BỎ ("Open Context Menu" trước đây mở menu Video/Vis/Hiệu
-             ứng/Tách rời/Đóng — nay cũng chỉ mở video như mặc định;
-             các cài đặt đó đã có trong menu View của skin). Tùy chọn "Open Context
-             Menu" trong ngăn kéo Options vì vậy tạm không còn tác dụng
-             (ghi rõ ở README đợt v10.5 — chưa ẩn radio khỏi ngăn kéo vì
-             ngăn kéo dựng từ XML). */
+             ở tab Options, trang visbutton; "Open Context Menu" -> mở
+             menu ngữ cảnh Video/Vis (visContextMenuItems); còn lại
+             (mặc định, không chọn gì) -> mở/đóng AVS như Winamp thật.
+             v10.8: menu ngữ cảnh ĐÃ KHÔI PHỤC (từng gỡ ở v10.5) và NỐI
+             ĐÚNG TICK "Open Context Menu" — tick bật thì nút mở menu
+             điều khiển bên trong (đính chính của Hải 08:48, ảnh 13:
+             nút oval ▼ góc phải trên chính là videoavs.open); tick tắt
+             thì nút mở AVS. Menu đóng bằng closer chung: click ngoài/
+             chạm/Esc/chọn mục; bấm lần 2 thì đóng — togglePopupMenu
+             kind "videoavs". */
           var vb = visButtonAction();
           if (vb === "config") {
             drawerState.optionsPage = "optionsgroup.visbutton";
@@ -5759,6 +5752,10 @@
             } else {
               requestRerender();
             }
+            return;
+          }
+          if (vb === "menu") {
+            togglePopupMenu(div, visContextMenuItems(), "videoavs");
             return;
           }
           openAvs(avsState.mode); return;
@@ -5879,11 +5876,13 @@
       var T = lastStage;
       if (!T) return;
       lastEqPresetsAnchor = anchorDiv || null;
-      var old = null;
-      try { old = T.querySelector("[data-eq-presets-menu]"); } catch (e) { old = null; }
-      if (old && old.parentElement) old.parentElement.removeChild(old);
+      /* v10.8: dùng closer CHUNG (closePlaylistMenus/armPanelCloser) thay
+         cho closer riêng cũ — menu này cũng mang [data-pl-menu] (giữ
+         nguyên [data-eq-presets-menu] để test/truy vấn cũ vẫn thấy). */
+      closePlaylistMenus();
       var menu = document.createElement("div");
       menu.dataset.eqPresetsMenu = "1";
+      menu.dataset.plMenu = "1";
       menu.style.position = "absolute";
       menu.style.left = ((anchorDiv._absX || 0)) + "px";
       menu.style.top = ((anchorDiv._absY || 0) + 12) + "px";
@@ -5909,8 +5908,8 @@
           row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
+            closePlaylistMenus();
             applyEqPreset(name);
-            if (menu.parentElement) menu.parentElement.removeChild(menu);
             requestRerender();
           };
           menu.appendChild(row);
@@ -5929,7 +5928,7 @@
       eqfLoadRow.onmouseout = function () { eqfLoadRow.style.background = ""; eqfLoadRow.style.color = ""; };
       eqfLoadRow.onclick = function (ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
-        if (menu.parentElement) menu.parentElement.removeChild(menu);
+        closePlaylistMenus();
         openEqfPicker();
       };
       menu.appendChild(eqfLoadRow);
@@ -5942,16 +5941,12 @@
       eqfSaveRow.onclick = function (ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         exportCurrentEqf();
-        if (menu.parentElement) menu.parentElement.removeChild(menu);
+        closePlaylistMenus();
       };
       menu.appendChild(eqfSaveRow);
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, names.length + 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
-      var close = function () {
-        if (menu.parentElement) menu.parentElement.removeChild(menu);
-        try { document.removeEventListener("click", close); } catch (e) { /* jsdom */ }
-      };
-      try { setTimeout(function () { document.addEventListener("click", close); }, 0); } catch (e) { /* jsdom */ }
+      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
     }
 
     /* ---------- menu playlist (đợt C) ----------
@@ -5975,11 +5970,19 @@
        gỡ nó mỗi khi đóng menu và mỗi khi mở menu mới; chỉ gắn closer
        khi menu vẫn còn mở lúc timeout chạy (người dùng có thể đã chọn
        mục và đóng menu trước khi timeout chạy — gắn lúc đó là thừa). */
-    var plMenuCloser = null;
+    var plMenuCloser = null, plMenuTouchCloser = null, plMenuEscCloser = null;
     function disarmPlMenuCloser() {
       if (plMenuCloser) {
         try { document.removeEventListener("click", plMenuCloser); } catch (e) { /* jsdom */ }
         plMenuCloser = null;
+      }
+      if (plMenuTouchCloser) {
+        try { document.removeEventListener("touchend", plMenuTouchCloser); } catch (e) { /* jsdom */ }
+        plMenuTouchCloser = null;
+      }
+      if (plMenuEscCloser) {
+        try { document.removeEventListener("keydown", plMenuEscCloser); } catch (e) { /* jsdom */ }
+        plMenuEscCloser = null;
       }
     }
     function closePlaylistMenus() {
@@ -5994,26 +5997,71 @@
        (menu playlist, bảng thông tin bài, Preferences, About): bấm ra ngoài
        thì đóng. Logic y hệt khối setTimeout cũ trong showPlaylistMenu
        (chỉ gắn khi bảng vẫn còn mở lúc timeout chạy — xem ghi chú ở
-       disarmPlMenuCloser về closer thừa ăn mất lần mở kế tiếp). */
+       disarmPlMenuCloser về closer thừa ăn mất lần mở kế tiếp).
+       v10.8 (menu Vis / videoavs.open bị DÍNH — bấm ra ngoài không đóng):
+       MỘT closer chung cho MỌI menu nổi (menubar, playlist, EQ presets,
+       LocalAdd, EQF chooser, Vis, videoavs.open) — không làm riêng lẻ
+       từng menu nữa (các closer riêng cũ rò rỉ listener khi chọn mục
+       xong vì row.onclick gỡ menu mà không gỡ listener). Closer chung
+       nghe cả 3: click chuột + touchend (chạm) + phím Esc; bấm/chạm
+       TRONG menu thì không đóng (kiểm tra target có nằm trong menu
+       không — hàng trong menu đã stopPropagation với click, nhưng
+       touchend thì không nên phải kiểm tra). */
     function armPanelCloser() {
       try {
         setTimeout(function () {
           if (!lastStage || !lastStage.querySelector("[data-pl-menu]")) return;
           disarmPlMenuCloser();
-          plMenuCloser = function h() {
-            closePlaylistMenus();
-            disarmPlMenuCloser();
+          var insideMenu = function (ev) {
+            var t = ev && ev.target;
+            if (!t) return false;
+            var T = lastStage;
+            if (!T || !T.querySelectorAll) return false;
+            var menus = T.querySelectorAll("[data-pl-menu]");
+            for (var i = 0; i < menus.length; i++) {
+              var m = menus[i];
+              if (m === t || (m.contains && m.contains(t))) return true;
+            }
+            return false;
+          };
+          plMenuCloser = function (ev) {
+            if (!insideMenu(ev)) { closePlaylistMenus(); disarmPlMenuCloser(); }
+          };
+          plMenuTouchCloser = function (ev) {
+            if (!insideMenu(ev)) { closePlaylistMenus(); disarmPlMenuCloser(); }
+          };
+          plMenuEscCloser = function (ev) {
+            if (ev && (ev.key === "Escape" || ev.key === "Esc" || ev.keyCode === 27)) {
+              closePlaylistMenus(); disarmPlMenuCloser();
+            }
           };
           document.addEventListener("click", plMenuCloser);
+          document.addEventListener("touchend", plMenuTouchCloser);
+          document.addEventListener("keydown", plMenuEscCloser);
         }, 0);
       } catch (e) { /* jsdom */ }
     }
-    function showPlaylistMenu(anchorDiv, items) {
+    /* v10.8 — menu nào đang mở (theo kind), để nút mở menu bấm lần 2 thì
+       ĐÓNG thay vì mở lại (toggle). kind: "vis" (nút Vis Menu), "videoavs"
+       (nút videoavs.open); menubar/playlist không truyền kind nên không
+       toggle (bấm lại thì mở lại như cũ). */
+    function isPopupMenuOpen(kind) {
+      var T = lastStage;
+      if (!T || !kind || !T.querySelector) return false;
+      try { return !!T.querySelector('[data-pl-menu][data-menu-kind="' + kind + '"]'); } catch (e) { return false; }
+    }
+    function togglePopupMenu(anchorDiv, items, kind) {
+      if (kind && isPopupMenuOpen(kind)) { closePlaylistMenus(); return false; }
+      showPlaylistMenu(anchorDiv, items, kind);
+      return true;
+    }
+    function showPlaylistMenu(anchorDiv, items, kind) {
       var T = lastStage;
       if (!T) return;
       closePlaylistMenus();
       var menu = document.createElement("div");
       menu.dataset.plMenu = "1";
+      if (kind) menu.dataset.menuKind = kind;
       menu.style.position = "absolute";
       menu.style.left = ((anchorDiv._absX || 0)) + "px";
       menu.style.top = ((anchorDiv._absY || 0) + (parseInt(anchorDiv.style.height || "0", 10) || 12)) + "px";
@@ -6153,7 +6201,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.7 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v10.8 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -6214,27 +6262,23 @@
         { label: (fitTick ? "" : "✓ ") + "Zoom: Cỡ gốc 1x", action: function () { if (onZoom) onZoom("1"); } },
         { label: fitTick + "Zoom: Vừa màn hình", action: function () { if (onZoom) onZoom("fit"); } },
         /* 04/11 — cài đặt Video/Vis chuyển từ menu cũ vào đây (hợp của
-           videoMenuItems + visMenuItems, trừ Milkdrop đã có mục riêng
-           dưới; gộp trùng: Toàn màn hình, Tách rời/Gắn lại, Đóng chỉ 1
-           mục chung cho cả 2 chế độ — đúng như menu cũ). Tách rời giữ
-           chế độ đang mở (như handler cũ), không ép về "video". */
+           videoMenuItems + visMenuItems, gộp trùng: Toàn màn hình, Tách
+           rời/Gắn lại, Đóng chỉ 1 mục chung cho cả 2 chế độ — đúng như
+           menu cũ). Tách rời giữ chế độ đang mở (như handler cũ), không
+           ép về "video".
+           v10.8: các mục HIỆU ỨNG (Màu hiệu ứng ×3 + Milkdrop) RỜI khỏi
+           View — hiệu ứng chỉ còn trong menu Vis của nút Vis_Menu trong
+           cửa sổ AVS (xem visMenuItems) để không trùng 2 chỗ; View chỉ
+           giữ các mục video chung (Giữ tỉ lệ, 1x/2x, Toàn màn hình,
+           Phóng to, Tách rời, Đóng). */
         { label: (avsState.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình", action: function () { setKeepAspect(!avsState.keepAspect); } },
         { label: "Cỡ thường (1x)", action: function () { setVideoScale(1); } },
         { label: "Cỡ gấp đôi (2x)", action: function () { setVideoScale(2); } },
         { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
         { label: avsState.videoMaximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ", action: function () { setVideoMaximized(!avsState.videoMaximized); } },
         { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs(avsState.mode || "video"); detachAvs(); } } },
-        { label: "Đóng Video/Hiệu ứng", action: function () { closeAvs(); } },
-        { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
-        { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
-        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } }
+        { label: "Đóng Video/Hiệu ứng", action: function () { closeAvs(); } }
       ];
-      /* Milkdrop ngay sau nhóm Video/Vis (như menu cũ: mục riêng, nhãn
-         Bật/Tắt + ✓ khi bật — milkdropMenuItem dùng chung với menu
-         Vis/Video; không nối callback thì không đưa mục vào). */
-      var md = null;
-      try { md = milkdropMenuItem(); } catch (e) { md = null; }
-      if (md) items.push(md);
       return items;
     }
 
@@ -6367,10 +6411,12 @@
        Winamp thật mở menu Options của cửa sổ Video/Vis. Mục nào làm được
        thì nối thật; mục Winamp có mà Amp chưa làm (vd "Video Capture…")
        thì KHÔNG đưa vào — không đưa mục giả.
-       v10.5 (Hải 04/11): 2 nút VID_Misc/Vis_Menu KHÔNG mở 2 menu này nữa
-       (chỉ mở video/hiệu ứng); các mục đã chuyển vào menu View của skin
-       (viewMenuItems dùng lại đúng các hàm dưới, gộp trùng) nên 2 hàm
-       dưới vẫn giữ làm API (export, test dùng để đối chiếu đủ mục). */
+       v10.8 (Hải 04/11): Vis_Menu mở lại menu Vis — nhưng CHỈ mục hiệu
+       ứng (visMenuItems, 4 mục); các mục video chung ở lại menu View của
+       skin. VID_Misc vẫn chỉ mở video (v10.5, không đổi). videoMenuItems/
+       visMenuItems vẫn giữ làm API (export, test dùng để đối chiếu đủ
+       mục); visContextMenuItems là menu của nút videoavs.open (khôi phục
+       ở v10.8 — xem hàm đó). */
     /* v10.4 — mục Milkdrop dùng chung cho menu Vis + Video: chỉ đưa vào
        khi index.html nối callback (không đưa mục giả); nhãn có trạng thái
        Bật/Tắt + ✓ khi bật, như mục "Milkdrop" trong menu View của skin.
@@ -6396,20 +6442,49 @@
       return items;
     }
     function visMenuItems() {
-      /* v10.4: "Hiệu ứng trước/sau" CHỈ đổi màu cột vis (cycleVisVariant
-         đổi visVariant 0..2 = 3 màu trong VIS_VARIANTS), KHÔNG phải hiệu
-         ứng Milkdrop — đổi tên thành "Màu hiệu ứng ..." cho khỏi lẫn.
-         Mục Milkdrop thật nằm ngay sau 2 mục đổi màu. */
+      /* v10.8 (menu Vis của nút Vis_Menu, ảnh 12): menu này CHỈ còn mục
+         HIỆU ỨNG (Màu hiệu ứng + Milkdrop) — các mục video chung (Giữ
+         tỉ lệ, 1x/2x, Toàn màn hình, Phóng to, Tách rời, Đóng) ở lại
+         menu View của skin để khỏi trùng 2 chỗ (xem viewMenuItems).
+         "Hiệu ứng trước/sau" trên thanh công cụ (nút Prev/Next/Random)
+         và "Màu hiệu ứng ..." trong menu là CÙNG 1 hành động
+         (cycleVisVariant — Amp chỉ có 3 màu hiệu ứng, không có bộ đổi
+         preset Milkdrop riêng; xem ghi chú v10.4) nên menu chỉ giữ 1
+         nhóm nhãn "Màu hiệu ứng", không đưa 2 hàng trùng làm 1 việc. */
       var items = [
         { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
         { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
-        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } },
-        { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
-        { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs("vis"); detachAvs(); } } },
-        { label: "Đóng Hiệu ứng", action: function () { closeAvs(); } }
+        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } }
       ];
       var md = milkdropMenuItem();
-      if (md) items.splice(2, 0, md); /* ngay sau 2 mục đổi màu cột */
+      if (md) items.push(md);
+      return items;
+    }
+    /* v10.8 — KHÔI PHỤC menu ngữ cảnh của nút videoavs.open (đã gỡ ở
+       v10.5, khi đó hàm này bị xóa hẳn): menu điều khiển Video/Vis như
+       trước kia — mở Video/Hiệu ứng, cài đặt video chung, màu hiệu ứng,
+       Milkdrop, đóng. Đảo ngược chốt v10.5 "chỉ mở video" theo đính
+       chính của Hải 08:48 (ảnh 13: nút oval ▼ góc phải trên cửa sổ
+       chính chính là videoavs.open — đã xác định bằng XML 566 + đo
+       vị trí thật: cụm nền 43×18 tại (309,35) + mũi tên 27×9 tại
+       (317,37), khớp khung đỏ trong ảnh). */
+    function visContextMenuItems() {
+      var items = [
+        { label: (avsState.open && avsState.mode === "video" ? "✓ " : "") + "Mở Video", action: function () { openAvs("video"); } },
+        { label: (avsState.open && avsState.mode === "vis" ? "✓ " : "") + "Mở Hiệu ứng", action: function () { openAvs("vis"); } },
+        { label: (avsState.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình", action: function () { setKeepAspect(!avsState.keepAspect); } },
+        { label: "Cỡ thường (1x)", action: function () { setVideoScale(1); } },
+        { label: "Cỡ gấp đôi (2x)", action: function () { setVideoScale(2); } },
+        { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
+        { label: avsState.videoMaximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ", action: function () { setVideoMaximized(!avsState.videoMaximized); } },
+        { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs(avsState.mode || "video"); detachAvs(); } } },
+        { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
+        { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
+        { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } }
+      ];
+      var md = milkdropMenuItem();
+      if (md) items.push(md);
+      items.push({ label: "Đóng Video/Hiệu ứng", action: function () { closeAvs(); } });
       return items;
     }
 
@@ -6649,8 +6724,8 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.7 — Winamp Modern",
-        "Phiên bản Amp: 10.7 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v10.8 — Winamp Modern",
+        "Phiên bản Amp: 10.8 (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
@@ -7021,9 +7096,39 @@
       applyMilkdropVisibility();
       refreshClassicMain(); /* Đợt v10.1: Classic — đèn play/pause, đồng hồ, chữ chạy, mono/stereo */
     }
+    /* v10.8 (108, 04/11 — Hải 08:27 "thanh volum kéo max nó ra hơn cả nút"):
+       bề rộng fill dừng ĐÚNG tại MÉP PHẢI thumb, không tràn ra ngoài.
+       Fill cũ = frac × toàn track (volume: volume×86; seek: frac×244)
+       trong khi thumb đặt ở frac×(track−thumbW): ở max, fill dài hơn
+       nút — Modern: fill 185..271 trong khi thumb 248..269 (tràn 2px);
+       shade: fill 168..224 vs thumb 204..220 (tràn 4px). Fill mới kết
+       thúc đúng tại mép phải thumb: fillW = (sliderAbsX − fillAbsX)
+       + frac×(trackW − thumbW) + thumbW. Tìm slider cùng action, ưu
+       tiên cùng cha (main vs shade có 2 slider VOLUME riêng, cùng
+       action); không thấy slider thì trả null để gọi lại dùng công
+       thức cũ. Balance/preamp/EQ không có fill nên không đổi gì;
+       Classic không có fill dạng width (chỉ thumb + đổi nền track). */
+    function fillWidthToThumbRight(fillDiv, action, frac) {
+      var best = null;
+      for (var i = 0; i < sliderRecords.length; i++) {
+        var rec = sliderRecords[i];
+        if (!rec || rec.action !== action || !rec.div || !rec.thumb) continue;
+        if (rec.div.parentElement === fillDiv.parentElement) { best = rec; break; }
+        if (!best) best = rec;
+      }
+      if (!best) return null;
+      var f = Math.max(0, Math.min(1, frac));
+      var thumbRightAbs = (best.div._absX || 0) + f * (best.w - best.tw) + best.tw;
+      var w = thumbRightAbs - (fillDiv._absX || 0);
+      if (!isFinite(w)) return null;
+      return Math.max(0, Math.round(w));
+    }
     function updateProgress() {
       for (var i = 0; i < progressEls.length; i++) {
-        progressEls[i].div.style.width = Math.round(demo.seekFrac * progressEls[i].fullW) + "px";
+        var elP = progressEls[i];
+        var wP = fillWidthToThumbRight(elP.div, "SEEK", demo.seekFrac);
+        if (wP === null) wP = Math.round(demo.seekFrac * elP.fullW);
+        elP.div.style.width = wP + "px";
       }
       /* Đợt A (9.9, việc 5) — ĐỒNG BỘ THUMB SEEK THEO NHẠC (lỗi 3/11):
          trước đây chỉ vạch fill (progressEls) chạy theo demo.seekFrac,
@@ -7045,7 +7150,10 @@
     }
     function updateVolumebar() {
       for (var i = 0; i < volumebarEls.length; i++) {
-        volumebarEls[i].div.style.width = Math.max(2, Math.round(demo.volume * volumebarEls[i].maxW)) + "px";
+        var elV = volumebarEls[i];
+        var wV = fillWidthToThumbRight(elV.div, "VOLUME", demo.volume);
+        if (wV === null) wV = Math.max(2, Math.round(demo.volume * elV.maxW));
+        elV.div.style.width = wV + "px";
       }
       refreshClassicMain(); /* Đợt v10.1: Classic — thumb volume */
     }
@@ -7902,23 +8010,59 @@
        media (6,23,342×150). Nút Close trên titlebar đóng AVS qua
        ctx.windowKind="video"/"vis" (xem renderButton). */
     /* Đợt A (9.9, việc 6) — kích thước cửa sổ Video/Vis rời: mặc định
-       DETACHED_WIN_W×DETACHED_WIN_H (354×200 — cửa sổ rời tự vẽ theo
-       model, KHÔNG phải layout Video 354×280); kéo đổi thì lưu vào
-       winSizes["Video|normal"] / ["AVS|normal"], kẹp theo minimum của
-       layout Video/AVS trong XML (min 354×164 với skin 566). Hộp media
-       giãn theo: giữ nguyên lề trái/trên/phải/dưới của hình chữ nhật
-       mặc định (6/23/6/27), chỉ đổi w/h. */
+       detachedDefaultWidth()×DETACHED_WIN_H (bề rộng cửa sổ chính của
+       skin đang nạp — 566: 354, Classic: 275, skin rộng hơn: theo XML;
+       cửa sổ rời tự vẽ theo model, KHÔNG phải layout Video 354×280);
+       kéo đổi thì lưu vào winSizes["Video|normal"] / ["AVS|normal"],
+       kẹp theo minimum của layout Video/AVS trong XML (min 354×164
+       với skin 566). Hộp media giãn theo: giữ nguyên lề trái/trên/
+       phải/dưới của hình chữ nhật mặc định (6/23/6/27), chỉ đổi w/h.
+       v10.8 (khung Video rời to hơn cửa sổ chính, ảnh PC 04/11 08:35):
+       trước đây mặc định cứng DETACHED_WIN_W 354 cho mọi skin; size đã
+       kéo tay lưu từ trước (vd 460) vẫn được dùng lại nên Video lòi ra
+       phải so với main (stage rộng theo Video từ v10.7). Nay mặc định =
+       rộng main, và ở chế độ Fit thì size đã kéo cũng không rộng hơn
+       main (Fit tính tỉ lệ theo stage: Video rộng hơn main làm stage
+       rộng theo, main nằm lệch trái, Video lòi phải). Ở 1x, size đã
+       kéo tay vẫn được giữ nguyên (người dùng kéo rộng được nếu muốn);
+       phóng to Max (960×540) là chế độ riêng, không kẹp. */
+    function detachedDefaultWidth() {
+      if (RES && RES.kind === "classic") {
+        var lib = classicLib();
+        if (lib && lib.CLASSIC_MAIN && lib.CLASSIC_MAIN.w > 0) return lib.CLASSIC_MAIN.w;
+        return 275; /* Winamp 2 Classic: cửa sổ chính cố định 275×116 */
+      }
+      var m = effectiveLayoutWH("main", "normal");
+      if (m && m.w > 0) return m.w;
+      return DETACHED_WIN_W;
+    }
     function detachedWinSize(kind) {
       /* Đợt D (9.9): đang phóng to thì về cỡ phóng to (960×540), bỏ qua
          size đã kéo tay (khôi phục sẽ về lại size đó). */
       if (avsState.videoMaximized) return { w: VIDEO_MAXIMIZED_W, h: VIDEO_MAXIMIZED_H };
       var key = winSizeKey(kind === "video" ? "Video" : "AVS", "normal"); /* Đợt C: khóa theo đúng chữ XML của entry */
       var layKey = kind === "video" ? "Video" : "AVS";
-      var def = { w: DETACHED_WIN_W, h: DETACHED_WIN_H };
+      var def = { w: detachedDefaultWidth(), h: DETACHED_WIN_H };
       var ov = winSizes[key];
       if (!ov) return def;
       var c = clampWinSize(layKey, "normal", ov.w, ov.h);
-      return c || def;
+      if (!c) return def;
+      /* v10.8: ở chế độ Fit, cửa sổ rời không rộng hơn cửa sổ chính —
+         chỉ kẹp bề rộng, giữ nguyên chiều cao đã kéo. Nếu minimum của
+         layout Video/AVS trong XML lớn hơn rộng main thì lấy minimum
+         đó (skin không cho hẹp hơn). */
+      if (isZoomFit) {
+        var fit = false;
+        try { fit = !!isZoomFit(); } catch (e) { fit = false; }
+        if (fit) {
+          var mw = detachedDefaultWidth();
+          if (mw > 0 && c.w > mw) {
+            var mm = layoutMinMax(layKey, "normal");
+            c.w = Math.max(mw, mm ? mm.minW : 0);
+          }
+        }
+      }
+      return c;
     }
     function detachedMediaRect(sz) {
       var m0 = DETACHED_MEDIA_RECT;
@@ -7926,7 +8070,7 @@
       return { x: m0.x, y: m0.y, w: Math.max(10, sz.w - m0.x - insetR), h: Math.max(10, sz.h - m0.y - insetB) };
     }
     async function buildDetachedWindowModel(win, kind, sz) {
-      sz = sz || { w: DETACHED_WIN_W, h: DETACHED_WIN_H };
+      sz = sz || { w: detachedDefaultWidth(), h: DETACHED_WIN_H };
       var winCtx = {
         overrides: new Map(), hiddenIds: new Set(), drawerTab: drawerTab,
         titleText: kind === "video" ? "VIDEO" : "VISUALIZATION",
@@ -7959,7 +8103,7 @@
        ở đây không làm gì được (không có vùng nhúng để về) — bấm vẫn gọi
        reattachAvs nhưng nó trả state không đổi, ghi rõ trong code. */
     function buildDetachedWindowFallback(win, kind, sz) {
-      sz = sz || { w: DETACHED_WIN_W, h: DETACHED_WIN_H };
+      sz = sz || { w: detachedDefaultWidth(), h: DETACHED_WIN_H };
       var titleBar = document.createElement("div");
       titleBar.style.position = "absolute"; titleBar.style.left = "0px"; titleBar.style.top = "0px";
       titleBar.style.width = sz.w + "px"; titleBar.style.height = "18px";
@@ -8591,6 +8735,12 @@
       try { items = items.concat(playMenuItems()); } catch (e) { /* bỏ qua */ }
       try { items = items.concat(optionsMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
       try { items = items.concat(viewMenuItems()); } catch (e) { /* bỏ qua */ }
+      /* v10.8: Classic KHONG co nut Vis Menu (khong co button.vis.misc
+         trong .wsz) nen menu chinh la cho duy nhat de bat/tat Milkdrop
+         — them muc Milkdrop rieng o day, sau nhom View. (Modern thi
+         Milkdrop o menu Vis, khong o View; Classic dung menu chinh
+         thay cho menu Vis.) */
+      try { var mdC = milkdropMenuItem(); if (mdC) items.push(mdC); } catch (e) { /* bỏ qua */ }
       try { items = items.concat(helpMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
       if (items.length) showPlaylistMenu(anchorDiv, items);
     }
@@ -9603,7 +9753,7 @@
             : await renderClassicEqWindow(T, totalH);
         }
       } else {
-        var sz0 = (avsState.open && avsState.detached) ? detachedWinSize(avsState.mode) : { w: DETACHED_WIN_W, h: 0 };
+        var sz0 = (avsState.open && avsState.detached) ? detachedWinSize(avsState.mode) : { w: detachedDefaultWidth(), h: 0 };
         T.style.width = sz0.w + "px";
       }
       if (!opts.noDetached && avsState.open && avsState.detached) {
@@ -9613,8 +9763,8 @@
            chi rong 275 (main) — stage khong rong theo thi zoom-fit tinh
            theo 275, phong to 1.31x, cua so video tran khoi viewport
            (hien 463px CSS tren man 360). Mo rong stage theo be rong
-           that cua cua so roi (mac dinh 354, keo tay / phong to thi
-           theo size do). */
+           that cua cua so roi (v10.8: mac dinh = rong main, keo tay /
+           phong to thi theo size do). */
         var detWC = detachedWinSize(avsState.mode).w;
         var curWC = parseInt(T.style.width || "0", 10) || 0;
         if (detWC > curWC) T.style.width = detWC + "px";
@@ -9834,11 +9984,32 @@
       var mainDiv = null;
       try { mainDiv = T.querySelector('[data-gid="player.main"]'); } catch (e) { mainDiv = null; }
       var videoShifted = false;
+      var fromBottom = avsOpenNow && avsFromBottom();
       if (avsOpenNow && mainDiv) {
-        /* Video/AVS: AVS giữ nguyên vị trí, chỉ đẩy main xuống 116. */
-        mainDiv.style.top = (parseInt(mainDiv.style.top || "0", 10) + VIDEO_SHIFT) + "px";
-        shiftSubtree(mainDiv, VIDEO_SHIFT);
-        videoShifted = true;
+        if (fromBottom) {
+          /* v10.8 (c) — AVS dưới main: main Ở YÊN (không lùi 116), đẩy
+             NHÓM AVS xuống sao cho đỉnh nó chạm đáy main (đẩy đúng
+             khoảng = đáy main − đỉnh AVS hiện tại, tính từ hình học thật
+             chứ không gán cứng 126 — skin khác main cao khác nhau).
+             Ngăn kéo tính theo đáy AVS (xem mainB bên dưới) nên xếp
+             main → AVS → ngăn kéo. */
+          var avsDiv = null;
+          try { avsDiv = T.querySelector('[data-gid="AVSGroup"]'); } catch (e) { avsDiv = null; }
+          if (avsDiv) {
+            var mainH0 = parseInt(mainDiv.style.height || "0", 10) || 0;
+            var avsShift = ((mainDiv._absY || 0) + mainH0) - (avsDiv._absY || 0);
+            if (avsShift) {
+              avsDiv.style.top = (parseInt(avsDiv.style.top || "0", 10) + avsShift) + "px";
+              shiftSubtree(avsDiv, avsShift);
+            }
+          }
+          videoShifted = true;
+        } else {
+          /* Video/AVS: AVS giữ nguyên vị trí, chỉ đẩy main xuống 116. */
+          mainDiv.style.top = (parseInt(mainDiv.style.top || "0", 10) + VIDEO_SHIFT) + "px";
+          shiftSubtree(mainDiv, VIDEO_SHIFT);
+          videoShifted = true;
+        }
       }
       if (drawerOpenOpt !== undefined && mainDiv) {
         var d = null;
@@ -9846,6 +10017,9 @@
         if (d) {
           var dTop = d._absY || 0;
           var mainB = (mainDiv._absY || 0) + (parseInt(mainDiv.style.height || "0", 10) || 0);
+          /* v10.8 (c): from-bottom thì ngăn kéo xếp dưới AVS — đáy tham
+             chiếu là đáy AVS (= đáy main + 116), không phải đáy main. */
+          if (fromBottom) mainB += VIDEO_SHIFT;
           var mainHeight = parseInt(mainDiv.style.height || "0", 10) || 0;
           var dH = parseInt(d.style.height || "0", 10) || 0;
           var snap = lay.snapadjustbottom || dH;
@@ -10248,7 +10422,7 @@
       getCfgState: getCfgState, restoreCfgState: restoreCfgState,
       isAvsAnimEnabled: isAvsAnimEnabled, drawerAnimEnabled: drawerAnimEnabled,
       menuGroupVisible: menuGroupVisible, visButtonAction: visButtonAction,
-      detachOptionOn: detachOptionOn,
+      detachOptionOn: detachOptionOn, avsFromBottom: avsFromBottom,
       getVisFrame: getVisFrame, getTickerMode: tickerMode, getTickerState: getTickerState,
       /* Đợt v10.1 (việc 3: Classic) — cửa sổ chính Classic (.wsz). */
       getClassicMainState: getClassicMainState, refreshClassicMain: refreshClassicMain,
@@ -10265,7 +10439,7 @@
       applyColorTheme: applyColorTheme, selectColorTheme: selectColorTheme,
       gammaScale: gammaScale, gammaMatrixValues: gammaMatrixValues,
       applyEqPreset: applyEqPreset, setAllEqBands: setAllEqBands,
-      matchEqPresetName: matchEqPresetName, resetEqToDefault: resetEqToDefault, /* v10.7 (107): preset + "Mặc định" */
+      matchEqPresetName: matchEqPresetName, resetEqToDefault: resetEqToDefault, /* v10.7 (107): preset + "Default" (09:08 doi ten tu "Mac dinh") */
       /* Đợt v10.0 (việc 1: winamp-eqf). */
       applyEqFracs: applyEqFracs, applyEqfPreset: applyEqfPreset,
       loadEqfArrayBuffer: loadEqfArrayBuffer, openEqfPicker: openEqfPicker,
@@ -10283,6 +10457,8 @@
       setVideoMaximized: setVideoMaximized, setKeepAspect: setKeepAspect,
       VIDEO_MAXIMIZED_W: VIDEO_MAXIMIZED_W, VIDEO_MAXIMIZED_H: VIDEO_MAXIMIZED_H,
       videoMenuItems: videoMenuItems, visMenuItems: visMenuItems,
+      visContextMenuItems: visContextMenuItems, togglePopupMenu: togglePopupMenu,
+      isPopupMenuOpen: isPopupMenuOpen,
       viewMenuItems: viewMenuItems, fileMenuItems: fileMenuItems,
       playMenuItems: playMenuItems, optionsMenuItems: optionsMenuItems,
       helpMenuItems: helpMenuItems, cycleRepeat: cycleRepeat,
@@ -10351,7 +10527,7 @@
       viewportWidth: viewportWidth, mlColDefs: mlColDefs,
       getWinSizes: getWinSizes, restoreWinSizes: restoreWinSizes, setWinSize: setWinSize,
       clampWinSize: clampWinSize, isLayoutResizable: isLayoutResizable, layoutMinMax: layoutMinMax,
-      effectiveLayoutWH: effectiveLayoutWH, detachedWinSize: detachedWinSize,
+      effectiveLayoutWH: effectiveLayoutWH, detachedWinSize: detachedWinSize, detachedDefaultWidth: detachedDefaultWidth,
       getLastExportedM3U: function () { return lastExportedM3U; },
       get registries() {
         return { visCanvases: visCanvases, statusEls: statusEls, tickerEls: tickerEls, timerEls: timerEls, progressEls: progressEls, volumebarEls: volumebarEls, infoEls: infoEls, sliderRecords: sliderRecords, cfDisplayEls: cfDisplayEls };

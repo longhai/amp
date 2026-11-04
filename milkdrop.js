@@ -19,9 +19,17 @@
    nhạc thật) để hình vẫn chạy thay vì AVS đen. Mẫu CHỈ chạy khi nhạc
    ĐANG PHÁT (v10.5, đợt "bỏ hiệu ứng mặc định khi không có nhạc"):
    dừng/tạm dừng/chưa phát thì canvas ẩn, vùng AVS đen/trống — xem
-   applyCanvasDisplay/setPlaying. Tốn GPU/pin nên MẶC
-   ĐỊNH TẮT (bật từ menu ⋯). butterchurn không có hàm hủy visualizer:
-   tắt chỉ dừng vòng render + ẩn canvas, không giải phóng WebGL.
+   applyCanvasDisplay/setPlaying. Vòng render chỉ chạy khi đủ cả 4
+   (bật + đang phát + cửa sổ đang hiện + đã có visualizer — xem
+   startLoop/setVisible), nên MẶC ĐỊNH BẬT từ v10.8 (theo yêu cầu của
+   Hải 04/11): chưa mở cửa sổ xem thì loop không chạy, không tốn
+   CPU/GPU; RAM chỉ giữ 2 thư viện đã nạp lazy (~850KB: butterchurn
+   192KB + presets 653KB), visualizer chỉ tạo khi canvas đã có kích
+   thước (cửa sổ chưa mở thì canvas 0×0 nên ensureVisualizer() không
+   tạo, không giữ WebGL context). Tắt được từ menu View / Vis / Video
+   (lưu localStorage "amp9-milkdrop-v1" = "0"). butterchurn không có
+   hàm hủy visualizer: tắt chỉ dừng vòng render + ẩn canvas, không
+   giải phóng WebGL.
    Chạy được cả trình duyệt (window.AmpMilkdrop) lẫn Node (module.exports).
    API: createMilkdrop(opts) -> { enable, disable, isEnabled, setPlaying,
    setVisible, setSize, syncSizeFromWrap, attachTo, detach, ensureReady,
@@ -33,8 +41,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MILKDROP_VERSION = "10.7";
-  var EXPECTED_MILKDROP_VERSION = "10.7";
+  var MILKDROP_VERSION = "10.8";
+  var EXPECTED_MILKDROP_VERSION = "10.8";
   if (MILKDROP_VERSION !== EXPECTED_MILKDROP_VERSION) {
     throw new Error("milkdrop.js: MILKDROP_VERSION (" + MILKDROP_VERSION + ") khac EXPECTED_MILKDROP_VERSION (" + EXPECTED_MILKDROP_VERSION + ") — ban mix, dung lai");
   }
@@ -303,12 +311,13 @@
         state.error = "milkdrop: chua gan canvas vao vung AVS (attachTo chua chay — mo cua so AVS/Video roi bat lai Milkdrop)";
         return null;
       }
-      /* v10.4 — canvas 0x0 (vung AVS chua co kich thuoc) thi dung lai
-         va bao ro thay vi tao visualizer hong roi de canvas den im lang. */
-      if (!canvas.width || !canvas.height) {
-        state.error = "milkdrop: canvas Milkdrop co 0 — chua co kich thuoc vung AVS (mo AVS roi bat lai Milkdrop)";
-        return null;
-      }
+      /* v10.8 (sua hoi quy L7): kiem AudioContext TRUOC canvas 0x0 —
+         thieu ctx la loi THAT (engine chua khoi tao — phai hien banner
+         de nguoi dung biet, xem test L7) trong khi canvas 0x0 khi AVS
+         dong chi la trang thai cho binh thuong (loi "co 0" duoc an khoi
+         banner khi AVS dong). Truoc day thu tu nguoc lai: v10.8 attachTo
+         zero canvas khi hop chua co co nen loi "co 0" chay truoc va bi
+         an, lam mat loi ctx that. */
       var ctx = null;
       try { ctx = getAudioContext(); } catch (e) { ctx = null; }
       if (!ctx) {
@@ -321,6 +330,14 @@
            nay hau nhu khong xay ra nua; xay ra thi la loi that, khong
            phai "cho phat nhac". */
         state.error = "milkdrop: chua co AudioContext (engine chua khoi tao xong — thu tat roi bat lai Milkdrop)";
+        return null;
+      }
+      /* v10.4 — canvas 0x0 (vung AVS chua co kich thuoc) thi dung lai
+         va bao ro thay vi tao visualizer hong roi de canvas den im lang.
+         v10.8: canvas ve 0x0 nho attachTo (canvas moi mac dinh 300x150
+         nen phai zero tay khi hop chua co co — xem attachTo). */
+      if (!canvas.width || !canvas.height) {
+        state.error = "milkdrop: canvas Milkdrop co 0 — chua co kich thuoc vung AVS (mo AVS roi bat lai Milkdrop)";
         return null;
       }
       var bc = resolveButterchurn(); /* v10.6: boc .default (xem LINK o dau file) */
@@ -607,7 +624,22 @@
       try {
         if (canvas.parentElement !== wrap) wrap.appendChild(canvas);
       } catch (e) { return null; }
-      syncSizeFromWrap();
+      /* v10.8 (Milkdrop mac dinh BAT — khong giu WebGL khi cua so chua
+         mo): canvas moi tao mac dinh 300x150 nen neu de nguyen thi
+         ensureVisualizer() tuong canvas "da co kich thuoc" va tao
+         visualizer + giu WebGL context ngay tu luc bat (boot), du cua
+         so AVS/Video dang dong. Nay: chua co visualizer ma hop chua co
+         kich thuoc (cua so dong / wrap dang park) thi dua canvas ve
+         0x0 de co che 0x0 cua ensureVisualizer() chay dung; hop co co
+         thi syncSizeFromWrap() dat co that. Da co visualizer thi KHONG
+         zero nua (doi canvas.width se reset WebGL context dang dung —
+         luc do loop da dung vi cua so dong, context cu giu nguyen cho
+         toi khi mo lai). */
+      if (!visualizer) {
+        if (!syncSizeFromWrap()) { try { canvas.width = 0; canvas.height = 0; } catch (e) { /* bỏ qua */ } }
+      } else {
+        syncSizeFromWrap();
+      }
       return canvas;
     }
     function detach() {
