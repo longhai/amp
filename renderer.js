@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.14";
-  var EXPECTED_RENDERER_VERSION = "10.14";
+  var RENDERER_VERSION = "10.15";
+  var EXPECTED_RENDERER_VERSION = "10.15";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -6157,10 +6157,12 @@
         if (id === "plshadeMLList") { if (onMlToggle) onMlToggle(); return; }
         if (id === "beatvisualization" || id === "beatvisualization2") { setBeatVisOn(!beatVisOn); return; }
         /* Đợt C — hàng nút dưới playlist (pledit-normal.xml):
-           Add mở menu thêm, Rem xóa hàng chọn (không menu), Sel mở menu
-           chọn, Misc mở menu phụ, List (Manage Playlist) mở menu quản lý. */
+           Add mở menu thêm, Rem mở menu xóa (v10.15 — Hải 15:52: bấm
+           -rem phải hiện menu "Xoá 1 bài" + "Xoá tất cả" thay vì xóa
+           thẳng bài đang chọn), Sel mở menu chọn, Misc mở menu phụ,
+           List (Manage Playlist) mở menu quản lý. */
         if (action === "PE_ADD") { showPlaylistMenu(div, addMenuItems(div)); return; }
-        if (action === "PE_REM") { removePlaylistItem(playlistState.selected); return; }
+        if (action === "PE_REM") { showPlaylistMenu(div, removeMenuItems()); return; }
         if (action === "PE_SEL") { showPlaylistMenu(div, selectMenuItems()); return; }
         if (action === "PE_MISC") { showPlaylistMenu(div, miscMenuItems()); return; }
         if (action === "PE_LIST") { showPlaylistMenu(div, manageMenuItems(div)); return; }
@@ -6339,13 +6341,15 @@
        menubar chính. Menu đóng khi bấm mục khác hoặc bấm ra ngoài. */
     /* Đợt L (9.8) — closer của menu playlist (bấm ra ngoài thì đóng menu).
        LỖI GỐC (người dùng báo 3/11: sau "Xóa hết" thì không chọn được
-       nữa): closer gắn bằng setTimeout(0) sau khi mở menu, nhưng khi
+       nữa — v10.15: "Xóa hết" dời từ menu List sang menu -rem):
+       closer gắn bằng setTimeout(0) sau khi mở menu, nhưng khi
        chọn 1 mục trong menu thì row.onclick stopPropagation nên closer
        KHÔNG bao giờ được tiêu thụ — nó còn armed mãi. Cú bấm MỞ MENU
        KẾ TIẾP bubble lên document thì closer cũ chạy, đóng ngay menu
        vừa mở (bấm Manage Playlist mà menu không hiện — sau "Xóa hết"
        thì playlist trống, không còn đường nạp lại kênh nên tưởng như
-       không chọn được nữa; bấm hụt cứ lặp lại vì mỗi lần mở hụt lại
+       không chọn được nữa; v10.15: nạp lại kênh qua menu Add
+       "Nguồn mặc định"; bấm hụt cứ lặp lại vì mỗi lần mở hụt lại
        gắn thêm 1 closer mới). Sửa: giữ tham chiếu closer (plMenuCloser),
        gỡ nó mỗi khi đóng menu và mỗi khi mở menu mới; chỉ gắn closer
        khi menu vẫn còn mở lúc timeout chạy (người dùng có thể đã chọn
@@ -6651,9 +6655,21 @@
     }
     function addMenuItems(anchorDiv) {
       return [
-        { label: "Nạp lại radio.m3u (41 kênh)", action: function () { if (onReloadRadio) onReloadRadio(); } },
+        { label: "Nguồn mặc định", action: function () { if (onReloadRadio) onReloadRadio(); } },
         { label: "Thêm nhạc local…", action: function () { openLocalFolderPicker(); } },
         { label: "Thêm URL…", action: function () { showAddUrlForm(anchorDiv); } }
+      ];
+    }
+    /* Đợt v10.15 (04/11 — Hải 15:52: nút -rem bấm vào phải hiện menu
+       "Xoá 1 bài" + "Xoá tất cả"; 16:00: "Nạp lại radio" đổi tên thành
+       "Nguồn mặc định" — chỉ đổi nhãn, hành động vẫn nạp lại radio.m3u;
+       số "(41 kênh)" bỏ luôn vì là số cứng ghi chết trong nhãn, đổi nội
+       dung radio.m3u thì số sẽ lệch). Dùng chung cho Modern (PE_REM)
+       lẫn Classic (pl-remove). */
+    function removeMenuItems() {
+      return [
+        { label: "Xoá 1 bài", action: function () { removePlaylistItem(playlistState.selected); } },
+        { label: "Xoá tất cả", action: function () { clearPlaylist(); } }
       ];
     }
     function selectMenuItems() {
@@ -6669,11 +6685,12 @@
         { label: "Khôi phục thứ tự gốc", action: function () { restorePlaylistOrder(); } }
       ];
     }
+    /* Đợt v10.15: gộp trùng (Hải 15:56) — "Nạp lại radio" chỉ còn
+       trong menu Add ("Nguồn mặc định"), "Xóa hết" chỉ còn trong menu
+       -rem; menu List chỉ còn "Lưu playlist (.m3u)". */
     function manageMenuItems(anchorDiv) {
       return [
-        { label: "Lưu playlist (.m3u)", action: function () { exportPlaylistM3U(); } },
-        { label: "Nạp lại radio.m3u", action: function () { if (onReloadRadio) onReloadRadio(); } },
-        { label: "Xóa hết", action: function () { clearPlaylist(); } }
+        { label: "Lưu playlist (.m3u)", action: function () { exportPlaylistM3U(); } }
       ];
     }
     function viewMenuItems() {
@@ -10096,16 +10113,13 @@
       refreshClassicPlTime();
       /* Nút menu đáy: icon đã vẽ sẵn trong ảnh góc đáy, chỉ cần vùng
          bấm trong suốt (vị trí theo fork css: bottom:12 → top=78+8). */
-      classicHotZone(win, { x: 14, y: 86, w: 22, h: 18 }, "pl-add", "Thêm (nạp lại radio / nhạc local / URL)", function (ev) { showPlaylistMenu(this, addMenuItems(this)); });
+      classicHotZone(win, { x: 14, y: 86, w: 22, h: 18 }, "pl-add", "Thêm (nguồn mặc định / nhạc local / URL)", function (ev) { showPlaylistMenu(this, addMenuItems(this)); });
       classicHotZone(win, { x: 43, y: 86, w: 22, h: 18 }, "pl-remove", "Xóa mục", function () {
-        showPlaylistMenu(this, [
-          { label: "Xóa mục đang chọn", action: function () { removePlaylistItem(playlistState.selected); } },
-          { label: "Xóa hết", action: function () { clearPlaylist(); } }
-        ]);
+        showPlaylistMenu(this, removeMenuItems());
       });
       classicHotZone(win, { x: 72, y: 86, w: 22, h: 18 }, "pl-select", "Chọn", function () { showPlaylistMenu(this, selectMenuItems()); });
       classicHotZone(win, { x: 101, y: 86, w: 22, h: 18 }, "pl-misc", "Tùy chọn", function () { showPlaylistMenu(this, miscMenuItems()); });
-      classicHotZone(win, { x: 231, y: 86, w: 22, h: 18 }, "pl-list", "Danh sách (lưu / nạp lại / xóa hết)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
+      classicHotZone(win, { x: 231, y: 86, w: 22, h: 18 }, "pl-list", "Danh sách (lưu playlist)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
       /* Nút cuộn lên/xuống (fork: right:7, top:2/8 trong đáy-phải):
          mũi tên đã vẽ sẵn trong ảnh góc đáy-phải, chỉ cần vùng bấm. */
       classicHotZone(win, { x: 260, y: 80, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
