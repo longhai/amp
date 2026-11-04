@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.23";
-  var EXPECTED_RENDERER_VERSION = "10.23";
+  var RENDERER_VERSION = "10.24";
+  var EXPECTED_RENDERER_VERSION = "10.24";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -732,10 +732,46 @@
       if (!m) return null;
       return (Math.round(parseFloat(m[1]) * fx * 10) / 10) + "px " + (Math.round(parseFloat(m[2]) * fy * 10) / 10) + "px";
     }
+    /* v10.24 — Gop move theo khung hinh (rAF coalescing): khi vuot nhanh,
+       pointermove toi 120Hz (2-3 event/khung hinh); xu ly dong bo tung
+       event thi main thread phai lam lai toan bo cong viec (doi co khung +
+       preview + stage + ve lai live Classic) cho ca nhung vi tri trung
+       gian se khong bao gio duoc ve — hang doi event doi dai, khung hien
+       vi tri cu, ngon tay di truoc (Hai 05/11: "vuot nhanh no khong theo
+       kip"). Nay: moi khung hinh chi ap dung VI TRI MOI NHAT 1 lan.
+       - Khong co requestAnimationFrame (jsdom/test — Node khong co rAF
+         tran nhu AVS/ticker): dong bo nhu cu, test assert ngay sau
+         dispatchEvent van dung.
+       - Co rAF (trinh duyet that): luu vi tri moi nhat; neu da co rAF
+         cho thi chi cap nhat vi tri (bo event cu); neu chua thi dat rAF
+         ap dung vi tri moi nhat 1 lan. resizeEnd xa (flush) vi tri cho
+         truoc khi chot co, nen tap/keo ngan van dung. */
     function resizeMove(e) {
       var s = resizeSession;
       if (!s) return;
+      /* Chan cuon trang tren touch ngay lap tuc (khong cho rAF). */
+      if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
+      if (typeof requestAnimationFrame !== "function") {
+        applyResizeMove(s, resizeClientPos(e));
+        return;
+      }
       var p = resizeClientPos(e);
+      s.px = p.x; s.py = p.y;
+      if (s.rafPending) return;
+      s.rafPending = true;
+      requestAnimationFrame(function () {
+        s.rafPending = false;
+        if (resizeSession !== s) return; /* da tha tay/huy: resizeEnd da xa (flush) */
+        applyResizeMove(s, { x: s.px, y: s.py });
+      });
+    }
+    /* Than xu ly cua resizeMove: ap dung VI TRI p (da tinh san) vao khung
+       + xem truoc + stage + moc ve lai live (Classic). Goi dong bo (khi
+       khong co rAF) hoac 1 lan/khung hinh qua rAF voi vi tri moi nhat.
+       skipLive=true: bo qua moc ve lai live (chi dung cho flush luc tha
+       tay — requestRerender ngay sau do se ve lai day du, tranh 2 lan
+       rebuild Classic chong nhau lam do main thread sau khi tha). */
+    function applyResizeMove(s, p, skipLive) {
       var dx = (p.x - s.startX) / (s.scaleX || 1), dy = (p.y - s.startY) / (s.scaleY || 1);
       var w = s.startW, h = s.startH;
       if (s.edge === "right" || s.edge === "corner") w = s.startW + dx;
@@ -832,8 +868,8 @@
          bằng stretch/anchor không đủ — tile phải thêm/bớt ô, nút phải
          dời theo cỡ mới). Callback tự bỏ qua khi cỡ lượng tử hoá không
          đổi, nên chỉ chạy mỗi lần qua mốc đoạn. */
-      if (s.onLiveSize) { try { s.onLiveSize(s.w, s.h); } catch (eL) { /* bỏ qua */ } }
-      if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
+      if (!skipLive && s.onLiveSize) { try { s.onLiveSize(s.w, s.h); } catch (eL) { /* bỏ qua */ } }
+      /* preventDefault da lam o resizeMove (dong bo, khong cho rAF). */
     }
     /* v10.19 (2), v10.20 (1) — CHẠM XUYÊN TAY NẮM (tap-through): tay nắm
        nay to hơn (v10.20: 32px mép / 64px góc) nên đè lên hàng nút ở đáy
@@ -865,6 +901,15 @@
     }
     function resizeEnd(e) {
       var s = resizeSession;
+      if (s && s.rafPending && s.px !== undefined && s.py !== undefined) {
+        /* v10.24 — tha tay truoc khi rAF kip chay: ap dung ngay vi tri
+           moi nhat da luu (khong de co chot bi cu); rAF da dat se tu bo
+           qua vi resizeSession da null o duoi. Chi cap nhat co (skipLive)
+           — requestRerender ngay sau do se ve lai day du, tranh 2 lan
+           rebuild Classic chong nhau. */
+        s.rafPending = false;
+        try { applyResizeMove(s, { x: s.px, y: s.py }, true); } catch (err) { /* bỏ qua */ }
+      }
       resizeSession = null;
       if (!s) return;
       var cancelled = !!(e && e.type === "pointercancel");
@@ -1101,6 +1146,7 @@
               live: live, container: container, layoutId: layoutId, edge: spec.edge,
               hd: hd, /* v10.19 (2): giữ tay nắm để tap-through ẩn nó lúc elementFromPoint */
               startX: p.x, startY: p.y, startW: startW, startH: startH,
+              px: p.x, py: p.y, rafPending: false, /* v10.24: vi tri moi nhat + co rAF cho (gop move) */
               scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH,
               baseStageH: baseStageH, baseWrapH: baseWrapH, preview: preview,
               stageW0: stageW0, trackW: trackW, trackH: trackH, /* v10.20 (1): stage bám 2 chiều */
