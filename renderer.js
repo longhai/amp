@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.8";
-  var EXPECTED_RENDERER_VERSION = "10.8";
+  var RENDERER_VERSION = "10.9";
+  var EXPECTED_RENDERER_VERSION = "10.9";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -2463,7 +2463,7 @@
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, choices.length);
-      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor (xem armPanelCloser) */
       return true;
     }
 
@@ -3179,7 +3179,7 @@
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchor, presets.length);
-      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
+      armPanelCloser(anchor); /* v10.9: neo anchor (xem armPanelCloser) */
     }
     /* Mở hộp chọn file .eqf/.q1 (accept .eqf,.q1), đọc bằng arrayBuffer
        (FileReader làm fallback), rồi loadEqfArrayBuffer. */
@@ -5946,7 +5946,7 @@
       menu.appendChild(eqfSaveRow);
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, names.length + 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
-      armPanelCloser(); /* v10.8: closer chung (click ngoài + chạm + Esc) */
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor (xem armPanelCloser) */
     }
 
     /* ---------- menu playlist (đợt C) ----------
@@ -5970,7 +5970,7 @@
        gỡ nó mỗi khi đóng menu và mỗi khi mở menu mới; chỉ gắn closer
        khi menu vẫn còn mở lúc timeout chạy (người dùng có thể đã chọn
        mục và đóng menu trước khi timeout chạy — gắn lúc đó là thừa). */
-    var plMenuCloser = null, plMenuTouchCloser = null, plMenuEscCloser = null;
+    var plMenuCloser = null, plMenuTouchCloser = null, plMenuEscCloser = null, plMenuAnchor = null, plMenuOpenedAt = 0;
     function disarmPlMenuCloser() {
       if (plMenuCloser) {
         try { document.removeEventListener("click", plMenuCloser); } catch (e) { /* jsdom */ }
@@ -5984,13 +5984,29 @@
         try { document.removeEventListener("keydown", plMenuEscCloser); } catch (e) { /* jsdom */ }
         plMenuEscCloser = null;
       }
+      plMenuAnchor = null;
+    }
+    /* v10.9 — mọi bảng nổi [data-pl-menu] đang mở: hỏi DOCUMENT (menu nổi
+       là popup cấp document), KHÔNG hỏi lastStage đổi được (render nguyên
+       tử đặt lastStage = build tách rời lúc vẽ). Thêm cả menu đang nằm
+       trong build tách rời (chưa swapIn) để dọn luôn trước khi nó hiện ra. */
+    function allOpenMenus() {
+      var out = [];
+      try {
+        var ds = document.querySelectorAll("[data-pl-menu]");
+        for (var i = 0; i < ds.length; i++) out.push(ds[i]);
+      } catch (e) { /* jsdom */ }
+      try {
+        if (lastStage && lastStage.querySelectorAll && document.contains && !document.contains(lastStage)) {
+          var bs = lastStage.querySelectorAll("[data-pl-menu]");
+          for (var j = 0; j < bs.length; j++) if (out.indexOf(bs[j]) < 0) out.push(bs[j]);
+        }
+      } catch (e) { /* jsdom */ }
+      return out;
     }
     function closePlaylistMenus() {
       disarmPlMenuCloser();
-      var T = lastStage;
-      if (!T) return;
-      var olds = null;
-      try { olds = T.querySelectorAll("[data-pl-menu]"); } catch (e) { olds = []; }
+      var olds = allOpenMenus();
       for (var i = 0; i < olds.length; i++) if (olds[i].parentElement) olds[i].parentElement.removeChild(olds[i]);
     }
     /* Đợt D (9.9) — closer dùng chung cho mọi bảng nổi có [data-pl-menu]
@@ -6006,49 +6022,82 @@
        nghe cả 3: click chuột + touchend (chạm) + phím Esc; bấm/chạm
        TRONG menu thì không đóng (kiểm tra target có nằm trong menu
        không — hàng trong menu đã stopPropagation với click, nhưng
-       touchend thì không nên phải kiểm tra). */
-    function armPanelCloser() {
+       touchend thì không nên phải kiểm tra).
+       v10.9 (Hải 09:40, ảnh image-19 — menu videoavs.open DÍNH trên
+       trình duyệt thật dù test jsdom 36 PASS): armPanelCloser cũ chỉ gắn
+       listener qua setTimeout(0) và CHỈ khi lastStage còn thấy menu lúc
+       timeout chạy. lastStage là biến đổi được: render nguyên tử đặt
+       lastStage = build (div tách rời) lúc bắt đầu vẽ, chỉ trả về live
+       ở swapIn() lúc xong — nếu 1 lần vẽ lại bắt đầu (vd: video vừa load
+       xong metadata → setVideoInfo → requestRerender; hoặc bấm nút đúng
+       lúc render đang chạy với ảnh load chậm trên trình duyệt thật)
+       trong khoảng giữa lúc mở menu và lúc timeout chạy, kiểm tra thất
+       bại → closer KHÔNG BAO GIỜ được gắn → menu dính vĩnh viễn, bấm
+       nút lần 2 cũng không đóng (isPopupMenuOpen cũ cũng hỏi lastStage
+       nên không thấy menu). Sửa: (1) gắn listener ĐỒNG BỘ ngay lúc mở
+       menu (không setTimeout); cú click MỞ menu nổi bọt lên document
+       sau đó được chặn bằng 2 lớp: target nằm trong anchor (nút vừa mở
+       menu) HOẶC trong 25ms đầu sau khi gắn (cú mở chạy cùng task với
+       target-phase, tới document sau vài micro-giây; bấm ngoài thật của
+       người >100ms nên không bị chặn); bấm nút lần 2 (toggle) vẫn qua
+       div.onclick trước (target phase) nên vẫn đóng đúng. (2) insideMenu
+       / closePlaylistMenus / isPopupMenuOpen hỏi DOCUMENT thay vì
+       lastStage (xem allOpenMenus). */
+    function armPanelCloser(anchorDiv) {
       try {
-        setTimeout(function () {
-          if (!lastStage || !lastStage.querySelector("[data-pl-menu]")) return;
-          disarmPlMenuCloser();
-          var insideMenu = function (ev) {
-            var t = ev && ev.target;
-            if (!t) return false;
-            var T = lastStage;
-            if (!T || !T.querySelectorAll) return false;
-            var menus = T.querySelectorAll("[data-pl-menu]");
-            for (var i = 0; i < menus.length; i++) {
-              var m = menus[i];
-              if (m === t || (m.contains && m.contains(t))) return true;
-            }
-            return false;
-          };
-          plMenuCloser = function (ev) {
-            if (!insideMenu(ev)) { closePlaylistMenus(); disarmPlMenuCloser(); }
-          };
-          plMenuTouchCloser = function (ev) {
-            if (!insideMenu(ev)) { closePlaylistMenus(); disarmPlMenuCloser(); }
-          };
-          plMenuEscCloser = function (ev) {
-            if (ev && (ev.key === "Escape" || ev.key === "Esc" || ev.keyCode === 27)) {
-              closePlaylistMenus(); disarmPlMenuCloser();
-            }
-          };
-          document.addEventListener("click", plMenuCloser);
-          document.addEventListener("touchend", plMenuTouchCloser);
-          document.addEventListener("keydown", plMenuEscCloser);
-        }, 0);
+        disarmPlMenuCloser();
+        plMenuAnchor = anchorDiv || null;
+        plMenuOpenedAt = Date.now();
+        var insideAnchor = function (ev) {
+          var t = ev && ev.target;
+          if (!t || !plMenuAnchor) return false;
+          if (plMenuAnchor === t) return true;
+          try { return !!(plMenuAnchor.contains && plMenuAnchor.contains(t)); } catch (e) { return false; }
+        };
+        var insideMenu = function (ev) {
+          var t = ev && ev.target;
+          if (!t) return false;
+          var menus = allOpenMenus();
+          for (var i = 0; i < menus.length; i++) {
+            var m = menus[i];
+            if (m === t || (m.contains && m.contains(t))) return true;
+          }
+          return false;
+        };
+        var tooSoon = function () { return (Date.now() - plMenuOpenedAt) < 25; };
+        plMenuCloser = function (ev) {
+          if (tooSoon() || insideAnchor(ev) || insideMenu(ev)) return;
+          closePlaylistMenus(); disarmPlMenuCloser();
+        };
+        plMenuTouchCloser = function (ev) {
+          if (tooSoon() || insideAnchor(ev) || insideMenu(ev)) return;
+          closePlaylistMenus(); disarmPlMenuCloser();
+        };
+        plMenuEscCloser = function (ev) {
+          if (ev && (ev.key === "Escape" || ev.key === "Esc" || ev.keyCode === 27)) {
+            closePlaylistMenus(); disarmPlMenuCloser();
+          }
+        };
+        document.addEventListener("click", plMenuCloser);
+        document.addEventListener("touchend", plMenuTouchCloser);
+        document.addEventListener("keydown", plMenuEscCloser);
       } catch (e) { /* jsdom */ }
     }
     /* v10.8 — menu nào đang mở (theo kind), để nút mở menu bấm lần 2 thì
        ĐÓNG thay vì mở lại (toggle). kind: "vis" (nút Vis Menu), "videoavs"
        (nút videoavs.open); menubar/playlist không truyền kind nên không
-       toggle (bấm lại thì mở lại như cũ). */
+       toggle (bấm lại thì mở lại như cũ).
+       v10.9: hỏi DOCUMENT (allOpenMenus) thay vì lastStage — xem ghi chú
+       ở armPanelCloser về lastStage = build lúc render. */
     function isPopupMenuOpen(kind) {
-      var T = lastStage;
-      if (!T || !kind || !T.querySelector) return false;
-      try { return !!T.querySelector('[data-pl-menu][data-menu-kind="' + kind + '"]'); } catch (e) { return false; }
+      if (!kind) return false;
+      try {
+        var menus = allOpenMenus();
+        for (var i = 0; i < menus.length; i++) {
+          if (menus[i].dataset && menus[i].dataset.menuKind === kind) return true;
+        }
+      } catch (e) { return false; }
+      return false;
     }
     function togglePopupMenu(anchorDiv, items, kind) {
       if (kind && isPopupMenuOpen(kind)) { closePlaylistMenus(); return false; }
@@ -6070,6 +6119,20 @@
       menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
       for (var i = 0; i < items.length; i++) {
         (function (it) {
+          /* v10.9 (Hải 09:47, ảnh image-22 — menu View hơi rối, chưa tách
+             từng loại): mục {sep:true} vẽ ĐƯỜNG KẺ phân cách nhóm (kiểu
+             Winamp thật: vạch #ACA899, margin 2px 0 — cùng kiểu với vạch
+             phân cách trong menu preset EQ), KHÔNG phải hàng bấm được
+             (không data-menu-item, không hover, không onclick) nên không
+             ảnh hưởng đếm mục trong test cũ. label:"" để code cũ gọi
+             it.label.indexOf(...) không crash ("" → -1, tự bỏ qua). */
+          if (it && it.sep) {
+            var dv = document.createElement("div");
+            dv.dataset.menuSep = "1";
+            dv.style.borderTop = "1px solid #ACA899"; dv.style.margin = "2px 0";
+            menu.appendChild(dv);
+            return;
+          }
           var row = document.createElement("div");
           row.textContent = it.label;
           row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
@@ -6086,7 +6149,7 @@
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, items.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
-      armPanelCloser(); /* Đợt D (9.9): dùng chung helper (logic cũ giữ nguyên) */
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor (xem armPanelCloser) */
     }
     function deriveNameFromUrl(url) {
       try {
@@ -6255,12 +6318,20 @@
         { label: (avsState.open && avsState.mode === "video" ? "✓ " : "") + "Video", action: function () { toggleVideoWindow(); } },
         { label: (avsState.open && avsState.mode === "vis" ? "✓ " : "") + "Hiệu ứng (Vis)", action: function () { if (avsState.open && avsState.mode === "vis") closeAvs(); else openAvs("vis"); } },
         { label: shadeTick + "Thu gọn (Shade)", action: function () { if (onShadeToggle) onShadeToggle(!(isShadeMode && isShadeMode())); } },
+        /* v10.9 (Hải 09:47, ảnh image-22 — menu View hơi rối, chưa tách
+           từng loại): tách 3 nhóm bằng đường kẻ: (1) Cửa sổ: Playlist
+           Editor / Media Library / Ngăn kéo / Video / Hiệu ứng / Thu gọn;
+           (2) Zoom: Cỡ gốc 1x / Vừa màn hình; (3) Video: Giữ tỉ lệ / Cỡ
+           thường / Cỡ gấp đôi / Toàn màn hình / Phóng to / Tách rời /
+           Đóng. Chỉ tách nhóm, không đổi mục hay hành vi nào. */
+        { sep: true, label: "" },
         /* 04/11 — bỏ nút menu góc dưới-phải: Zoom chuyển vào đây (cùng
            đường onZoom của index.html; ✓ đọc từ isZoomFit, nhãn dựng mới
            mỗi lần mở menu nên luôn đúng — thay cho khối cập nhật nhãn
            zoom trong setZoom cũ). */
         { label: (fitTick ? "" : "✓ ") + "Zoom: Cỡ gốc 1x", action: function () { if (onZoom) onZoom("1"); } },
         { label: fitTick + "Zoom: Vừa màn hình", action: function () { if (onZoom) onZoom("fit"); } },
+        { sep: true, label: "" },
         /* 04/11 — cài đặt Video/Vis chuyển từ menu cũ vào đây (hợp của
            videoMenuItems + visMenuItems, gộp trùng: Toàn màn hình, Tách
            rời/Gắn lại, Đóng chỉ 1 mục chung cho cả 2 chế độ — đúng như
@@ -6469,21 +6540,28 @@
        vị trí thật: cụm nền 43×18 tại (309,35) + mũi tên 27×9 tại
        (317,37), khớp khung đỏ trong ảnh). */
     function visContextMenuItems() {
+      /* v10.9 (Hải 09:47 — tách nhóm như menu View): 4 nhóm bằng đường
+         kẻ: (1) Mở: Mở Video / Mở Hiệu ứng; (2) Cỡ video: Giữ tỉ lệ /
+         Cỡ thường / Cỡ gấp đôi / Toàn màn hình / Phóng to / Tách rời;
+         (3) Hiệu ứng: Màu ×3 + Milkdrop; (4) Đóng Video/Hiệu ứng. */
       var items = [
         { label: (avsState.open && avsState.mode === "video" ? "✓ " : "") + "Mở Video", action: function () { openAvs("video"); } },
         { label: (avsState.open && avsState.mode === "vis" ? "✓ " : "") + "Mở Hiệu ứng", action: function () { openAvs("vis"); } },
+        { sep: true, label: "" },
         { label: (avsState.keepAspect ? "✓ " : "") + "Giữ tỉ lệ khung hình", action: function () { setKeepAspect(!avsState.keepAspect); } },
         { label: "Cỡ thường (1x)", action: function () { setVideoScale(1); } },
         { label: "Cỡ gấp đôi (2x)", action: function () { setVideoScale(2); } },
         { label: "Toàn màn hình", action: function () { requestVideoFullscreen(); } },
         { label: avsState.videoMaximized ? "Khôi phục cửa sổ" : "Phóng to cửa sổ", action: function () { setVideoMaximized(!avsState.videoMaximized); } },
         { label: avsState.detached ? "Gắn lại (Reattach)" : "Tách rời (Detach)", action: function () { if (avsState.detached) reattachAvs(); else { if (!avsState.open) openAvs(avsState.mode || "video"); detachAvs(); } } },
+        { sep: true, label: "" },
         { label: "Màu hiệu ứng trước", action: function () { cycleVisVariant(-1); } },
         { label: "Màu hiệu ứng sau", action: function () { cycleVisVariant(1); } },
         { label: (avsState.visRandom ? "✓ " : "") + "Màu hiệu ứng ngẫu nhiên", action: function () { setVisRandom(!avsState.visRandom); } }
       ];
       var md = milkdropMenuItem();
       if (md) items.push(md);
+      items.push({ sep: true, label: "" });
       items.push({ label: "Đóng Video/Hiệu ứng", action: function () { closeAvs(); } });
       return items;
     }
@@ -6570,7 +6648,7 @@
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv || { _absY: 10, style: { height: "12px" } }, rows.length + 2);
-      armPanelCloser();
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor */
       return st;
     }
     function trackMenuItems(anchorDiv, idx) {
@@ -6705,7 +6783,7 @@
       box.appendChild(closeRow);
       T.appendChild(box);
       placePopupInStage(box, anchorDiv || { _absY: 10, style: { height: "12px" } }, defs.length + 2);
-      armPanelCloser();
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor */
       return true;
     }
     function openAbout(anchorDiv) {
@@ -6743,7 +6821,7 @@
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv || { _absY: 10, style: { height: "12px" } }, lines.length + 1);
-      armPanelCloser();
+      armPanelCloser(anchorDiv); /* v10.9: neo anchor */
       return true;
     }
 
@@ -7101,13 +7179,21 @@
        Fill cũ = frac × toàn track (volume: volume×86; seek: frac×244)
        trong khi thumb đặt ở frac×(track−thumbW): ở max, fill dài hơn
        nút — Modern: fill 185..271 trong khi thumb 248..269 (tràn 2px);
-       shade: fill 168..224 vs thumb 204..220 (tràn 4px). Fill mới kết
-       thúc đúng tại mép phải thumb: fillW = (sliderAbsX − fillAbsX)
-       + frac×(trackW − thumbW) + thumbW. Tìm slider cùng action, ưu
-       tiên cùng cha (main vs shade có 2 slider VOLUME riêng, cùng
-       action); không thấy slider thì trả null để gọi lại dùng công
-       thức cũ. Balance/preamp/EQ không có fill nên không đổi gì;
-       Classic không có fill dạng width (chỉ thumb + đổi nền track). */
+       shade: fill 168..224 vs thumb 204..220 (tràn 4px).
+       v10.9 (04/11 — Hải 09:43 "kéo xuống hết vẫn dư", ảnh image-21):
+       công thức v10.8 (tới MÉP PHẢI thumb) SAI ở đầu 0: ở frac=0, fill
+       vẫn rộng bằng tw (bề rộng nút: volume 19px = 204−185) — đoạn dư
+       đó chính là bề rộng nút. Công thức đúng: fill kết thúc tại điểm
+       trên nút chạy tuyến tính từ MÉP TRÁI nút (frac=0) tới MÉP PHẢI
+       nút (frac=1), tức fillW = (sliderAbsX − fillAbsX) + frac×trackW:
+       volume 566 (slider 183/w86, fill 185): 0→0, 0.5→41 (đúng tâm nút),
+       1→84 (đúng mép phải nút); seek (slider 6/w254, fill 10): 0→0,
+       0.5→123, 1→250; shade (slider 164/w56, fill 168): 0→0, 0.5→24,
+       1→52. Tìm slider cùng action, ưu tiên cùng cha (main vs shade có
+       2 slider VOLUME riêng, cùng action); không thấy slider thì trả
+       null để gọi lại dùng công thức cũ. Balance/preamp/EQ không có fill
+       nên không đổi gì; Classic không có fill dạng width (chỉ thumb +
+       đổi nền track). */
     function fillWidthToThumbRight(fillDiv, action, frac) {
       var best = null;
       for (var i = 0; i < sliderRecords.length; i++) {
@@ -7118,8 +7204,7 @@
       }
       if (!best) return null;
       var f = Math.max(0, Math.min(1, frac));
-      var thumbRightAbs = (best.div._absX || 0) + f * (best.w - best.tw) + best.tw;
-      var w = thumbRightAbs - (fillDiv._absX || 0);
+      var w = (best.div._absX || 0) + f * best.w - (fillDiv._absX || 0);
       if (!isFinite(w)) return null;
       return Math.max(0, Math.round(w));
     }
@@ -7152,7 +7237,7 @@
       for (var i = 0; i < volumebarEls.length; i++) {
         var elV = volumebarEls[i];
         var wV = fillWidthToThumbRight(elV.div, "VOLUME", demo.volume);
-        if (wV === null) wV = Math.max(2, Math.round(demo.volume * elV.maxW));
+        if (wV === null) wV = Math.round(demo.volume * elV.maxW); /* v10.9: không min 2px — ở 0 fill phải về 0, không để vệt */
         elV.div.style.width = wV + "px";
       }
       refreshClassicMain(); /* Đợt v10.1: Classic — thumb volume */

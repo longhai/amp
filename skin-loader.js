@@ -5,7 +5,7 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.8". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.9". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Chạy được cả trình duyệt (window) lẫn Node (module.exports, dùng với
    jsdom trong test). Không dùng Blob khi đọc file trong zip (tránh lỗi
@@ -17,8 +17,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.8";
-  var EXPECTED_LOADER_VERSION = "10.8";
+  var LOADER_VERSION = "10.9";
+  var EXPECTED_LOADER_VERSION = "10.9";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
