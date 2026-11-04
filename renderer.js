@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.11";
-  var EXPECTED_RENDERER_VERSION = "10.11";
+  var RENDERER_VERSION = "10.12";
+  var EXPECTED_RENDERER_VERSION = "10.12";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -4096,6 +4096,33 @@
       }
       return null;
     }
+    /* v10.12 (P1 D) — tra XUI theo tên đầy đủ: phần tử <Wasabi:...> trong
+       XML mang data-xui (loader ghi khi lột namespace) hoặc giữ nguyên tên
+       có ":" khi XML đọc thẳng không qua cleanXml. Tra xuiMap (groupdef
+       xuitag) — vd wasabi:standardframe:nostatus -> wasabi.standardframe.
+       nostatusbar (Copperdeck ML/Video), wasabi:mainframe:nostatus ->
+       wasabi.mainframe.nostatusbar (566, trùng kết quả frameGroupFor cũ).
+       Chỉ nhận khi groupdef đích tồn tại. */
+    function xuiMapForEl(el, fullTag) {
+      if (!RES || !RES.xuiMap) return null;
+      var key = null;
+      try { key = el.getAttribute("data-xui") || null; } catch (e) { key = null; }
+      if (!key && fullTag && fullTag.indexOf(":") >= 0) key = fullTag;
+      if (!key) return null;
+      var gid = RES.xuiMap[String(key).toLowerCase()] || null;
+      if (gid && RES.groupdefs[gid]) return gid;
+      return null;
+    }
+    /* v10.12 (P1 D) — tra xuiMap theo tên tag trần (cho tag lạ không có
+       namespace, vd copcheckbox/copradiobut/editbox2/ratings). Chỉ gọi ở
+       cuối renderNode, sau mọi nhánh đã biết, để không cướp tag quen. */
+    function xuiMapForTag(tag) {
+      if (!RES || !RES.xuiMap) return null;
+      var t = String(tag || "").toLowerCase();
+      var gid = RES.xuiMap[t] || RES.xuiMap["wasabi:" + t] || null;
+      if (gid && RES.groupdefs[gid]) return gid;
+      return null;
+    }
     function setAbs(el, parentEl, x, y) {
       el._absX = (parentEl._absX || 0) + x;
       el._absY = (parentEl._absY || 0) + y;
@@ -4128,7 +4155,13 @@
       }
       for (var k = 0; k < children.length; k++) {
         var el = children[k], tag = lowerTag(el);
-        if (SKIP_TAGS[tag] || tag.indexOf("colorthemes:") === 0) continue;
+        /* v10.12 (P1 D): thẻ <ColorThemes:...> trong XML gốc — qua cleanXml
+           thì tag lột thành trần (vd "list") + data-xui="colorthemes:list",
+           nên phải kiểm tra cả data-xui, nếu không nhánh <list> sẽ vẽ nhầm
+           một danh sách trống lên trên khung. */
+        var _xuiAttr = "";
+        try { _xuiAttr = el.getAttribute("data-xui") || ""; } catch (e) { _xuiAttr = ""; }
+        if (SKIP_TAGS[tag] || tag.indexOf("colorthemes:") === 0 || _xuiAttr.toLowerCase().indexOf("colorthemes:") === 0) continue;
         if (!isActiveVersion(el)) continue;
         var id = el.getAttribute("id") || "";
         if (localHidden.has(id.toLowerCase())) continue;
@@ -4576,11 +4609,241 @@
       if (rightId) { var rs = await spriteDiv(rightId, rightW, h, {}); if (rs) { rs.style.left = (leftW + midW) + "px"; rs.style.top = "0px"; setAbs(rs, div, leftW + midW, 0); div.appendChild(rs); } }
     }
 
+    /* v10.12 (P1 D) — phần tử <group> tổng hợp để vẽ lại 1 groupdef qua
+       renderGroupInstance (dùng cho TitleBox/XUI: groupdef đích không có
+       phần tử <group> thật trong XML). Sao chép w/h/relat từ phần tử gốc
+       khi có; không có thì lấy cỡ từ groupdef. */
+    function synthGroupEl(gid, srcEl) {
+      var g = document.createElement("group");
+      g.setAttribute("id", gid);
+      if (srcEl) {
+        var w0 = srcEl.getAttribute("w"), h0 = srcEl.getAttribute("h");
+        if (w0 !== null) g.setAttribute("w", w0);
+        if (h0 !== null) g.setAttribute("h", h0);
+        var rw = srcEl.getAttribute("relatw"), rh = srcEl.getAttribute("relath");
+        if (rw !== null) g.setAttribute("relatw", rw);
+        if (rh !== null) g.setAttribute("relath", rh);
+      }
+      return g;
+    }
+    /* Rộng nội dung thật của 1 groupdef: mép phải lớn nhất của các <layer>
+       con (x + rộng bitmap). Dùng khi groupdef có w="0" (vd nhóm trái của
+       TitleBox) mà vẫn cần biết nó rộng bao nhiêu để đặt nhóm giữa. */
+    async function groupContentWidth(gid) {
+      var kids = RES.groupdefs[gid] || [], mw = 0;
+      for (var i = 0; i < kids.length; i++) {
+        if (lowerTag(kids[i]) !== "layer") continue;
+        var info = await bitmapInfoCached(kids[i].getAttribute("image"));
+        if (!info) continue;
+        var lx = intAttr(kids[i], "x", 0);
+        var lw = kids[i].getAttribute("w") !== null ? intAttr(kids[i], "w", 0) : (info.w || 0);
+        if (lx + lw > mw) mw = lx + lw;
+      }
+      return mw;
+    }
+    /* v10.12 (P1 D) — <Wasabi:TitleBox>: khung tiêu đề 3 mảnh
+       (wasabi.titlebox.left/center/right.group) + chữ tiêu đề
+       (:componentname = thuộc tính title của phần tử) + nhóm nội dung
+       (content) bên dưới. Dải tiêu đề cao bằng nhóm center (XML); nhóm
+       left rộng theo nội dung thật, center rộng theo chữ tiêu đề,
+       right giãn hết phần còn lại. Nội dung: có wasabi.titlebox.main.group
+       thì vẽ khung hộp của nó + đặt nhóm nội dung đúng vị trí CustomObject
+       titlebox.content; không có thì vẽ thẳng nhóm nội dung dưới dải tiêu đề. */
+    async function renderTitleBox(el, parentEl, parentW, parentH, x, y, ctx, depth) {
+      var w = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : parentW;
+      var h = el.getAttribute("h") !== null ? relSize(el, "h", parentH) : parentH;
+      if (w <= 0 || h <= 0) return;
+      var title = el.getAttribute("title") || "";
+      var contentId = el.getAttribute("content") || "";
+      var div = document.createElement("div");
+      div.style.position = "absolute"; div.style.left = x + "px"; div.style.top = y + "px";
+      div.style.width = w + "px"; div.style.height = h + "px";
+      div.style.pointerEvents = "none";
+      setAbs(div, parentEl, x, y);
+      div.dataset.titlebox = "1";
+      parentEl.appendChild(div);
+      var tctx = {};
+      for (var k in ctx) tctx[k] = ctx[k];
+      tctx.titleText = title || ctx.titleText || "";
+      /* Dải tiêu đề vẽ bằng stripCtx: 7 text titlebox.text (6 bóng + 1
+         chính) không có display/default — chữ của chúng là title của
+         TitleBox, script titlebox.maki điền lúc chạy (xem xuiLabelText). */
+      var stripCtx = {};
+      for (var k2 in tctx) stripCtx[k2] = tctx[k2];
+      stripCtx.xuiLabelText = title;
+      var stripH = 13;
+      var centerGd = RES.groupdefEls["wasabi.titlebox.center.group"];
+      if (centerGd) stripH = intAttr(centerGd, "h", 0) || stripH;
+      var leftW = 0;
+      var leftGd = RES.groupdefEls["wasabi.titlebox.left.group"];
+      if (leftGd) leftW = intAttr(leftGd, "w", 0) || 0;
+      if (!leftW && RES.groupdefs["wasabi.titlebox.left.group"]) leftW = await groupContentWidth("wasabi.titlebox.left.group");
+      var centerW = 0;
+      var ck = RES.groupdefs["wasabi.titlebox.center.group"] || [];
+      for (var cki = 0; cki < ck.length; cki++) {
+        if (lowerTag(ck[cki]) !== "text") continue;
+        var cfont = RES.fonts[ck[cki].getAttribute("font") || ""];
+        var adv = (cfont && (cfont.charwidth + cfont.hspacing) > 0) ? (cfont.charwidth + cfont.hspacing) : 7;
+        centerW = Math.max(centerW, title.length * adv + 16);
+      }
+      if (!centerW || centerW <= 0) centerW = Math.max(20, title.length * 7 + 16);
+      var rightW = Math.max(0, w - leftW - centerW);
+      if (RES.groupdefs["wasabi.titlebox.left.group"]) {
+        await renderGroupInstance(synthGroupEl("wasabi.titlebox.left.group", null), div, w, stripH, 0, 0, stripCtx, depth + 1);
+      }
+      if (RES.groupdefs["wasabi.titlebox.center.group"]) {
+        await renderGroupInstance(synthGroupEl("wasabi.titlebox.center.group", null), div, w, stripH, leftW, 0, stripCtx, depth + 1);
+      }
+      if (RES.groupdefs["wasabi.titlebox.right.group"]) {
+        await renderGroupInstance(synthGroupEl("wasabi.titlebox.right.group", null), div, w, stripH, leftW + centerW, 0, stripCtx, depth + 1);
+      }
+      if (!contentId || !RES.groupdefs[contentId]) return;
+      var bodyH = Math.max(0, h - stripH);
+      if (bodyH <= 0) return;
+      var mainGd = RES.groupdefs["wasabi.titlebox.main.group"];
+      if (mainGd) {
+        var frameKids = RES.groupdefs["wasabi.titlebox"] || [];
+        if (frameKids.length) await renderChildren(frameKids, div, w, h, tctx, depth + 1);
+        var co = null;
+        for (var ci = 0; ci < mainGd.length; ci++) {
+          if (lowerTag(mainGd[ci]) === "customobject" && (mainGd[ci].getAttribute("id") || "") === "titlebox.content") { co = mainGd[ci]; break; }
+        }
+        if (co) {
+          var cx = relPos(co, "x", w), cy = relPos(co, "y", h);
+          await renderGroupInstance(synthGroupEl(contentId, null), div, w, h, cx, cy, tctx, depth + 1);
+        } else {
+          await renderGroupInstance(synthGroupEl(contentId, null), div, w, h, 0, stripH, tctx, depth + 1);
+        }
+        var rest = mainGd.filter(function (e) { return lowerTag(e) !== "customobject"; });
+        if (rest.length) await renderChildren(rest, div, w, h, tctx, depth + 1);
+      } else {
+        await renderGroupInstance(synthGroupEl(contentId, null), div, w, bodyH, 0, stripH, tctx, depth + 1);
+      }
+    }
+    /* v10.12 (P1 D) — <list>: danh sách cơ bản. Trong cửa sổ playlist thì
+       hiện các mục playlist hiện tại (số + tên); nơi khác thì khung trống
+       có ghi chú (dữ liệu của list do MAKI/script của skin quyết định,
+       Amp không bịa). */
+    function renderList(el, parentEl, parentW, parentH, x, y, ctx) {
+      var w = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : parentW;
+      var h = el.getAttribute("h") !== null ? relSize(el, "h", parentH) : parentH;
+      if (w <= 0 || h <= 0) return;
+      var div = document.createElement("div");
+      div.style.position = "absolute"; div.style.left = x + "px"; div.style.top = y + "px";
+      div.style.width = w + "px"; div.style.height = h + "px";
+      div.style.overflowY = "auto"; div.style.overflowX = "hidden";
+      div.style.background = colorOf("wasabi.list.background");
+      div.style.color = colorOf("wasabi.list.text");
+      div.style.font = "11px Arial, sans-serif";
+      div.style.pointerEvents = "auto";
+      setAbs(div, parentEl, x, y);
+      div.dataset.list = "1";
+      parentEl.appendChild(div);
+      if (ctx && ctx.windowKind === "playlist") {
+        var rows = [];
+        try { rows = playlistFiltered(); } catch (e) { rows = []; }
+        for (var i = 0; i < rows.length; i++) {
+          var row = document.createElement("div");
+          row.style.whiteSpace = "nowrap"; row.style.overflow = "hidden";
+          row.style.textOverflow = "ellipsis"; row.style.lineHeight = "13px";
+          row.style.padding = "0 3px";
+          row.textContent = (rows[i].idx + 1) + ". " + (rows[i].item ? rows[i].item.name : "");
+          div.appendChild(row);
+        }
+        if (!rows.length) {
+          var em = document.createElement("div");
+          em.style.padding = "3px"; em.textContent = "(danh sách trống)";
+          div.appendChild(em);
+        }
+      } else {
+        var note = document.createElement("div");
+        note.style.padding = "3px"; note.style.color = "#999";
+        note.textContent = "List — nội dung do MAKI/script của skin quyết định, Amp chưa vẽ được.";
+        div.appendChild(note);
+      }
+    }
+    /* v10.12 (P1 D): XUI mà ruột do MAKI/plugin quyết định (NowPlaying,
+       PlaylistPro, MyCheckbox, Browser) — vẽ khung trống có ghi chú, không
+       bịa nội dung. */
+    function renderXuiPlaceholder(el, tag, parentEl, parentW, parentH, x, y, ctx) {
+      var w = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : parentW;
+      var h = el.getAttribute("h") !== null ? relSize(el, "h", parentH) : parentH;
+      if (w <= 0 || h <= 0) return;
+      var div = document.createElement("div");
+      div.style.position = "absolute"; div.style.left = x + "px"; div.style.top = y + "px";
+      div.style.width = w + "px"; div.style.height = h + "px";
+      div.style.border = "1px dashed #888";
+      div.style.background = "rgba(255,255,255,0.04)";
+      div.style.color = "#bbb";
+      div.style.font = "10px Arial, sans-serif";
+      div.style.padding = "4px";
+      div.style.overflow = "hidden";
+      div.style.pointerEvents = "none";
+      setAbs(div, parentEl, x, y);
+      div.dataset.xuiPlaceholder = tag;
+      div.textContent = tag + " — nội dung do MAKI/plugin quyết định, Amp chưa vẽ được.";
+      parentEl.appendChild(div);
+    }
+    /* v10.12 (P1 D): <Wasabi:TitleBar> mà skin không định nghĩa groupdef
+       wasabi.titlebar — vẽ chữ tiêu đề tối thiểu đúng vị trí/kích thước
+       XML (nút min/max/close nằm ở nhóm button.bar riêng của skin, không
+       vẽ ở đây). */
+    function renderBuiltInTitlebar(el, parentEl, parentW, parentH, x, y, ctx) {
+      var w = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : parentW;
+      var h = el.getAttribute("h") !== null ? relSize(el, "h", parentH) : parentH;
+      if (w <= 0 || h <= 0) return;
+      var div = document.createElement("div");
+      div.style.position = "absolute"; div.style.left = x + "px"; div.style.top = y + "px";
+      div.style.width = w + "px"; div.style.height = h + "px";
+      div.style.overflow = "hidden";
+      div.style.pointerEvents = "none";
+      setAbs(div, parentEl, x, y);
+      div.dataset.titlebarFallback = "1";
+      div.textContent = (ctx.titleText || "WINAMP").toUpperCase();
+      div.style.font = "bold 11px Arial, sans-serif";
+      div.style.color = (RES.colors && RES.colors["titlebar.text.color"]) ? colorOf("titlebar.text.color") : "#fff";
+      div.style.lineHeight = (h + 2) + "px";
+      parentEl.appendChild(div);
+    }
+    /* v10.12 (P1 D): <SysCmds> — nút min/close của khung cửa sổ, lấy bitmap
+       wasabi.button.* của skin đang nạp (không bịa nút khi skin không có
+       bitmap). Nối qua renderButton nên MINIMIZE/CLOSE chạy đúng đường
+       nút thường; MAXIMIZE trên web không có cửa sổ hệ thống nên không vẽ. */
+    async function renderSysCmds(el, parentEl, parentW, parentH, x, y, ctx) {
+      var defs = [
+        { bid: "wasabi.button.minimize", action: "MINIMIZE", id: "syscmd.minimize" },
+        { bid: "wasabi.button.exit", action: "CLOSE", id: "syscmd.close" }
+      ];
+      var btns = [];
+      for (var i = 0; i < defs.length; i++) {
+        var info = await bitmapInfoCached(defs[i].bid);
+        if (info && info.file && info.w > 0) btns.push({ def: defs[i], w: info.w });
+      }
+      if (!btns.length) return;
+      var totalW = 0;
+      for (var j = 0; j < btns.length; j++) totalW += btns[j].w;
+      var cx = Math.max(0, parentW - totalW);
+      for (var k = 0; k < btns.length; k++) {
+        var b = document.createElement("button");
+        b.setAttribute("id", btns[k].def.id);
+        b.setAttribute("action", btns[k].def.action);
+        b.setAttribute("image", btns[k].def.bid);
+        await renderButton(b, "button", parentEl, parentW, parentH, cx, 0, ctx);
+        cx += btns[k].w;
+      }
+    }
+
     async function renderNode(el, tag, parentEl, parentW, parentH, x, y, ctx, depth) {
+      /* v10.12 (P1 D): thẻ XUI giữ nguyên tên có ":" khi XML đọc thẳng
+         (vd wasabi:standardframe:status) — tách phần cuối làm tên nhánh,
+         giữ tên đầy đủ để tra xuiMap. */
+      var fullTag = tag;
+      if (tag.indexOf(":") >= 0) tag = tag.slice(tag.lastIndexOf(":") + 1);
       var id = el.getAttribute("id") || "";
       if (tag === "group") { await renderGroupInstance(el, parentEl, parentW, parentH, x, y, ctx, depth); return; }
       if (tag === "grid") { await renderGrid(el, parentEl, parentW, parentH, x, y, ctx); return; }
       var xui = xuiGroupFor(tag, el);
+      if (!xui) xui = xuiMapForEl(el, fullTag);
       if (xui && RES.groupdefs[xui]) {
         var gs = groupSize(xui, parentW, parentH);
         var w = el.getAttribute("w") !== null ? relSize(el, "w", parentW) : gs[0];
@@ -4658,6 +4921,16 @@
           await renderChildren(RES.groupdefs[content], cdiv, cW, Math.max(0, cH), ctx, depth + 1);
         }
         await renderChildren(RES.groupdefs[xui], div, w || parentW, h || parentH, frameCtx, depth + 1);
+        return;
+      }
+      /* v10.12 (P1 D): các XUI chuyên biệt — chỉ tới đây khi nhánh frame
+         trên không bắt được (groupdef đích thiếu hoặc tag không phải frame). */
+      if (tag === "titlebar") { renderBuiltInTitlebar(el, parentEl, parentW, parentH, x, y, ctx); return; }
+      if (tag === "titlebox") { await renderTitleBox(el, parentEl, parentW, parentH, x, y, ctx, depth); return; }
+      if (tag === "list") { renderList(el, parentEl, parentW, parentH, x, y, ctx); return; }
+      if (tag === "syscmds") { await renderSysCmds(el, parentEl, parentW, parentH, x, y, ctx); return; }
+      if (tag === "nowplaying" || tag === "playlistpro" || tag === "mycheckbox" || tag === "browser") {
+        renderXuiPlaceholder(el, tag, parentEl, parentW, parentH, x, y, ctx);
         return;
       }
       if (tag === "layer" || tag === "animatedlayer") {
@@ -4843,6 +5116,23 @@
            khác là danh sách playlist như cũ (Pledit). */
         if (ctx.windowKind === "medialibrary") renderMlContent(el, parentEl, parentW, parentH, x, y);
         else renderPlaylistList(el, parentEl, parentW, parentH, x, y);
+        return;
+      }
+      /* v10.12 (P1 D): tag lạ còn lại mà xuiMap biết (vd copcheckbox,
+         copradiobut, copdropdownlist, editbox2, ratings) thì vẽ groupdef
+         tương ứng; không biết thì bỏ qua im lặng như trước (tag quen đã
+         return ở các nhánh trên, nên chỗ này không cướp được tag nào). */
+      var gx = xuiMapForTag(tag);
+      if (gx) {
+        /* Nhãn của phần tử XUI (labeltext/text/title) chép vào ctx để các
+           text do script điền trong groupdef hiện đúng nhãn — vd
+           <copcheckbox labeltext="Always On Top"> thay cho default
+           "ERROR" của script checkbox.maki. */
+        var xctx = {};
+        for (var xk in ctx) xctx[xk] = ctx[xk];
+        var xlab = el.getAttribute("labeltext") || el.getAttribute("text") || el.getAttribute("title") || "";
+        if (xlab) xctx.xuiLabelText = xlab;
+        await renderGroupInstance(synthGroupEl(gx, el), parentEl, parentW, parentH, x, y, xctx, depth);
         return;
       }
     }
@@ -6326,7 +6616,7 @@
       box.style.padding = "6px 8px"; box.style.zIndex = "10"; box.style.pointerEvents = "auto";
       box.style.font = "11px Arial, sans-serif"; box.style.color = "#000";
       box.style.maxWidth = "260px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.5";
-      box.textContent = "Amp v10.8 — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
+      box.textContent = "Amp v" + RENDERER_VERSION + " — Phím tắt: Space phát/tạm dừng · ← → tua ±5 giây · ↑ ↓ âm lượng · N hoặc ] bài sau · P hoặc [ bài trước · M tắt/bật tiếng · L lặp lại · S phát ngẫu nhiên · X phát · C tạm dừng · V dừng. Nút tai nghe / màn hình khóa điều khiển qua Media Session. Nhấp đúp kênh để phát. Bấm vào đây để đóng.";
       box.onclick = function () { closePlaylistMenus(); };
       T.appendChild(box);
       placePopupInStage(box, anchorDiv, 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
@@ -6864,12 +7154,21 @@
       box.style.maxWidth = "300px"; box.style.whiteSpace = "normal"; box.style.lineHeight = "1.6";
       var si = skinInfo || {};
       var lines = [
-        "Amp v10.8 — Winamp Modern",
-        "Phiên bản Amp: 10.8 (renderer v" + RENDERER_VERSION + ")",
+        "Amp v" + RENDERER_VERSION + " — Winamp Modern",
+        "Phiên bản Amp: " + RENDERER_VERSION + " (renderer v" + RENDERER_VERSION + ")",
         "Skin: " + (si.name || "Winamp Modern") + (si.version ? " v" + si.version : ""),
         "Tác giả skin: " + (si.author || "(không rõ)"),
         "Mô phỏng Winamp 5.66 Modern trên web — dựng từ XML của skin đang nạp."
       ];
+      /* v10.12 (P1 F): liệt kê file thiếu trong .wal (tối đa 8) — để người
+         dùng biết lỗi hiển thị (thiếu ảnh/nút) là do file .wal thiếu, không
+         phải lỗi Amp. */
+      var missing = (RES.report && RES.report.missing) || [];
+      if (missing.length) {
+        lines.push("File thiếu trong .wal (" + missing.length + "):");
+        for (var mi = 0; mi < Math.min(8, missing.length); mi++) lines.push("  - " + missing[mi]);
+        if (missing.length > 8) lines.push("  … và " + (missing.length - 8) + " file nữa.");
+      }
       for (var i = 0; i < lines.length; i++) {
         var row = document.createElement("div");
         if (i === 0) row.style.fontWeight = "bold";
@@ -6900,6 +7199,15 @@
       var fontId = el.getAttribute("font") || "";
       var display = el.getAttribute("display") || "";
       var def = el.getAttribute("default") || "";
+      /* v10.12 (P0 C): display/id so không phân biệt hoa/thường (Winamp
+         không phân biệt — CROSSNET viết TIME/SONGNAME, Act3 SONGNAME,
+         EMP SONGINFO). ":componentname" = tên cửa sổ/thành phần đang vẽ
+         (tiêu đề TitleBox, tên cửa sổ chính) — đổi ngay từ đầu để cả 2
+         đường font (bitmap/Arial) đều nhận đúng chữ. */
+      var disp = (display || "").toLowerCase();
+      var lowId = (el.getAttribute("id") || "").toLowerCase();
+      var valign = el.getAttribute("valign") || "";
+      if (def === ":componentname") def = ctx.titleText || "";
       var color = el.getAttribute("color") || "255,255,255";
       var align = el.getAttribute("align") || "left";
       var div = document.createElement("div");
@@ -6935,7 +7243,7 @@
       /* Đợt D — VID_Info: KHÔNG được rơi xuống nhánh Arial chung (ở đó
          txt = display = "VID_Info" sẽ hiện nguyên chữ "VID_Info" lên
          thanh nút). Hiện avsState.videoInfo ("WxH" hoặc rỗng). */
-      if (display === "VID_Info") {
+      if (disp === "vid_info") {
         var vdiv = await makeBitmapText(fontId, avsState.videoInfo || "", w, align, color, valign, h);
         div.appendChild(vdiv);
         vidInfoEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color, valign: valign, boxH: h });
@@ -6943,9 +7251,13 @@
         return;
       }
       var font = RES.fonts[fontId];
-      if (font && font.tag === "bitmapfont") {
-        var valign = el.getAttribute("valign") || "";
-        if (display === "time" || id === "timer") {
+      /* v10.12 (P0 C): các nhánh hiển thị động chạy cho MỌI loại font —
+         trước đây cả khối chỉ chạy khi font là bitmapfont nên skin dùng
+         truetypefont (CROSSNET TIME/SONGNAME, WMP12 songtitle, DreddfulAmp
+         songbitrate...) hiện nguyên chữ display lên màn hình. makeBitmapText
+         tự về chữ Arial khi font không phải bitmapfont nên dùng chung được. */
+      {
+        if (disp === "time" || lowId === "timer") {
           var tdiv = await makeBitmapText(fontId, timerDisplayText(), w, align, color, valign, h);
           div.appendChild(tdiv);
           timerEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color });
@@ -6960,7 +7272,7 @@
           inheritAbs(div);
           return;
         }
-        if (display === "songname" || tag === "songticker") {
+        if (disp === "songname" || tag === "songticker") {
           /* v10.4 — BO WRAPPER .inner (nguyen nhan goc ticker trang):
              .txt nam trong <div class="inner"> (inline-block rong) thi
              tren trinh duyet that vi tri tinh cua .txt (absolute khong
@@ -6997,7 +7309,7 @@
           inheritAbs(div);
           return;
         }
-        if (display === "PE_Info" || id === "PLTime") {
+        if (disp === "pe_info" || lowId === "pltime") {
           /* PLTime = TỔNG thời gian các mục có thời lượng (việc 3 đợt A:
              chuyển sang thời gian ĐÃ CHỌN khi có lựa chọn — xem
              playlistClockText); kênh radio không có thời lượng nên không
@@ -7009,32 +7321,41 @@
           return;
         }
         /* CFDisplay (đợt B): màn hình số giây crossfade, font pe.time. */
-        if (id === "CFDisplay") {
+        if (lowId === "cfdisplay") {
           var cfdiv = await makeBitmapText(fontId, String(drawerState.crossfadeSecs), w, align, color, valign, h);
           div.appendChild(cfdiv);
           cfDisplayEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color });
           inheritAbs(div);
           return;
         }
-        /* Đợt B (9.9): Bitrate/Frequency — số đo thật khi có (songInfoText),
-           không thì số demo "128"/"44" (ghi rõ demo trong README +
-           getSongInfoState). Đăng ký vào infoEls để updateInfoEls vẽ lại
-           khi có số mới (đổi bài, metadata về, EQ bật). */
-        var songText = (id === "Bitrate" || id === "Frequency") ? songInfoText(id) : undefined;
-        var tdiv2 = await makeBitmapText(fontId, songText !== undefined ? songText : def, w, align, color, valign, h);
-        div.appendChild(tdiv2);
-        if (id === "Bitrate" || id === "Frequency") {
-          infoEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color, valign: valign, boxH: h, kind: id.toLowerCase() });
+        /* v10.12 (P0 C): hiển thị thông tin bài (songtitle/artist/album/
+           length/bitrate/samplerate/info/systemclock) — map trong
+           trackDisplayText, id Bitrate/Frequency so không phân biệt
+           hoa/thường (DreddfulAmp viết thường bitrate/sample). Đăng ký
+           vào infoEls để updateInfoEls vẽ lại khi đổi bài/metadata về. */
+        var mapped = trackDisplayText(disp, lowId);
+        if (mapped) {
+          var tdiv2 = await makeBitmapText(fontId, mapped.text, w, align, color, valign, h);
+          div.appendChild(tdiv2);
+          infoEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color, valign: valign, boxH: h, kind: mapped.kind });
+          inheritAbs(div);
+          return;
         }
+        /* Nhãn tĩnh: chữ default (":componentname" đã đổi thành tên cửa sổ
+           ở đầu hàm). Text do script điền (không display, default rỗng
+           hoặc "ERROR" — chỗ giữ của script) thì lấy nhãn của phần tử XUI
+           chứa nó (ctx.xuiLabelText: labeltext/title của <copcheckbox> /
+           <Wasabi:TitleBox> — đúng việc script .maki của skin làm lúc
+           chạy). Display lạ (componentbucket...) thì KHÔNG hiện tên
+           display — chỉ hiện default, trống nếu không có default. */
+        var labelText = def;
+        if (!disp && (!labelText || labelText === "ERROR") && ctx.xuiLabelText) labelText = ctx.xuiLabelText;
+        var tdiv3 = await makeBitmapText(fontId, labelText, w, align, color, valign, h);
+        div.appendChild(tdiv3);
+        if (el.getAttribute("shadow") === "1") div.style.textShadow = "1px 1px #000";
         inheritAbs(div);
         return;
       }
-      var txt = display || def;
-      if (txt === ":componentname") txt = ctx.titleText || "";
-      div.textContent = txt;
-      div.style.font = "bold 11px Arial, sans-serif";
-      div.style.color = colorOf(color);
-      if (el.getAttribute("shadow") === "1") div.style.textShadow = "1px 1px #000";
     }
     async function setTickerText(rec) {
       /* Đợt v10.1 (Classic): rec Classic không có fontId/holder — chữ
@@ -7182,6 +7503,38 @@
       if (id === "Bitrate") return v.kbps !== null ? v.kbps : "128";
       return "";
     }
+    /* v10.12 (P0 C): thông tin mục đang chọn cho map display. Tên bài lấy
+       theo metadataDisplayName (tag title nếu có, không thì tên file/kênh);
+       nghệ sĩ/album lấy thô từ mục (trống khi chưa biết — Winamp cũng để
+       trống, không bịa "Không rõ" ở đây); thời lượng "" khi là đài live. */
+    function currentTrackItem() { return playlistState.items[playlistState.current] || null; }
+    function currentTrackName() { var it = currentTrackItem(); return it ? metadataDisplayName(it) : ""; }
+    function currentTrackArtist() { var it = currentTrackItem(); return it ? ((it.artist || "").replace(/^\s+|\s+$/g, "")) : ""; }
+    function currentTrackAlbum() { var it = currentTrackItem(); return it ? ((it.album || "").replace(/^\s+|\s+$/g, "")) : ""; }
+    function currentTrackLengthText() { var it = currentTrackItem(); return (it && it.len != null) ? fmtTime(it.len) : ""; }
+    function songInfoLineText() {
+      var v = songInfoValues();
+      return (v.kbps !== null ? v.kbps : "128") + " kbps " + (v.khz !== null ? v.khz : "44") + " kHz";
+    }
+    function systemClockText() {
+      var d = new Date();
+      return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+    /* v10.12 (P0 C): map display -> {text, kind} cho các hiển thị thông
+       tin bài hát của Winamp. kind để updateInfoEls vẽ lại khi đổi bài /
+       metadata về. Trả null khi display không thuộc map (vd ERROR,
+       componentbucket — rơi về chữ default). */
+    function trackDisplayText(disp, lowId) {
+      if (disp === "songbitrate" || lowId === "bitrate") return { text: songInfoText("Bitrate"), kind: "bitrate" };
+      if (disp === "songsamplerate" || lowId === "frequency") return { text: songInfoText("Frequency"), kind: "frequency" };
+      if (disp === "songinfo") return { text: songInfoLineText(), kind: "songinfo" };
+      if (disp === "songtitle") return { text: currentTrackName(), kind: "songtitle" };
+      if (disp === "songartist") return { text: currentTrackArtist(), kind: "songartist" };
+      if (disp === "songalbum") return { text: currentTrackAlbum(), kind: "songalbum" };
+      if (disp === "songlength") return { text: currentTrackLengthText(), kind: "songlength" };
+      if (disp === "systemclock") return { text: systemClockText(), kind: "systemclock" };
+      return null;
+    }
     function getSongInfoState() {
       var v = songInfoValues();
       return { khz: v.khz !== null ? v.khz : "44", khzDemo: v.khzDemo, kbps: v.kbps !== null ? v.kbps : "128", kbpsDemo: v.kbpsDemo };
@@ -7195,12 +7548,22 @@
       var mySeq = ++infoElsSeq;
       for (var i = 0; i < infoEls.length; i++) {
         var rec = infoEls[i];
-        if (rec.kind !== "pltime" && rec.kind !== "bitrate" && rec.kind !== "frequency") continue;
+        /* v10.12 (P0 C): thêm các kind của map display (songtitle/artist/
+           album/length/info/systemclock) — vẽ lại cùng đường với
+           pltime/bitrate/frequency khi đổi bài/metadata về. */
+        if (["pltime", "bitrate", "frequency", "songinfo", "songtitle", "songartist", "songalbum", "songlength", "systemclock"].indexOf(rec.kind) < 0) continue;
         try {
           /* Đợt B (9.9): bitrate/frequency vẽ lại khi có số mới (đổi bài,
              metadata về, EQ bật làm graph xuất hiện). */
           var txt = rec.kind === "pltime" ? playlistClockText()
-            : songInfoText(rec.kind === "bitrate" ? "Bitrate" : "Frequency");
+            : rec.kind === "bitrate" ? songInfoText("Bitrate")
+            : rec.kind === "frequency" ? songInfoText("Frequency")
+            : rec.kind === "songinfo" ? songInfoLineText()
+            : rec.kind === "songtitle" ? currentTrackName()
+            : rec.kind === "songartist" ? currentTrackArtist()
+            : rec.kind === "songalbum" ? currentTrackAlbum()
+            : rec.kind === "songlength" ? currentTrackLengthText()
+            : systemClockText();
           var tdiv = await makeBitmapText(rec.fontId, txt, rec.boxW, rec.align, rec.color, rec.valign, rec.boxH);
           if (mySeq !== infoElsSeq) return;
           rec.div.innerHTML = "";
@@ -10119,7 +10482,13 @@
           return ch;
         }
         lastStage = live;
-        var unsup = new Error("Không tìm được layout '" + layoutId + "' của '" + container + "'. Skin này không có cửa sổ chính dùng được — đã thử layout khác trong cùng container và container khác (không vẽ layout lạ).");
+        /* v10.12 (P2 G): skin ClassicPro (cPro) — giao diện nằm trong engine
+           ClassicPro ngoài file .wal nên không có layout nào trong skin;
+           ghi rõ lý do vào lỗi (index.html giữ skin cũ như trước). */
+        var unsupMsg = (RES.report && RES.report.classicPro)
+          ? "Skin này dùng ClassicPro — giao diện nằm trong engine ClassicPro (Plugins/classicPro/engine) ngoài file .wal, Amp không vẽ được (cần engine ClassicPro)."
+          : "Không tìm được layout '" + layoutId + "' của '" + container + "'. Skin này không có cửa sổ chính dùng được — đã thử layout khác trong cùng container và container khác (không vẽ layout lạ).";
+        var unsup = new Error(unsupMsg);
         unsup.code = "SKIN_UNSUPPORTED";
         throw unsup;
       }
@@ -10153,6 +10522,42 @@
       if (typeof T._absX !== "number") T._absX = 0;
       if (typeof T._absY !== "number") T._absY = 0;
       lastLayout = lay; lastTitle = titleText || "";
+      /* v10.12 (P0 A) — nền của layout: thuộc tính background (ưu tiên) /
+         alphabackground của <layout>, là id bitmap hoặc đường dẫn file
+         trực tiếp (WMP12 player/background.png, CROSSNET player.noalpha,
+         EMP main.bg.shadow). Vẽ làm lớp ĐÁY của stage, đúng cỡ ảnh thật
+         (khi ảnh nhỏ hơn layout thì neo góc trái-trên như Winamp, không
+         kéo giãn); skin 566 không dùng thuộc tính này nên không đổi gì.
+         Phải vẽ TRƯỚC renderChildren để mọi phần tử đè lên trên. */
+      var layBgRef = lay.background || lay.alphabackground || null;
+      if (layBgRef) {
+        try {
+          var layBgInfo = await bitmapInfoCached(layBgRef);
+          if (layBgInfo && layBgInfo.file) {
+            /* Cỡ thật của ảnh (khi đo được); không đo được thì bằng layout. */
+            var layBgW = (layBgInfo.w > 0 ? layBgInfo.w : LW);
+            var layBgH = (layBgInfo.h > 0 ? layBgInfo.h : LH);
+            var layBgSpr = await spriteDiv(layBgRef, layBgW, layBgH, {});
+            if (layBgSpr) {
+              layBgSpr.style.left = "0px"; layBgSpr.style.top = "0px";
+              layBgSpr.setAttribute("data-layout-bg", "1");
+              /* Nền layout là 1 ảnh duy nhất, không lặp (lặp là việc của
+                 <layer tile="1">). Ảnh lớn hơn layout (vd nền shade 566 là
+                 texture 222×333 trong cửa sổ 354×25) thì cắt ở mép layout
+                 như Winamp — neo góc trái-trên, phần thừa ẩn, không kéo
+                 giãn (kéo giãn thì texture shade bị bẹp). */
+              layBgSpr.style.backgroundRepeat = "no-repeat";
+              if (layBgW > LW || layBgH > LH) {
+                layBgSpr.style.width = LW + "px";
+                layBgSpr.style.height = LH + "px";
+                layBgSpr.style.overflow = "hidden";
+              }
+              setAbs(layBgSpr, T, 0, 0);
+              T.appendChild(layBgSpr);
+            }
+          }
+        } catch (e) { /* nền lỗi thì vẽ tiếp không có nền */ }
+      }
       var ctx = { overrides: new Map(), hiddenIds: new Set(), drawerTab: drawerTab, titleText: titleText || "", frameHidden: new Set(), avsH: lay.snapadjustbottom || VIDEO_SHIFT, windowKind: container === "Pledit" ? "playlist" : container === "MLibrary" ? "medialibrary" : "player",
         /* Đợt C — chống vẽ trùng: _seenGroups ghi (gid, vị trí tuyệt đối,
            cỡ) của mọi <group> đã vẽ trong lần render này (chia sẻ qua
@@ -10173,6 +10578,17 @@
       if (drawerOpenOpt === undefined && opts.drawer) drawerOpenOpt = true;
       if (drawerOpenOpt !== undefined) ctx.overrides.set("player.normal.drawer", true);
       if (drawerOpenOpt) ctx.overrides.set("player.normal.drawer.shadow", true);
+      /* v10.12 (P1 D): opts.showGroups — ép hiện các nhóm mà XML để
+         visible="0" vì MAKI của skin sẽ hiện khi người dùng chọn tab (vd
+         các nhóm config.group.N của Copperdeck trong ConfigMain: tab
+         "General Settings" chỉ hiện khi chọn, Winamp thật cũng vậy).
+         Cơ chế chung như ngăn kéo (dòng drawer.content): không hardcode
+         tên nhóm nào — gọi bên ngoài quyết định nhóm nào đang chọn. */
+      if (opts && Array.isArray(opts.showGroups)) {
+        for (var sgi = 0; sgi < opts.showGroups.length; sgi++) {
+          if (opts.showGroups[sgi]) ctx.overrides.set(opts.showGroups[sgi], true);
+        }
+      }
       /* Đợt D — vùng AVS nhúng mở khi (a) opts.videoOpen ép mở 1 lần
          (tương thích đợt A–C, KHÔNG ghi vào avsState — test cũ vẫn dùng
          cờ này), hoặc (b) avsState đang mở và chưa tách rời. Skin không

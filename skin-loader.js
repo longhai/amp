@@ -5,8 +5,15 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.11". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.12". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
+   Đợt v10.12: layout thiếu w/h đo từ ảnh nền (background) rồi mới tới
+   bao nội dung rồi 354×280; lưu background/alphabackground của layout;
+   groupdef chuẩn Winamp thiếu thì tự cấp rỗng (wasabi.window.embedded...);
+   ghi file thiếu vào report.missing; phát hiện skin ClassicPro; dựng
+   layout Pledit mặc định khi chỉ có pledit.content.group; cleanXml giữ
+   tên XUI đầy đủ vào data-xui; trim tên file bitmap; crop 0×0 coi như
+   không crop; findPath chấp nhận dấu \ kiểu Windows.
    Chạy được cả trình duyệt (window) lẫn Node (module.exports, dùng với
    jsdom trong test). Không dùng Blob khi đọc file trong zip (tránh lỗi
    khác realm Blob giữa Node JSZip và jsdom); ảnh đo bằng header PNG.
@@ -17,8 +24,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.11";
-  var EXPECTED_LOADER_VERSION = "10.11";
+  var LOADER_VERSION = "10.12";
+  var EXPECTED_LOADER_VERSION = "10.12";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
@@ -55,6 +62,15 @@
     /* Winamp không phân biệt hoa/thường ở tên thuộc tính, DOMParser thì có:
        vài nút ghi Image="..." nên getAttribute("image") không thấy. */
     t = t.replace(/(\s)Image=/g, "$1image=");
+    /* v10.12 (P1 D) — giữ tên XUI đầy đủ: <Wasabi:StandardFrame:Status>
+       lột namespace thành <status> thì renderer nhầm thành chỉ báo
+       trạng thái phát (nhánh <status>) và mất cả khung cửa sổ. Ghi tên
+       đầy đủ (chữ thường) vào thuộc tính data-xui để renderer tra
+       xuiMap; thẻ đóng thì chỉ lột tên. Thẻ không có namespace giữ nguyên. */
+    t = t.replace(/<(\/?)((?:[A-Za-z_][\w.-]*:)+)([A-Za-z_][\w.-]*)/g, function (m, slash, prefixes, name) {
+      if (slash) return "</" + name;
+      return "<" + name + ' data-xui="' + (prefixes + name).toLowerCase() + '"';
+    });
     return t;
   }
   function parseXmlText(text, label, DOMParserImpl) {
@@ -138,7 +154,14 @@
     var JSZipImpl = opts.JSZip || (typeof JSZip !== "undefined" ? JSZip : null);
     if (!JSZipImpl) throw new Error("không có JSZip (cần thư viện giải nén)");
     var DOMParserImpl = opts.DOMParser || null;
-    var report = { missing: [], notes: [] };
+    var report = { missing: [], notes: [], classicPro: false };
+    var missingSeen = {};
+    function pushMissing(s) {
+      if (!s || missingSeen[s]) return;
+      missingSeen[s] = true;
+      report.missing.push(s);
+    }
+    var classicPro = false; /* v10.12 (P2 G): skin ClassicPro — giao diện nằm trong engine ClassicPro ngoài .wal */
     var zip;
     try { zip = await JSZipImpl.loadAsync(file); }
     catch (e) { throw new Error("không mở được file zip (" + (e && e.message ? e.message : e) + ")"); }
@@ -161,7 +184,11 @@
         ? name.slice(rootPrefix.length) : name;
       pathMap.set(key.toLowerCase(), name);
     });
-    function findPath(p) { return pathMap.get(String(p).toLowerCase()) || null; }
+    function findPath(p) {
+      /* v10.12: skin viết đường dẫn kiểu Windows (player\ratings-nostar.png)
+         trong khi tên file trong zip dùng / — chuẩn hóa \ thành / trước khi tra. */
+      return pathMap.get(String(p).replace(/\\/g, "/").toLowerCase()) || null;
+    }
     async function readText(p) {
       var real = findPath(p);
       if (!real) return null;
@@ -337,13 +364,18 @@
       for (var k = 0; k < incs.length; k++) {
         var ref = incs[k].getAttribute("file");
         if (!ref) continue;
+        /* v10.12 (P2 G): skin ClassicPro (cPro) nạp giao diện từ engine
+           ClassicPro ngoài .wal (Plugins/classicPro/engine/load.xml) —
+           ghi nhận để renderer báo rõ thay vì lỗi chung chung. Chỉ nhận
+           diện theo đường dẫn include, không theo tên file skin. */
+        if (/classicpro/i.test(ref)) { classicPro = true; report.classicPro = true; }
         if (ref.indexOf("@") >= 0) { report.notes.push("bỏ qua include có placeholder: " + ref); continue; }
         var p = normPath(dirOf(cur.path), ref);
         includesByFile[curLow].push(p);
         if (seen[p.toLowerCase()]) continue;
         seen[p.toLowerCase()] = true;
         var text = await readText(p);
-        if (text === null) { report.notes.push("include không có trong file: " + p); continue; }
+        if (text === null) { report.notes.push("include không có trong file: " + p); pushMissing("xml: " + p); continue; }
         try {
           var d = parseXmlText(text, p, DOMParserImpl);
           docs.push({ path: p, doc: d });
@@ -359,7 +391,7 @@
       var doc = docs[di].doc, path = docs[di].path;
       var blist = elList(doc, "bitmap");
       for (b = 0; b < blist.length; b++) {
-        var bid = blist[b].getAttribute("id"), bf = blist[b].getAttribute("file");
+        var bid = blist[b].getAttribute("id"), bf = (blist[b].getAttribute("file") || "").replace(/^\s+|\s+$/g, "");
         if (!bid || !bf || bitmaps[bid]) continue;
         var rootRel = normPath("", bf);
         var entry = { file: findPath(rootRel) ? rootRel : (findPath(normPath(dirOf(path), bf)) || rootRel) };
@@ -368,7 +400,13 @@
         var gg = blist[b].getAttribute("gammagroup");
         if (gg) entry.gammagroup = gg;
         if (blist[b].getAttribute("x") !== null) {
-          entry.crop = { x: intAttr(blist[b], "x", 0), y: intAttr(blist[b], "y", 0), w: intAttr(blist[b], "w", 0), h: intAttr(blist[b], "h", 0) };
+          /* v10.12: crop 0×0 (vd CROSSNET equalizer.background chỉ có x/y,
+             không có w/h) là crop vô nghĩa — coi như không crop để
+             spriteDiv không chia cho 0 và imgSize đo được cỡ thật. */
+          var cw0 = intAttr(blist[b], "w", 0), ch0 = intAttr(blist[b], "h", 0);
+          if (cw0 > 0 && ch0 > 0) {
+            entry.crop = { x: intAttr(blist[b], "x", 0), y: intAttr(blist[b], "y", 0), w: cw0, h: ch0 };
+          }
         }
         bitmaps[bid] = entry;
       }
@@ -391,6 +429,19 @@
         if (colId && colV && !colors[colId]) colors[colId] = colV;
       }
     }
+    /* v10.12 (P1 F): kiểm kê ảnh bitmap thiếu trong .wal (không phải lỗi
+       Amp — file .wal thiếu). "$solid" là màu đặc, không phải file nên
+       bỏ qua; nhiều bitmap cùng 1 file thì ghi 1 lần. */
+    (function () {
+      var seenFile = {};
+      var bids = Object.keys(bitmaps);
+      for (var i = 0; i < bids.length; i++) {
+        var bf2 = bitmaps[bids[i]].file;
+        if (!bf2 || bf2.charAt(0) === "$" || seenFile[bf2]) continue;
+        seenFile[bf2] = true;
+        if (!findPath(bf2)) pushMissing("ảnh: " + bf2 + " (bitmap " + bids[i] + ")");
+      }
+    })();
     var groupdefs = {}, groupdefEls = {}, xuiMap = {};
     for (di = 0; di < docs.length; di++) {
       var glist = elList(docs[di].doc, "groupdef");
@@ -484,6 +535,36 @@
       }
       return 0;
     }
+    /* v10.12 (P0 B): bao nội dung của layout — mép phải/dưới lớn nhất của
+       các phần tử con có tọa độ + cỡ tuyệt đối (không relat), kể cả
+       <group> (lấy w/h từ groupdef của nó). Chỉ dùng khi layout thiếu
+       cả w/h XML, default container lẫn ảnh nền — bước cuối trước 354×280. */
+    function contentBoxSize(layEl) {
+      var maxR = 0, maxB = 0;
+      var all = layEl.getElementsByTagName("*");
+      for (var i = 0; i < all.length; i++) {
+        var e = all[i];
+        var xs = e.getAttribute("x"), ys = e.getAttribute("y");
+        if (xs === null || ys === null) continue;
+        if (e.getAttribute("relatx") || e.getAttribute("relaty")) continue;
+        var xi = parseInt(xs, 10), yi = parseInt(ys, 10);
+        if (isNaN(xi) || isNaN(yi)) continue;
+        var wi = 0, hi = 0;
+        if (e.getAttribute("w") !== null && e.getAttribute("h") !== null
+          && !e.getAttribute("relatw") && !e.getAttribute("relath")) {
+          wi = parseInt(e.getAttribute("w"), 10); hi = parseInt(e.getAttribute("h"), 10);
+        } else if (lowerTag(e) === "group") {
+          var gd = groupdefEls[e.getAttribute("id") || ""];
+          if (gd && !e.getAttribute("relatw") && !e.getAttribute("relath")) {
+            wi = intAttr(gd, "w", 0); hi = intAttr(gd, "h", 0);
+          }
+        }
+        if (isNaN(wi) || isNaN(hi) || wi <= 0 || hi <= 0) continue;
+        if (xi + wi > maxR) maxR = xi + wi;
+        if (yi + hi > maxB) maxB = yi + hi;
+      }
+      return (maxR > 0 && maxB > 0) ? { w: maxR, h: maxB } : null;
+    }
     var layouts = {}, layoutList = [], layoutOrder = 0;
     /* Tra layout không phân biệt hoa/thường (Winamp không phân biệt
        hoa/thường ở id; skin ghi Main/Normal thì tra main/normal vẫn
@@ -510,18 +591,32 @@
         var origKey = container + "|" + lid;
         if (!layouts[key]) {
           /* w/h: thuộc tính layout trước; thiếu thì default_w/default_h
-             của container; cuối cùng mới 354×280. Trước đây thiếu w/h là
-             về thẳng 354×280 nên skin 500×200 vẽ sai cỡ (probe S7). */
+             của container; thiếu nữa thì ĐO TỪ ẢNH NỀN (background — v10.12,
+             P0 B) rồi mới tới bao nội dung, cuối cùng mới 354×280. Trước
+             đây thiếu w/h là về thẳng 354×280 nên skin 433×225 (D-Reliction)
+             hay 173×123 (Act3) đều vẽ sai cỡ (probe 11:35). */
           var contInfo = container ? containers[lowerId(container)] : null;
-          var LW = llist[l].getAttribute("w") !== null ? intAttr(llist[l], "w", 354)
+          var hasW = llist[l].getAttribute("w") !== null;
+          var hasH = llist[l].getAttribute("h") !== null;
+          var LW = hasW ? intAttr(llist[l], "w", 354)
             : (contInfo && contInfo.default_w ? contInfo.default_w : 354);
-          var LH = llist[l].getAttribute("h") !== null ? intAttr(llist[l], "h", 280)
+          var LH = hasH ? intAttr(llist[l], "h", 280)
             : (contInfo && contInfo.default_h ? contInfo.default_h : 280);
+          var wFallback = !hasW && !(contInfo && contInfo.default_w);
+          var hFallback = !hasH && !(contInfo && contInfo.default_h);
           var foY = frameOffsetFor(llist[l]);
           var entry = {
             el: llist[l], container: container, layoutId: lid,
             key: key, order: layoutOrder++,
             w: LW, h: LH,
+            /* v10.12 (P0 A): nền của layout — thuộc tính background (dùng
+               khi không có alpha desktop) + alphabackground (khi có alpha).
+               Loader trước đây bỏ qua nên 4 skin (WMP12, EMP, CROSSNET,
+               DreddfulAmp) vẽ cửa sổ đen. Giá trị là id bitmap hoặc đường
+               dẫn file trực tiếp (vd "player/background.png"). */
+            background: llist[l].getAttribute("background") || null,
+            alphabackground: llist[l].getAttribute("alphabackground") || null,
+            wFallback: wFallback, hFallback: hFallback,
             /* Giới hạn co giãn của layout, đọc từ XML (không gán cứng số
                của skin 566). Skin 566: main|normal min 354×280 (= đúng
                w/h → cố định, như Winamp thật: cửa sổ chính không kéo
@@ -551,8 +646,93 @@
           layouts[key] = entry;
           if (origKey !== key) layouts[origKey] = entry;
           layoutList.push(entry);
+          /* v10.12 (P0 B): layout thiếu w/h thì đo từ ảnh nền rồi bao nội
+             dung. Thứ tự: XML → default container → ảnh nền → bao nội
+             dung → 354×280. Đo bằng imgSize (header PNG, chạy cả jsdom). */
+          if (entry.wFallback || entry.hFallback) {
+            var bgSize = null;
+            var bgRef0 = entry.background || entry.alphabackground;
+            if (bgRef0) {
+              var bgFile0 = bitmaps[bgRef0] ? bitmaps[bgRef0].file : (findPath(bgRef0) ? bgRef0 : null);
+              if (bgFile0 && bgFile0.charAt(0) !== "$") {
+                try { bgSize = await imgSize(bgFile0); } catch (e) { bgSize = null; }
+              }
+            }
+            if (entry.wFallback && bgSize && bgSize.w > 0) { entry.w = bgSize.w; entry.wFallback = false; }
+            if (entry.hFallback && bgSize && bgSize.h > 0) { entry.h = bgSize.h; entry.hFallback = false; }
+            if (entry.wFallback || entry.hFallback) {
+              var cbox = contentBoxSize(llist[l]);
+              if (cbox) {
+                if (entry.wFallback && cbox.w > 0) { entry.w = cbox.w; entry.wFallback = false; }
+                if (entry.hFallback && cbox.h > 0) { entry.h = cbox.h; entry.hFallback = false; }
+              }
+            }
+            entry.contentH = entry.h;
+          }
         }
       }
+    }
+    /* v10.12 (P1 H): container Pledit không có layout nhưng có groupdef
+       pledit.content.group chứa <component> playlist (Act3) — dựng cửa sổ
+       playlist mặc định 436×164 (cỡ pledit của skin 566) với ruột playlist
+       của Amp, thay vì bỏ qua playlist khi xếp chồng. Khung + ruột vẽ
+       theo đúng model: layout tổng hợp chỉ trỏ tới groupdef có sẵn. */
+    if (!layouts["pledit|normal"] && groupdefs["pledit.content.group"]) {
+      try {
+        var plDoc = parseXmlText('<layout id="normal"><group id="pledit.content.group" x="0" y="0" w="436" h="164"/></layout>', "pledit-synthesized", DOMParserImpl);
+        var plEntry = {
+          el: plDoc.documentElement, container: "Pledit", layoutId: "normal",
+          key: "pledit|normal", order: layoutOrder++,
+          w: 436, h: 164, background: null, alphabackground: null,
+          wFallback: false, hFallback: false,
+          minW: null, minH: null, maxW: null, maxH: null,
+          snapadjustbottom: 0, frameOffsetY: 0, contentH: 164, drawerRestY: 0,
+          synthesizedPledit: true
+        };
+        layouts["pledit|normal"] = plEntry;
+        layouts["Pledit|normal"] = plEntry;
+        layoutList.push(plEntry);
+        report.notes.push("không có layout Pledit — dựng cửa sổ playlist mặc định 436×164 từ pledit.content.group (khung chuẩn + ruột playlist của Amp)");
+      } catch (e) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
+    }
+    /* v10.12 (P1 E): groupdef bị tham chiếu mà thiếu trong skin — groupdef
+       chuẩn của Winamp (wasabi.*) thì tự cấp rỗng (Winamp gốc cũng có sẵn
+       chúng, skin không cần định nghĩa); groupdef lạ thì ghi vào
+       report.missing/notes thay vì vẽ trống im lặng. */
+    (function () {
+      var STD_WASABI_EMPTY = { "wasabi.window.embedded": 1, "wasabi.panel": 1, "wasabi.objectframe.group": 1, "wasabi.titlebar": 1 };
+      var missingGd = [];
+      var missingGdSeen = {};
+      function scanGroupRefs(els) {
+        for (var i = 0; i < (els || []).length; i++) {
+          var el = els[i];
+          if (lowerTag(el) === "group") {
+            var gid = el.getAttribute("id") || "";
+            if (gid && !groupdefs[gid] && !xuiMap[gid.toLowerCase()] && !missingGdSeen[gid.toLowerCase()]) {
+              missingGdSeen[gid.toLowerCase()] = true;
+              missingGd.push(gid);
+            }
+          }
+          scanGroupRefs(elChildren(el));
+        }
+      }
+      var gdKeys = Object.keys(groupdefs);
+      for (var gi = 0; gi < gdKeys.length; gi++) scanGroupRefs(groupdefs[gdKeys[gi]]);
+      for (var li2 = 0; li2 < layoutList.length; li2++) scanGroupRefs([layoutList[li2].el]);
+      for (var mi = 0; mi < missingGd.length; mi++) {
+        var mg = missingGd[mi];
+        if (STD_WASABI_EMPTY[mg.toLowerCase()]) {
+          groupdefs[mg] = [];
+          groupdefEls[mg] = null;
+          report.notes.push("tự cấp groupdef rỗng (chuẩn Winamp, skin không định nghĩa): " + mg);
+        } else {
+          pushMissing("groupdef: " + mg);
+          report.notes.push("groupdef thiếu trong skin — bỏ qua (không vẽ): " + mg);
+        }
+      }
+    })();
+    if (classicPro) {
+      report.notes.push("skin ClassicPro: giao diện nằm trong engine ClassicPro (Plugins/classicPro/engine) ngoài file .wal — Amp không vẽ được, cần engine ClassicPro");
     }
     /* Layout đầu tiên (theo thứ tự XML) trong 1 container, dùng cho
        fallback cùng container (ngăn kéo/AVS nhúng suy từ layout main
@@ -765,6 +945,7 @@
       gammasets: gammasets, gammas: gammasets.length ? gammasets[0].groups : [],
       drawer: drawerInfo,
       embeddedAvs: embeddedAvs,
+      classicPro: classicPro, /* v10.12 (P2 G): true khi giao diện nằm trong engine ClassicPro ngoài .wal */
       fileURL: fileURL, imgSize: imgSize, resolveImageRef: resolveImageRef,
       bitmapInfo: bitmapInfo, report: report, zip: zip, findPath: findPath,
       screenshotFile: findPath("screenshot.png")
