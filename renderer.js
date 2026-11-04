@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.17";
-  var EXPECTED_RENDERER_VERSION = "10.17";
+  var RENDERER_VERSION = "10.18";
+  var EXPECTED_RENDERER_VERSION = "10.18";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -2611,6 +2611,82 @@
       var g = (it && it.group) || "";
       return g ? g : "Khác";
     }
+    /* v10.18 — NHOM PLAYLIST THU GON/MO RA (mau app cu cua Hai, anh
+       1000094759/1000094760: tieu de nhom co icon THU MUC VANG — 📁 khi
+       thu gon, 📂 khi mo; kenh trong nhom mo DANH SO LAI TU 1 theo nhom,
+       vd "1. VTV1".."5. VIETNAM TODAY HD"; MAC DINH TAT CA cac nhom deu
+       THU GON). Trang thai thu gon luu trong phien (map ten nhom ->
+       true = dang thu gon), KHONG luu localStorage. Nap lai playlist /
+       doi skin thi reset ve mac dinh (tat ca dong). Tim kiem khong sua
+       map: luc loc thi cac nhom co ket qua mo hieu luc; xoa tim kiem
+       thi reset ve mac dinh. */
+    var plGroupCollapsed = null; /* null = chua khoi tao cho playlist hien tai */
+    var plSearchActive = false; /* dang loc tim kiem? */
+    function plGroupOrderFull() {
+      var order = [], seen = {};
+      for (var i = 0; i < playlistState.items.length; i++) {
+        var g = playlistGroupName(playlistState.items[i]);
+        if (!seen[g]) { seen[g] = true; order.push(g); }
+      }
+      return order;
+    }
+    function plGroupEnsureInit() {
+      if (plGroupCollapsed) return;
+      plGroupCollapsed = {};
+      var order = plGroupOrderFull();
+      for (var j = 0; j < order.length; j++) plGroupCollapsed[order[j]] = true; /* mac dinh: tat ca thu gon */
+    }
+    function plGroupReset() {
+      plGroupCollapsed = null; plSearchActive = false;
+    }
+    function plGroupIsCollapsed(g) {
+      plGroupEnsureInit();
+      if (plGroupCollapsed[g] === undefined) return true; /* nhom la chua thay -> thu gon */
+      return plGroupCollapsed[g];
+    }
+    function plGroupSetOpen(g, open) {
+      plGroupEnsureInit();
+      plGroupCollapsed[g] = !open;
+    }
+    function plGroupToggle(g) {
+      plGroupSetOpen(g, plGroupIsCollapsed(g));
+      refreshPlaylistRows();
+    }
+    /* Mo nhom chua muc idx (de thay bai dang hat/dang chon); tra ve
+       true neu vua mo (nguoi goi ve lai hang). */
+    function plGroupEnsureOpenForIdx(idx) {
+      if (idx == null || idx < 0 || idx >= playlistState.items.length) return false;
+      var g = playlistGroupName(playlistState.items[idx]);
+      if (plGroupIsCollapsed(g)) { plGroupSetOpen(g, true); return true; }
+      return false;
+    }
+    /* Nhom co mo HIEU LUC khong: luc tim kiem thi moi nhom co ket qua
+       deu mo; khong tim kiem thi theo map thu gon. */
+    function plGroupEffectiveOpen(g) {
+      if (playlistState.filter) return true;
+      return !plGroupIsCollapsed(g);
+    }
+    /* Tieu de nhom: icon thu muc vang + "Ten nhom (N)"; bam thi thu
+       gon/mo ra (khong phat/khong chon, nhu v10.17). Dung chung Modern /
+       Classic / <list> (moi noi tu ap style rieng). afterToggle (neu
+       co) chay them sau khi doi trang thai — dung cho <list> de ve lai
+       khung list cuc bo. */
+    function plGroupHeaderEl(rec, afterToggle) {
+      var h = document.createElement("div");
+      h.className = "group-header";
+      h.dataset.groupHeader = "1";
+      var f = document.createElement("span");
+      f.className = "folder";
+      f.textContent = rec.open ? "📂" : "📁";
+      h.appendChild(f);
+      var lb = document.createElement("span");
+      lb.textContent = " " + rec.header + " (" + rec.count + ")";
+      h.appendChild(lb);
+      h.setAttribute("aria-expanded", String(!!rec.open));
+      h.style.cursor = "pointer";
+      h.onclick = function () { plGroupToggle(rec.header); if (afterToggle) afterToggle(); };
+      return h;
+    }
     function playlistGroupedRows() {
       var rows = playlistFiltered();
       var order = [], byGroup = {};
@@ -2622,8 +2698,14 @@
       if (order.length === 1 && order[0] === "Khác") return rows; /* phang nhu cu */
       var out = [];
       for (var j = 0; j < order.length; j++) {
-        out.push({ header: order[j], count: byGroup[order[j]].length });
-        for (var k = 0; k < byGroup[order[j]].length; k++) out.push(byGroup[order[j]][k]);
+        var g2 = order[j], open = plGroupEffectiveOpen(g2);
+        out.push({ header: g2, count: byGroup[g2].length, open: open });
+        if (!open) continue;
+        for (var k = 0; k < byGroup[g2].length; k++) {
+          var rec = byGroup[g2][k];
+          rec.pos = k + 1; /* v10.18 — so thu tu TRONG NHOM (tu 1), chi khi nhom mo */
+          out.push(rec);
+        }
       }
       return out;
     }
@@ -2674,6 +2756,7 @@
       playlistState.original = items.slice();
       playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
+      plGroupReset(); /* v10.18 — nap lai playlist thi ve mac dinh: tat ca nhom thu gon */
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; /* v10.7 (107): playlist mới = chưa phát gì — quên vị trí bài cũ kẻo đồng hồ (chính + playlist) hiện số cũ của playlist trước (vd nạp lại radio khi đang ở 0:09 thì đồng hồ toàn-live hiện 0:09 dù chưa phát) */
       avsVideoEverHadPic = false; /* v10.3 — playlist moi: muc hien tai la luong moi, chua tung co hinh */
       playlistState.source = sourceName || "iptv.m3u";
@@ -2691,6 +2774,7 @@
       playlistState.original = items.slice();
       playlistState.selected = clampPlaylistIdx(0); playlistState.current = clampPlaylistIdx(0);
       playlistState.playing = false; playlistState.filter = "";
+      plGroupReset(); /* v10.18 — nap lai playlist thi ve mac dinh: tat ca nhom thu gon */
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; /* v10.7 (107): như setPlaylistData — playlist mới = chưa phát gì */
       avsVideoEverHadPic = false; /* v10.3 — nhu setPlaylistData */
       playlistState.source = sourceName || "";
@@ -2714,6 +2798,7 @@
     function selectPlaylistItem(idx) {
       if (!playlistState.items.length) return false;
       playlistState.selected = clampPlaylistIdx(idx);
+      plGroupEnsureOpenForIdx(playlistState.selected); /* v10.18 — tu mo nhom chua muc dang chon de thay muc dang chon */
       refreshPlaylistRows();
       /* Đợt A (9.9, việc 3): đổi lựa chọn thì PLTime đổi theo (tổng →
          thời gian đã chọn); vẽ tại chỗ, không re-render. */
@@ -2740,6 +2825,7 @@
       playlistState.current = idx;
       playlistState.selected = idx;
       playlistState.playing = true;
+      plGroupEnsureOpenForIdx(idx); /* v10.18 — tu mo nhom chua bai dang hat */
       avsVideoEverHadPic = false; /* v10.3 — bai moi: luong moi, chua tung co hinh */
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; demo.playing = true;
       /* Đợt A (9.9, việc 4): đổi bài thì quên thời lượng bài cũ — đếm
@@ -2841,6 +2927,7 @@
       playlistState.items = [];
       playlistState.original = playlistState.items.slice();
       playlistState.selected = -1; playlistState.current = -1; playlistState.playing = false;
+      plGroupReset(); /* v10.18 */
       demo.playing = false;
       if (audioEngine) audioEngine.stop();
       updateInfoEls();
@@ -4807,32 +4894,39 @@
       div.dataset.list = "1";
       parentEl.appendChild(div);
       if (ctx && ctx.windowKind === "playlist") {
-        var rows = [];
-        try { rows = playlistGroupedRows(); } catch (e) { rows = []; }
-        for (var i = 0; i < rows.length; i++) {
-          if (rows[i].header) { /* v10.17 — tieu de nhom (nhu Pledit/Classic) */
-            var gh = document.createElement("div");
-            gh.className = "group-header";
-            gh.dataset.groupHeader = "1";
-            gh.style.whiteSpace = "nowrap"; gh.style.overflow = "hidden";
-            gh.style.textOverflow = "ellipsis"; gh.style.lineHeight = "13px";
-            gh.style.padding = "0 3px"; gh.style.fontWeight = "bold";
-            gh.textContent = rows[i].header + " (" + rows[i].count + ")";
-            div.appendChild(gh);
-            continue;
+        /* v10.18 — tieu de nhom thu gon/mo ra: ve lai khung list cuc bo
+           khi bam tieu de (refreshPlaylistRows chi ve lai Pledit +
+           Classic, khong cham toi <list> nay). */
+        var fillListRows = function () {
+          var olds = div.querySelectorAll(".group-header, .pl-row");
+          for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
+          var rows = [];
+          try { rows = playlistGroupedRows(); } catch (e) { rows = []; }
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].header) { /* v10.18 — tieu de nhom: icon thu muc + bam thu gon/mo ra */
+              var gh = plGroupHeaderEl(rows[i], fillListRows);
+              gh.style.whiteSpace = "nowrap"; gh.style.overflow = "hidden";
+              gh.style.textOverflow = "ellipsis"; gh.style.lineHeight = "13px";
+              gh.style.padding = "0 3px"; gh.style.fontWeight = "bold";
+              div.appendChild(gh);
+              continue;
+            }
+            var row = document.createElement("div");
+            row.className = "pl-row";
+            row.style.whiteSpace = "nowrap"; row.style.overflow = "hidden";
+            row.style.textOverflow = "ellipsis"; row.style.lineHeight = "13px";
+            row.style.padding = "0 3px";
+            row.textContent = ((rows[i].pos != null ? rows[i].pos : rows[i].idx + 1)) + ". " + (rows[i].item ? rows[i].item.name : "");
+            div.appendChild(row);
           }
-          var row = document.createElement("div");
-          row.style.whiteSpace = "nowrap"; row.style.overflow = "hidden";
-          row.style.textOverflow = "ellipsis"; row.style.lineHeight = "13px";
-          row.style.padding = "0 3px";
-          row.textContent = (rows[i].idx + 1) + ". " + (rows[i].item ? rows[i].item.name : "");
-          div.appendChild(row);
-        }
-        if (!rows.length) {
-          var em = document.createElement("div");
-          em.style.padding = "3px"; em.textContent = "(danh sách trống)";
-          div.appendChild(em);
-        }
+          if (!rows.length) {
+            var em = document.createElement("div");
+            em.className = "pl-row";
+            em.style.padding = "3px"; em.textContent = "(danh sách trống)";
+            div.appendChild(em);
+          }
+        };
+        fillListRows();
       } else {
         var note = document.createElement("div");
         note.style.padding = "3px"; note.style.color = "#999";
@@ -5330,14 +5424,11 @@
       var rows = playlistGroupedRows();
       for (var r = 0; r < rows.length; r++) {
         (function (rec) {
-          /* v10.17 — tieu de nhom: hang phan cach, khong phai hang kenh
-             (khong dataset.idx, khong click/dblclick/contextmenu) — chi
-             de nhin, bam vao khong lam gi. */
+          /* v10.18 — tieu de nhom: icon thu muc vang (📁 dong / 📂 mo),
+             bam thi thu gon/mo ra nhom do (khong phat/khong chon, nhu
+             v10.17 — khong dataset.idx, khong dblclick/contextmenu). */
           if (rec.header) {
-            var h = document.createElement("div");
-            h.className = "group-header";
-            h.dataset.groupHeader = "1";
-            h.textContent = rec.header + " (" + rec.count + ")";
+            var h = plGroupHeaderEl(rec);
             h.style.display = "block";
             h.style.fontWeight = "bold";
             h.style.background = rgbVal(sel.bg);
@@ -5363,8 +5454,10 @@
           row.style.display = "flex";
           /* v10.3: so thu tu o rieng (co dinh 30px, can phai) — ten bat
              dau cung 1 vi tri o moi hang; nhan thoi luong co dinh 48px
-             can phai de cot ten khong doi rong khi nhan ve ("…" -> "3:07"). */
-          row.appendChild(listColSpan(PL_COL_DEFS[0], (rec.idx + 1) + ".", true));
+             can phai de cot ten khong doi rong khi nhan ve ("…" -> "3:07").
+             v10.18: so la so thu tu TRONG NHOM khi co nhom (tu 1); phang
+             thi so toan playlist (idx+1) nhu cu. */
+          row.appendChild(listColSpan(PL_COL_DEFS[0], (rec.pos != null ? rec.pos : rec.idx + 1) + ".", true));
           row.appendChild(listColSpan(PL_COL_DEFS[1], rec.item.name, false));
           row.appendChild(listColSpan(PL_COL_DEFS[2], playlistRowLabel(rec.item), false));
           row.dataset.idx = String(rec.idx);
@@ -5393,6 +5486,11 @@
       }
     }
     function refreshPlaylistRows() {
+      /* v10.18 — xoa tim kiem thi ve trang thai mac dinh (tat ca nhom
+         thu gon); luc dang loc thi cac nhom co ket qua mo hieu luc. */
+      var nowSearching = !!playlistState.filter;
+      if (plSearchActive && !nowSearching) plGroupReset();
+      plSearchActive = nowSearching;
       /* v10.3 — skin Classic không có plListDiv Modern nên đường cũ return
          ngay; vẫn phải vẽ lại hàng playlist Classic tại chỗ (chọn/phát/
          xóa mục đều gọi hàm này). */
@@ -6745,7 +6843,7 @@
     }
     function selectMenuItems() {
       return [
-        { label: "Tới bài đang hát", action: function () { playlistState.selected = playlistState.current; refreshPlaylistRows(); scrollPlaylistTo(playlistState.current); } },
+        { label: "Tới bài đang hát", action: function () { playlistState.selected = playlistState.current; plGroupEnsureOpenForIdx(playlistState.current); /* v10.18 — tu mo nhom chua bai dang hat */ refreshPlaylistRows(); scrollPlaylistTo(playlistState.current); } },
         { label: "Chọn bài đầu", action: function () { selectPlaylistItem(0); scrollPlaylistTo(0); } },
         { label: "Chọn bài cuối", action: function () { selectPlaylistItem(playlistState.items.length - 1); scrollPlaylistTo(playlistState.items.length - 1); } }
       ];
@@ -10029,13 +10127,10 @@
       var rows = playlistGroupedRows();
       for (var r = 0; r < rows.length; r++) {
         (function (rec) {
-          /* v10.17 — tieu de nhom (nhu buildPlaylistRows Modern): hang
-             phan cach, khong bam/phat/chon duoc. */
+          /* v10.18 — tieu de nhom: icon thu muc vang (📁 dong / 📂 mo),
+             bam thi thu gon/mo ra (nhu buildPlaylistRows Modern). */
           if (rec.header) {
-            var h = document.createElement("div");
-            h.className = "group-header";
-            h.dataset.groupHeader = "1";
-            h.textContent = rec.header + " (" + rec.count + ")";
+            var h = plGroupHeaderEl(rec);
             h.style.display = "block";
             h.style.height = "13px"; h.style.lineHeight = "13px";
             h.style.fontSize = "9px"; h.style.letterSpacing = "0.5px";
@@ -10059,7 +10154,7 @@
           var nm = document.createElement("span");
           nm.style.flex = "1 1 auto"; nm.style.minWidth = "0";
           nm.style.overflow = "hidden"; nm.style.textOverflow = "ellipsis"; nm.style.whiteSpace = "nowrap";
-          nm.textContent = rec.item.name;
+          nm.textContent = (rec.pos != null ? rec.pos + ". " : "") + rec.item.name; /* v10.18 — so thu tu TRONG NHOM khi co nhom (mau app cu: "1. VTV1"); phang thi ten tran nhu cu */
           row.appendChild(nm);
           var ln = document.createElement("span");
           ln.style.flex = "0 0 auto"; ln.style.paddingRight = "3px"; ln.style.textAlign = "right";
