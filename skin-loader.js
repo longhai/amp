@@ -5,7 +5,7 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.20". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.21". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Đợt v10.12: layout thiếu w/h đo từ ảnh nền (background) rồi mới tới
    bao nội dung rồi 354×280; lưu background/alphabackground của layout;
@@ -24,8 +24,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.20";
-  var EXPECTED_LOADER_VERSION = "10.20";
+  var LOADER_VERSION = "10.21";
+  var EXPECTED_LOADER_VERSION = "10.21";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên
@@ -677,7 +677,25 @@
        playlist mặc định 436×164 (cỡ pledit của skin 566) với ruột playlist
        của Amp, thay vì bỏ qua playlist khi xếp chồng. Khung + ruột vẽ
        theo đúng model: layout tổng hợp chỉ trỏ tới groupdef có sẵn. */
-    if (!layouts["pledit|normal"] && groupdefs["pledit.content.group"]) {
+    /* v10.21 (2) — skin không có layout Pledit nào (vd WMP12: playlist
+       là PlaylistPro XUI trong main, không có container Pledit) thì
+       dựng cửa sổ playlist mặc định 436×164 với 1 <list> (đường generic
+       renderList vẽ hàng playlist của Amp) để vẫn có cửa sổ playlist +
+       tay nắm kéo như mọi skin; không có minimum trong XML nên kẹp cỡ
+       theo mặc định (min 200×100). CHỈ dựng khi skin CÓ nội dung
+       playlist (groupdef chứa "playlist", vd PlaylistPro.xui của
+       WMP12): skin tối thiểu không có gì về playlist (vd s1-size500.wal
+       — test S1 chốt "thiếu Pledit thì bỏ qua playlist") thì KHÔNG
+       dựng, giữ hành vi cũ. */
+    var hasPlaylistContent21 = false;
+    try {
+      var gdKeys21 = Object.keys(groupdefs || {});
+      for (var gi21 = 0; gi21 < gdKeys21.length; gi21++) {
+        if (/playlist/i.test(gdKeys21[gi21])) { hasPlaylistContent21 = true; break; }
+      }
+    } catch (e21) { hasPlaylistContent21 = false; }
+    if (!layouts["pledit|normal"]) {
+      if (groupdefs["pledit.content.group"]) {
       try {
         var plDoc = parseXmlText('<layout id="normal"><group id="pledit.content.group" x="0" y="0" w="436" h="164"/></layout>', "pledit-synthesized", DOMParserImpl);
         var plEntry = {
@@ -694,6 +712,24 @@
         layoutList.push(plEntry);
         report.notes.push("không có layout Pledit — dựng cửa sổ playlist mặc định 436×164 từ pledit.content.group (khung chuẩn + ruột playlist của Amp)");
       } catch (e) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
+      } else if (hasPlaylistContent21) {
+      try {
+        var plDoc2 = parseXmlText('<layout id="normal"><list x="6" y="6" w="424" h="152"/></layout>', "pledit-synthesized-bare", DOMParserImpl);
+        var plEntry2 = {
+          el: plDoc2.documentElement, container: "Pledit", layoutId: "normal",
+          key: "pledit|normal", order: layoutOrder++,
+          w: 436, h: 164, background: null, alphabackground: null,
+          wFallback: false, hFallback: false,
+          minW: null, minH: null, maxW: null, maxH: null,
+          snapadjustbottom: 0, frameOffsetY: 0, contentH: 164, drawerRestY: 0,
+          synthesizedPledit: true
+        };
+        layouts["pledit|normal"] = plEntry2;
+        layouts["Pledit|normal"] = plEntry2;
+        layoutList.push(plEntry2);
+        report.notes.push("không có layout Pledit — dựng cửa sổ playlist mặc định 436×164 với <list> (ruột playlist của Amp)");
+      } catch (e2) { /* không dựng được thì giữ hành vi cũ: bỏ qua playlist */ }
+      }
     }
     /* v10.12 (P1 E): groupdef bị tham chiếu mà thiếu trong skin — groupdef
        chuẩn của Winamp (wasabi.*) thì tự cấp rỗng (Winamp gốc cũng có sẵn

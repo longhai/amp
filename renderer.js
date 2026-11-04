@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.20";
-  var EXPECTED_RENDERER_VERSION = "10.20";
+  var RENDERER_VERSION = "10.21";
+  var EXPECTED_RENDERER_VERSION = "10.21";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -604,10 +604,16 @@
          min/max của layout lạ cho container không tồn tại. */
       var lay = layoutEntry(container, layoutId);
       if (!lay) return null;
+      /* v10.21 (2) — XML không khai minimum_w/minimum_h thì min mặc định
+         = min(cỡ hiện tại, 200×100) thay vì = cỡ hiện tại: min chỉ để
+         KẸP cỡ khi kéo (vẫn cho thu nhỏ), không dùng làm cổng tắt tay
+         nắm như trước (min=w/h → isLayoutResizable false → skin không
+         khai minimum thì mất hẳn chức năng kéo). XML có khai thì dùng
+         đúng số XML. */
       return {
         w: lay.w, h: lay.h,
-        minW: (lay.minW != null && lay.minW > 0) ? lay.minW : lay.w,
-        minH: (lay.minH != null && lay.minH > 0) ? lay.minH : lay.h,
+        minW: (lay.minW != null && lay.minW > 0) ? lay.minW : Math.min((lay.w != null && lay.w > 0) ? lay.w : 354, 200),
+        minH: (lay.minH != null && lay.minH > 0) ? lay.minH : Math.min((lay.h != null && lay.h > 0) ? lay.h : 280, 100),
         maxW: (lay.maxW != null && lay.maxW > 0) ? lay.maxW : WIN_MAX_W,
         maxH: (lay.maxH != null && lay.maxH > 0) ? lay.maxH : WIN_MAX_H
       };
@@ -859,37 +865,33 @@
       } catch (err) { /* môi trường test không có document đầy đủ */ }
     }
     function attachResizeHandles(live, container, layoutId) {
-      if (!live || !isLayoutResizable(container, layoutId)) return;
+      if (!live) return;
+      /* v10.21 (2) — Tay nắm gắn cho MỌI cửa sổ co giãn được (Pledit/
+         MLibrary/Video/AVS), kể cả skin không khai minimum trong XML.
+         Bỏ cổng isLayoutResizable (minW<w) làm điều kiện gắn: min/max
+         XML (nếu có) chỉ kẹp cỡ khi kéo (layoutMinMax mặc định 200×100
+         khi XML không khai). Riêng cửa sổ chính KHÔNG có tay nắm (cố
+         định theo XML, như Winamp thật). */
+      if (lowerStr(container) === "main") return;
       wireResizeDocOnce();
       var edges = [
-        /* v10.20 (1) — GỜ KÉO NHÌN THẤY RÕ NHƯ WINAMP THẬT (Hải 19:07
-           "giao diện gốc bị hiện dải gốc kéo kìa" — Winamp thật có dải
-           vạch chéo ở góc dưới-phải playlist, nhìn là biết chỗ nắm):
-           ĐIỀU TRA BẰNG HEADLESS CHROME THẬT (CDP touch, mobile 360px,
-           đúng trạng thái máy Hải: playlist cao 390, scale 0.826): code
-           kéo KHÔNG HỎNG — tay nắm gắn đúng khung playlist nhìn thấy,
-           elementFromPoint ở tâm góc = tay nắm, pointerdown/move/up
-           chạy đủ, kéo được CẢ 4 CHIỀU (to +60/+60, nhỏ -40/-40, mép
-           đáy -50, mép phải -50) + lưu + mở lại vẫn giữ, kể cả kéo từ
-           đúng điểm grip của skin (player.pl.resizer). Lỗi nằm ở chỗ
-           nắm: vùng chạm v10.19 chỉ 48x48, gờ chỉ trắng 0.22 MỜ đến mức
-           không nhận ra chỗ nắm — ngón tay (~45px màn hình) nhắm vào
-           vạch mờ mà trượt sang danh sách .pl-list thì vuốt KHÔNG CÓ
-           TÁC DỤNG GÌ (playlist cao thì danh sách chứa hết, không cuộn
-           được nữa) nên Hải thấy "kéo không ăn". SỬA Ở ĐÂY, không sửa
-           đường event (đã đúng): vùng chạm TO HƠN (mép 32px, góc
-           64x64 — ở fit ~0.83x thì góc ~53px màn hình, bằng đầu ngón
-           tay) + góc có GỜ CHÉO NHÌN THẤY RÕ (vạch trắng 0.55 + vạch
-           tối 0.35 kề nhau kiểu khắc chìm như grip của chính skin 566
-           — đọc được cả trên nền xanh list lẫn nền bạc hàng nút, không
-           chói như vạch trắng đặc; 2 mép vẫn trong suốt như Winamp).
-           Bấm (<6px) vẫn xuyên qua tay nắm nhờ resizeTapThrough ở
-           resizeEnd. Hàm này dùng chung cho mọi cửa sổ co giãn được
-           (playlist, ML, Video rời; cửa sổ chính cố định nên không có
-           tay nắm). */
+        /* v10.21 (1+2) — Tay nắm XML-DRIVEN (Hải 19:59-20:05, test v10.20):
+           (a) 566 vốn đã kéo được, nhưng gờ v10.20 (64×64, vạch 0.55)
+           TO ĐÙNG + TRÀN KHUNG, che nút Manage Playlist → nay gờ góc
+           lấy theo XML của skin: skin có <layer resize="bottomright"
+           image="player.pl.resizer"> (566: resizer.png 17×17) thì ảnh
+           đó đã vẽ sẵn trong cửa sổ, tay nắm trong suốt, không vẽ thêm;
+           skin không có ảnh gờ thì chỉ vẽ miếng nhỏ 24×24 ở góc.
+           Vùng chạm góc 48×48 (trong suốt) cho ngón tay, mép 32px.
+           (b) Đổi skin khác (.wal) thì MẤT tay nắm vì cổng
+           isLayoutResizable chặn khi XML không khai minimum → nay bỏ
+           cổng (chỉ cửa sổ chính vẫn không tay nắm, cố định theo XML);
+           min/max XML chỉ kẹp cỡ khi kéo (layoutMinMax mặc định
+           200×100 khi không khai). Bấm (<6px) vẫn xuyên qua tay nắm
+           nhờ resizeTapThrough ở resizeEnd. */
         { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "32px", height: "100%" } },
         { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "32px" } },
-        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "64px", height: "64px" } }
+        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "48px", height: "48px" } }
       ];
       for (var i = 0; i < edges.length; i++) {
         (function (spec) {
@@ -910,11 +912,35 @@
           hd.style.background = "transparent"; /* v10.8 (108): vô hình như Webamp — xem ghi chú ở bảng edges trên */
           hd.style.boxShadow = "none"; /* v10.8 (108): bỏ viền inset 1px (cùng vạch trắng, tay kéo hiện rõ trên mép) */
           hd.style.touchAction = "none";
-          /* v10.20 (1): chỉ góc có gờ chéo NHÌN THẤY RÕ (mép vẫn trong
-             suốt hẳn). Vạch trắng 0.55 + vạch tối 0.35 kề nhau (khắc
-             chìm kiểu grip của chính skin 566) — đọc được cả trên nền
-             xanh list lẫn nền bạc hàng nút; vạch 2px, bước 8px. */
-          if (spec.edge === "corner") hd.style.backgroundImage = "repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0px, rgba(255,255,255,0.55) 2px, rgba(0,0,0,0.35) 2px, rgba(0,0,0,0.35) 3px, transparent 3px, transparent 8px)";
+          /* v10.21 (1) — GỜ GÓC XML-DRIVEN (Hải 20:04 "Nút kéo có trong
+             xml không" — CÓ: 566 khai <layer resize="bottomright"
+             image="player.pl.resizer" .../> + ảnh resizer.png 17×17):
+             skin có ảnh gờ riêng đã vẽ sẵn trong cửa sổ (sprite
+             data-bitmap chứa "resizer") thì tay nắm TRONG SUỐT hẳn —
+             ảnh của chính skin là gờ, không vẽ thêm gì (không tràn
+             khung, không che nút). Skin không có ảnh gờ thì vẽ 1 miếng
+             NHỎ 24×24 ở góc (vạch chéo 0.45 + 0.30, gọn trong khung);
+             vùng chạm vẫn 48×48 (trong suốt) để ngón tay nắm được. */
+          if (spec.edge === "corner") {
+            var hasSkinGrip = false;
+            try {
+              var sprs = live.querySelectorAll("[data-bitmap]");
+              for (var si = 0; si < sprs.length; si++) {
+                if (/resizer/i.test(sprs[si].getAttribute("data-bitmap") || "")) { hasSkinGrip = true; break; }
+              }
+            } catch (e2) { hasSkinGrip = false; }
+            if (hasSkinGrip) {
+              hd.style.backgroundImage = "";
+              hd.style.backgroundSize = "";
+              hd.style.backgroundPosition = "";
+              hd.style.backgroundRepeat = "";
+            } else {
+              hd.style.backgroundImage = "repeating-linear-gradient(135deg, rgba(255,255,255,0.45) 0px, rgba(255,255,255,0.45) 1px, rgba(0,0,0,0.30) 1px, rgba(0,0,0,0.30) 2px, transparent 2px, transparent 6px)";
+              hd.style.backgroundSize = "24px 24px";
+              hd.style.backgroundPosition = "right bottom";
+              hd.style.backgroundRepeat = "no-repeat";
+            }
+          }
           function start(e) {
             var p = resizeClientPos(e);
             var startW = parseInt(live.style.width || "0", 10) || 0;
