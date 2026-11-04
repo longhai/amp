@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.18";
-  var EXPECTED_RENDERER_VERSION = "10.18";
+  var RENDERER_VERSION = "10.19";
+  var EXPECTED_RENDERER_VERSION = "10.19";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -268,6 +268,36 @@
     if (p.length === 3 && p.every(function (n) { return !isNaN(n); })) return "rgb(" + p[0] + "," + p[1] + "," + p[2] + ")";
     return v;
   }
+  /* v10.19 (4) — PHA MÀU cho tiêu đề nhóm ("dễ nhìn", không chói):
+     trộn 2 màu theo tỉ lệ t (0..1, t = phần của màu a). Nhận mọi dạng
+     màu trong code (chuỗi "r,g,b", "#RRGGBB"/"#RGB", "rgb(r,g,b)",
+     "white"/"black"); không phân giải được thì trả null để nơi gọi
+     giữ màu cũ. */
+  function parseColorVal(v) {
+    if (v == null) return null;
+    var s = String(v).trim().toLowerCase();
+    if (s === "white") return [255, 255, 255];
+    if (s === "black") return [0, 0, 0];
+    var m = /^#([0-9a-f]{6})$/.exec(s);
+    if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+    m = /^#([0-9a-f]{3})$/.exec(s);
+    if (m) return [parseInt(m[1][0] + m[1][0], 16), parseInt(m[1][1] + m[1][1], 16), parseInt(m[1][2] + m[1][2], 16)];
+    m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(s);
+    if (m) return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+    var p = s.split(",").map(function (x) { return parseInt(x, 10); });
+    if (p.length === 3 && p.every(function (n) { return !isNaN(n) && n >= 0 && n <= 255; })) return p;
+    return null;
+  }
+  function mixColorVal(a, b, t) {
+    var A = parseColorVal(a), B = parseColorVal(b);
+    if (!A || !B) return null;
+    if (t == null || isNaN(t)) t = 0.35;
+    t = Math.max(0, Math.min(1, t));
+    return "rgb(" + Math.round(A[0] * t + B[0] * (1 - t)) + "," + Math.round(A[1] * t + B[1] * (1 - t)) + "," + Math.round(A[2] * t + B[2] * (1 - t)) + ")";
+  }
+  /* Tỉ lệ pha nền tiêu đề nhóm (v10.19): 35% màu chọn + 65% nền bình
+     thường của danh sách — đủ để mắt phân biệt ngay nhóm nào với nhóm
+     nào, nhưng mờ/dịu, không chói như nền chọn đầy đủ (v10.17/v10.18). */
   function fontCharPos(fontId, ch) {
     var rows = FONT_ROWS[fontId];
     if (!rows) return null;
@@ -455,7 +485,7 @@
       return null;
     }
     function captureScrollState() {
-      var st = { winY: 0, plTop: 0, mlTop: 0 };
+      var st = { winY: 0, plTop: 0, mlTop: 0, classicTop: 0 };
       try {
         var w = rendererWindow();
         if (w) st.winY = w.scrollY || w.pageYOffset || 0;
@@ -463,17 +493,73 @@
       } catch (e) { /* bỏ qua */ }
       try { if (plListDiv) st.plTop = plListDiv.scrollTop || 0; } catch (e) { /* bỏ qua */ }
       try { if (mlListDiv) st.mlTop = mlListDiv.scrollTop || 0; } catch (e) { /* bỏ qua */ }
+      /* v10.19 (1) — Classic: danh sách playlist Classic (classicPlListDiv)
+         trước đây KHÔNG được chụp/khôi (chỉ có plListDiv/mlListDiv) nên
+         mỗi lần chọn/phát kênh, buildClassicPlRows xóa hết hàng rồi vẽ
+         lại làm scrollTop bị kẹp về 0 — danh sách Classic nhảy về đầu. */
+      try { if (classicPlListDiv) st.classicTop = classicPlListDiv.scrollTop || 0; } catch (e) { /* bỏ qua */ }
       return st;
+    }
+    /* v10.19 (1) — LƯỚI AN TOÀN khôi vị trí cuộn sau khi vẽ lại:
+       Trên trình duyệt thật, gán scrollTop cho phần tử CHƯA gắn vào
+       document (div mới trong build tách rời lúc swapIn) hoặc chưa kịp
+       layout sẽ bị kẹp về 0 và mất luôn — đó là đường mà lần khôi đồng
+       bộ ở restoreScrollState không bắt được (jsdom không kẹp nên test
+       cũ vẫn pass trong khi máy thật nhảy về đầu). Sửa: sau khi gán,
+       ĐỌC LẠI ngay — chỗ nào muốn >0 mà vẫn đọc về 0 thì đặt lịch khôi
+       lại muộn (pendingScrollRestore) sau 1 frame + tối đa 3 lần thử
+       cách 50ms, chỉ khi phần tử đã gắn vào document và vị trí hiện tại
+       vẫn là 0 (không đè lần cuộn có chủ đích của người dùng sau đó).
+       Nơi cuộn có chủ đích (scrollPlaylistTo, nút cuộn Classic) thì
+       hủy pending này. */
+    var pendingScrollRestore = null;
+    function scheduleScrollRestore(st) {
+      if (!st) return;
+      pendingScrollRestore = { winY: st.winY || 0, plTop: st.plTop || 0, mlTop: st.mlTop || 0, classicTop: st.classicTop || 0, tries: 0 };
+      var apply = function () {
+        var want = pendingScrollRestore;
+        if (!want) return;
+        pendingScrollRestore = null;
+        var needRetry = false;
+        try {
+          if (plListDiv && document && document.contains && !document.contains(plListDiv)) needRetry = true;
+          else if (plListDiv && want.plTop > 0 && (plListDiv.scrollTop || 0) === 0) plListDiv.scrollTop = want.plTop;
+        } catch (e) { /* bỏ qua */ }
+        try {
+          if (classicPlListDiv && document && document.contains && !document.contains(classicPlListDiv)) needRetry = true;
+          else if (classicPlListDiv && want.classicTop > 0 && (classicPlListDiv.scrollTop || 0) === 0) classicPlListDiv.scrollTop = want.classicTop;
+        } catch (e) { /* bỏ qua */ }
+        try {
+          if (mlListDiv && document && document.contains && !document.contains(mlListDiv)) needRetry = true;
+          else if (mlListDiv && want.mlTop > 0 && (mlListDiv.scrollTop || 0) === 0) mlListDiv.scrollTop = want.mlTop;
+        } catch (e) { /* bỏ qua */ }
+        if (needRetry && want.tries < 3) {
+          want.tries++;
+          pendingScrollRestore = want;
+          try { setTimeout(apply, 50); } catch (e) { /* bỏ qua */ }
+        }
+      };
+      try {
+        var w = rendererWindow();
+        if (w && w.requestAnimationFrame) w.requestAnimationFrame(function () { try { setTimeout(apply, 0); } catch (e) { /* bỏ qua */ } });
+        else setTimeout(apply, 0);
+      } catch (e) { try { setTimeout(apply, 0); } catch (e2) { /* bỏ qua */ } }
     }
     function restoreScrollState(st) {
       if (!st) return;
-      try { if (plListDiv) plListDiv.scrollTop = st.plTop; } catch (e) { /* bỏ qua */ }
-      try { if (mlListDiv) mlListDiv.scrollTop = st.mlTop; } catch (e) { /* bỏ qua */ }
+      var lost = false;
+      try { if (plListDiv) { plListDiv.scrollTop = st.plTop; if (st.plTop > 0 && (plListDiv.scrollTop || 0) === 0) lost = true; } } catch (e) { /* bỏ qua */ }
+      try { if (mlListDiv) { mlListDiv.scrollTop = st.mlTop; if (st.mlTop > 0 && (mlListDiv.scrollTop || 0) === 0) lost = true; } } catch (e) { /* bỏ qua */ }
+      try { if (classicPlListDiv) { classicPlListDiv.scrollTop = st.classicTop || 0; if ((st.classicTop || 0) > 0 && (classicPlListDiv.scrollTop || 0) === 0) lost = true; } } catch (e) { /* bỏ qua */ }
       try {
         var w = rendererWindow();
         if (w && w.scrollTo) w.scrollTo(0, st.winY);
         else if (document && document.documentElement) document.documentElement.scrollTop = st.winY;
       } catch (e) { /* jsdom: scrollTo chưa hỗ trợ */ }
+      /* Chỉ đặt lịch khôi muộn khi lần khôi đồng bộ vừa mất (đọc lại 0)
+         — jsdom gán là dính nên không bao giờ đặt lịch, test cũ không
+         bị ảnh hưởng; máy thật mất thì lưới này vớt lại. */
+      if (lost) scheduleScrollRestore(st);
     }
     /* ĐợT C (9.9) — TÌM LAYOUT (quy tắc fallback, xem README §Đợt C):
        Tra không phân biệt hoa/thường (id Winamp không phân biệt chữ hoa).
@@ -702,10 +788,66 @@
       } catch (err) { /* bỏ qua */ }
       if (e.preventDefault) { try { e.preventDefault(); } catch (err) { /* bỏ qua */ } }
     }
-    function resizeEnd() {
+    /* v10.19 (2) — CHẠM XUYÊN TAY NẮM (tap-through): tay nắm nay to hơn
+       (24px mép / 48px góc) nên đè lên hàng nút ở đáy cửa sổ (Add/Rem/
+       Sel/Misc/List) và mép phải của hàng kênh. Bấm (thả ra mà tổng di
+       chuyển < 6px màn hình) thì KHÔNG phải kéo: hoàn lại kích thước xem
+       trước về như cũ, không lưu, và "chạm xuyên" — gửi 1 sự kiện click
+       tổng hợp tới phần tử đang nằm dưới ngón tay (ẩn tay nắm rồi dùng
+       elementFromPoint), để nút/hàng kênh dưới tay nắm vẫn bấm được như
+       thường. Kéo thật (>= 6px) thì lưu size + vẽ lại như cũ. */
+    function resizeTapThrough(s, x, y) {
+      if (!s || !s.hd) return;
+      var el = null;
+      try {
+        var prevVis = s.hd.style.visibility;
+        s.hd.style.visibility = "hidden";
+        if (document && document.elementFromPoint) el = document.elementFromPoint(x, y);
+        s.hd.style.visibility = prevVis;
+      } catch (e) { /* bỏ qua */ }
+      if (!el || el === s.hd) return;
+      try {
+        var ev = null;
+        if (document && document.createEvent) {
+          ev = document.createEvent("MouseEvents");
+          if (ev.initMouseEvent) ev.initMouseEvent("click", true, true, rendererWindow(), 1, x, y, x, y, false, false, false, false, 0, null);
+          else if (ev.initEvent) ev.initEvent("click", true, true);
+        }
+        if (ev && el.dispatchEvent) el.dispatchEvent(ev);
+      } catch (e) { /* bỏ qua */ }
+    }
+    function resizeEnd(e) {
       var s = resizeSession;
       resizeSession = null;
       if (!s) return;
+      var cancelled = !!(e && e.type === "pointercancel");
+      var p = null, moved = 0;
+      try { if (e) p = resizeClientPos(e); } catch (err) { p = null; }
+      if (p) moved = Math.abs(p.x - s.startX) + Math.abs(p.y - s.startY);
+      if (!cancelled && p && moved < 6) {
+        /* Bấm, không phải kéo: hoàn lại xem trước (live + phần tử co
+           giãn + chiều cao stage/wrap đã nới) rồi chạm xuyên xuống nút
+           /hàng kênh bên dưới. Không lưu size, không vẽ lại. */
+        try {
+          s.live.style.width = s.startW + "px";
+          s.live.style.height = s.startH + "px";
+          for (var pi = 0; pi < (s.preview || []).length; pi++) {
+            var pv = s.preview[pi];
+            if (pv.w) pv.el.style.width = Math.max(0, Math.round(s.startW - (pv.offW || 0))) + "px";
+            if (pv.h) pv.el.style.height = Math.max(0, Math.round(s.startH - (pv.offH || 0))) + "px";
+            if (pv.stretch) { pv.el.style.backgroundSize = pv.bgSize || ""; pv.el.style.backgroundPosition = pv.bgPos || ""; }
+          }
+          var stageEl = s.live;
+          if (stageEl && stageEl.id !== "stage") stageEl = stageEl.parentElement;
+          if (stageEl) {
+            if (s.baseStageH) stageEl.style.height = s.baseStageH + "px";
+            var wrap = stageEl.parentElement;
+            if (wrap && wrap.id === "stage-wrap" && s.baseWrapH) wrap.style.height = s.baseWrapH + "px";
+          }
+        } catch (err) { /* bỏ qua */ }
+        resizeTapThrough(s, p.x, p.y);
+        return;
+      }
       if (s.w !== s.startW || s.h !== s.startH) {
         setWinSize(s.container, s.layoutId, s.w, s.h);
         requestRerender();
@@ -731,20 +873,24 @@
       if (!live || !isLayoutResizable(container, layoutId)) return;
       wireResizeDocOnce();
       var edges = [
-        /* v10.8 (108, 04/11 — chốt của Hải 08:22 "sao không giống của
-           webamp"): tay kéo co giãn VÔ HÌNH như Webamp — KHÔNG vạch
-           trắng, KHÔNG viền: nền trong suốt, không box-shadow. Trước đây
-           mỗi mép có linear-gradient vạch trắng rgba(255,255,255,0.55)
-           + box-shadow inset 1px nên tay kéo HIỆN RÕ trên mép cửa sổ,
-           còn Webamp chỉ kéo mép là co giãn, không thấy tay kéo. Chỉ bỏ
-           phần NHÌN THẤY; chức năng giữ nguyên: pointer-events, cursor
-           ew/ns/nwse-resize, touch-action none, z-index 30, vùng kéo
-           10px (mép) / 24x24 (góc) để dễ bấm. Hàm này dùng chung cho mọi
-           cửa sổ co giãn được (playlist, ML, Video rời, cả Modern lẫn
-           Classic — xem 2 nơi gọi). */
-        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "10px", height: "100%" } },
-        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "10px" } },
-        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "24px", height: "24px" } }
+        /* v10.19 (2) — VÙNG CHẠM TO CHO NGÓN TAY (Hải 18:06 "không kéo
+           tăng giảm cửa sổ" + 18:15 "chỉ cần kéo/vuốt đổi được là đủ"):
+           v10.8 để tay nắm vô hình + vùng kéo chỉ 10px (mép) / 24x24
+           (góc) — ở zoom fit trên màn 360px thì mép chỉ còn ~4–8px
+           màn hình, ngón tay không chạm trúng nên tưởng như không kéo
+           được (dù code kéo đã có từ đợt A). Nay nới vùng chạm: mép
+           24px, góc 48x48 (ở fit ~0.83x thì góc ~40px màn hình, mép
+           ~20px — ngón tay chạm được). Vẫn giữ tinh thần v10.8 (không
+           vạch trắng rõ, không viền): 2 mép hoàn toàn trong suốt; chỉ
+           góc có gờ chéo RẤT MỜ (trắng 0.22, không phải 0.55 như v10.0)
+           để biết chỗ nắm trên điện thoại (không có hover/cursor như
+           chuột). Tay nắm to đè lên nút/hàng kênh thì bấm xuyên qua
+           được nhờ resizeTapThrough ở resizeEnd. Hàm này dùng chung cho
+           mọi cửa sổ co giãn được (playlist, ML, Video rời — xem 2 nơi
+           gọi; cửa sổ chính cố định nên không có tay nắm). */
+        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "24px", height: "100%" } },
+        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "24px" } },
+        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "48px", height: "48px" } }
       ];
       for (var i = 0; i < edges.length; i++) {
         (function (spec) {
@@ -765,6 +911,10 @@
           hd.style.background = "transparent"; /* v10.8 (108): vô hình như Webamp — xem ghi chú ở bảng edges trên */
           hd.style.boxShadow = "none"; /* v10.8 (108): bỏ viền inset 1px (cùng vạch trắng, tay kéo hiện rõ trên mép) */
           hd.style.touchAction = "none";
+          /* v10.19 (2): chỉ góc có gờ chéo rất mờ để biết chỗ nắm (mép
+             vẫn trong suốt hẳn). Trắng 0.22, mờ hơn nhiều so với 0.55
+             của v10.0 mà Hải đã chê. */
+          if (spec.edge === "corner") hd.style.backgroundImage = "repeating-linear-gradient(135deg, rgba(255,255,255,0.22) 0px, rgba(255,255,255,0.22) 1px, transparent 1px, transparent 7px)";
           function start(e) {
             var p = resizeClientPos(e);
             var startW = parseInt(live.style.width || "0", 10) || 0;
@@ -799,6 +949,7 @@
             } catch (err2) { preview = []; }
             resizeSession = {
               live: live, container: container, layoutId: layoutId, edge: spec.edge,
+              hd: hd, /* v10.19 (2): giữ tay nắm để tap-through ẩn nó lúc elementFromPoint */
               startX: p.x, startY: p.y, startW: startW, startH: startH,
               scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH,
               baseStageH: baseStageH, baseWrapH: baseWrapH, preview: preview
@@ -2961,6 +3112,10 @@
       /* v10.3: skin Classic cuộn list playlist Classic. */
       var target = plListDiv || classicPlListDiv;
       if (!target) return;
+      /* v10.19 (1): cuộn có chủ đích (menu "Tới bài đang hát" / đầu / cuối)
+         thì hủy lưới khôi muộn đang chờ — không để nó kéo danh sách về
+         vị trí cũ sau khi người dùng đã bảo cuộn tới chỗ khác. */
+      pendingScrollRestore = null;
       try { target.scrollTop = Math.max(0, idx * 13 - 26); } catch (e) { /* jsdom */ }
     }
 
@@ -4908,6 +5063,10 @@
               gh.style.whiteSpace = "nowrap"; gh.style.overflow = "hidden";
               gh.style.textOverflow = "ellipsis"; gh.style.lineHeight = "13px";
               gh.style.padding = "0 3px"; gh.style.fontWeight = "bold";
+              /* v10.19 (4) — cùng tông Modern: nền pha 35% màu chọn
+                 (không nền chọn đầy đủ, không để trùng hẳn nền list),
+                 chữ bình thường — để 3 đường vẽ tiêu đề giống nhau. */
+              try { var ghSel = playlistSelColors(); gh.style.background = groupHeaderBg(ghSel.bg, colorOf("wasabi.list.background")); gh.style.color = colorOf("wasabi.list.text"); } catch (e) { /* giữ màu kế thừa */ }
               div.appendChild(gh);
               continue;
             }
@@ -5324,6 +5483,16 @@
         cur: c["wasabi.list.text.current"] || "187,210,255"
       };
     }
+    /* v10.19 (4) — MÀU TIÊU ĐỀ NHÓM "dễ nhìn": nền = pha 35% màu chọn
+       (sel.bg) vào nền bình thường của danh sách (xem mixColorVal);
+       chữ = màu chữ BÌNH THƯỜNG của danh sách (không phải chữ chọn),
+       vẫn đậm + icon thư mục. Hàng kênh đang chọn/đang hát giữ nguyên
+       nền chọn đầy đủ. */
+    var GROUP_HEADER_TINT = 0.35;
+    function groupHeaderBg(selBg, normalBg) {
+      var mixed = mixColorVal(selBg, normalBg, GROUP_HEADER_TINT);
+      return mixed || rgbVal(normalBg);
+    }
     /* Hàng playlist (Đợt L 9.8): tên bài ở TRÁI, nhãn thời lượng ở GÓC
        PHẢI (như Winamp thật) — không còn "— Trực tiếp" dính sau tên.
        Nhãn (playlistRowLabel): "M:SS" khi biết thời lượng (len != null);
@@ -5431,8 +5600,15 @@
             var h = plGroupHeaderEl(rec);
             h.style.display = "block";
             h.style.fontWeight = "bold";
-            h.style.background = rgbVal(sel.bg);
-            h.style.color = rgbVal(sel.text);
+            /* v10.19 (4) — tiêu đề nhóm "dễ nhìn": KHÔNG dùng nền chọn
+               đầy đủ nữa (xanh sáng 103,136,201 chói — Hải 18:07), mà
+               pha 35% màu chọn vào nền bình thường của danh sách
+               (566: rgb(54,87,152) trên nền (28,61,125) — khác biệt rõ
+               với hàng kênh nhưng dịu, không chói); chữ = màu chữ bình
+               thường của danh sách (trắng, đậm) + icon thư mục. Hàng kênh
+               đang chọn/đang hát giữ nguyên nền chọn. */
+            h.style.background = groupHeaderBg(sel.bg, colorOf("wasabi.list.background"));
+            h.style.color = colorOf("wasabi.list.text");
             h.style.lineHeight = "13px";
             h.style.padding = "0 3px";
             h.style.whiteSpace = "nowrap";
@@ -10136,7 +10312,15 @@
             h.style.fontSize = "9px"; h.style.letterSpacing = "0.5px";
             h.style.fontFamily = (st.font || "Arial") + ", Arial, sans-serif";
             h.style.fontWeight = "bold";
-            h.style.background = st.selectedbg; h.style.color = st.current;
+            /* v10.19 (4) — như Modern: KHÔNG dùng nền chọn đầy đủ nữa
+               (cam sáng ở Smart AMP chói — Hải 18:07), mà pha 35% màu
+               chọn vào nền bình thường (base-2.91: selectedbg #0000C6
+               của pledit.txt riêng / normalbg #000000 → rgb(0,0,69);
+               mặc định #0000FF → rgb(0,0,89); Smart AMP cam → nâu cam
+               sẫm) — dịu, vẫn thấy ngay là tiêu đề nhóm. Chữ GIỮ màu
+               current (trắng, như app cũ của Hải: tiêu đề trắng đậm,
+               kênh xanh lá) + thư mục. */
+            h.style.background = groupHeaderBg(st.selectedbg, st.normalbg); h.style.color = st.current;
             h.style.overflow = "hidden"; h.style.textOverflow = "ellipsis"; h.style.whiteSpace = "nowrap";
             h.style.padding = "0 3px";
             listDiv.appendChild(h);
@@ -10312,8 +10496,8 @@
       classicHotZone(win, { x: 231, y: 86, w: 22, h: 18 }, "pl-list", "Danh sách (lưu playlist)", function () { showPlaylistMenu(this, manageMenuItems(this)); });
       /* Nút cuộn lên/xuống (fork: right:7, top:2/8 trong đáy-phải):
          mũi tên đã vẽ sẵn trong ảnh góc đáy-phải, chỉ cần vùng bấm. */
-      classicHotZone(win, { x: 260, y: 80, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
-      classicHotZone(win, { x: 260, y: 86, w: 8, h: 5 }, "pl-scroll-down", "Cuộn xuống 4 bài", function () { if (classicPlListDiv) { try { classicPlListDiv.scrollTop = (classicPlListDiv.scrollTop || 0) + 52; } catch (e) { /* bỏ qua */ } } });
+      classicHotZone(win, { x: 260, y: 80, w: 8, h: 5 }, "pl-scroll-up", "Cuộn lên 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = Math.max(0, (classicPlListDiv.scrollTop || 0) - 52); } catch (e) { /* bỏ qua */ } } });
+      classicHotZone(win, { x: 260, y: 86, w: 8, h: 5 }, "pl-scroll-down", "Cuộn xuống 4 bài", function () { pendingScrollRestore = null; /* v10.19 (1): cuộn tay thì hủy lưới khôi muộn */ if (classicPlListDiv) { try { classicPlListDiv.scrollTop = (classicPlListDiv.scrollTop || 0) + 52; } catch (e) { /* bỏ qua */ } } });
       classicPlRec = rec;
       return H;
     }
