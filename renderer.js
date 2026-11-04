@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.12";
-  var EXPECTED_RENDERER_VERSION = "10.12";
+  var RENDERER_VERSION = "10.13";
+  var EXPECTED_RENDERER_VERSION = "10.13";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -2719,9 +2719,14 @@
       updateInfoEls();
       /* Đợt D — đường (a) loadChannel autoplay (v8): kênh video thì tự mở
          video (nhúng nếu có, rời nếu Classic); kênh audio trong khi vùng
-         nhúng đang ở chế độ video thì về vis cho khỏi màn hình đen. */
+         nhúng đang ở chế độ video thì về vis cho khỏi màn hình đen.
+         v10.13 — chỉ tự mở khi tick Options "Tự mở cửa sổ video khi phát
+         video" đang BẬT (mặc định bật, xem autoOpenVideoEnabled); tắt thì
+         phát TV chỉ nghe tiếng, cửa sổ video giữ nguyên trạng thái đóng —
+         mở tay bằng nút video / menu View (các đường mở tay KHÔNG qua đây
+         nên không bị chặn). */
       var playedItem = playlistState.items[idx];
-      if (isVideoItem(playedItem)) openAvs("video");
+      if (isVideoItem(playedItem)) { if (autoOpenVideoEnabled()) openAvs("video"); }
       else if (avsState.open && !avsState.detached && avsState.mode === "video" && RES.embeddedAvs) setAvsMode("vis");
       /* Đợt E — phát thật qua audio engine (mục không có link nhạc
          thì chỉ hiện trạng thái, xem startPlaybackForCurrent). */
@@ -3559,6 +3564,10 @@
       "Animate Config Drawer": "on",
       "Open Video/Vis from the top": "on",
       "Open Video/Vis from the bottom": "off",
+      /* v10.13 — "Tự mở cửa sổ video khi phát video": mặc định BẬT (xem
+         AUTO_OPEN_VIDEO_KEY dưới đây — tùy chọn riêng của Amp, không có
+         trong XML skin nào). */
+      "Auto-open Video Window when playing video": "on",
       "Bypass setting to keep in screen": "off",
       "Link Position and Width": "on",
       "Link Position, Unlink Width": "off",
@@ -3626,14 +3635,33 @@
       var i = s.indexOf(";");
       return i >= 0 ? s.slice(i + 1) : s;
     }
+    /* v10.13 — khóa tổng hợp cho tick Options "Tự mở cửa sổ video khi phát
+       video" (chốt của Hải 04/11 14:46): Winamp thật không có tùy chọn này
+       nên không skin nào có cfgattrib cho nó; dùng khóa "amp;..." trong
+       cfgState để lưu/khôi qua cùng đường localStorage (amp9-cfg-v9) như
+       các tick Options khác — getCfgState/restoreCfgState không lọc khóa
+       này nên nó tự đi theo. Tiền tố "amp;" để không đụng GUID cfgattrib
+       của skin. Mặc định BẬT (CFG_DEFAULTS): phát kênh video thì tự mở
+       cửa sổ video như từ v8 tới nay; tắt thì phát TV chỉ nghe tiếng,
+       cửa sổ video không tự mở — mở tay bằng nút video / menu View. */
+    var AUTO_OPEN_VIDEO_SUFFIX = "Auto-open Video Window when playing video";
+    var AUTO_OPEN_VIDEO_KEY = "amp;" + AUTO_OPEN_VIDEO_SUFFIX;
     function applyCfgDefaults() {
       var names = Object.keys(CFG_DEFAULTS);
       for (var i = 0; i < names.length; i++) {
         var at = cfgAttribBySuffix(names[i]);
         if (at && !cfgState.has(at)) cfgState.set(at, CFG_DEFAULTS[names[i]]);
       }
+      if (!cfgState.has(AUTO_OPEN_VIDEO_KEY)) cfgState.set(AUTO_OPEN_VIDEO_KEY, CFG_DEFAULTS[AUTO_OPEN_VIDEO_SUFFIX]);
     }
     applyCfgDefaults();
+    function autoOpenVideoEnabled() { return cfgOn(AUTO_OPEN_VIDEO_KEY); }
+    function toggleAutoOpenVideo() {
+      var on = !autoOpenVideoEnabled();
+      cfgState.set(AUTO_OPEN_VIDEO_KEY, on ? "on" : "off");
+      persistCfg();
+      return on;
+    }
     /* Đợt D (9.9) — Beat Visualization mặc định theo tùy chọn Winamp
        ("Enable Beat Visualization": bật trong CFG_DEFAULTS — khớp Winamp
        5.66 Modern). Khôi phục từ localStorage (restoreCfgState) sẽ đồng
@@ -6769,6 +6797,13 @@
         try { xfTick = (isCrossfadeOn && isCrossfadeOn()) ? "✓ " : ""; } catch (e) { xfTick = ""; }
         items.push({ label: xfTick + xfLabel, action: function () { onCycleCrossfade(); } });
       }
+      /* v10.13 — "Tự mở cửa sổ video khi phát video" (chốt của Hải 04/11
+         14:46): tick riêng của Amp, mặc định BẬT, đặt trong menu Options
+         cạnh nhóm mở Video/Vis (Crossfade ở trên). Tắt thì phát TV chỉ
+         nghe tiếng, cửa sổ video không tự mở — mở tay bằng nút video /
+         menu View. Menu dựng mới mỗi lần mở nên ✓ luôn đúng; trạng thái
+         lưu cùng đường localStorage như các tick Options khác. */
+      items.push({ label: (autoOpenVideoEnabled() ? "✓ " : "") + "Tự mở cửa sổ video khi phát video", action: function () { toggleAutoOpenVideo(); } });
       return items;
     }
     function helpMenuItems(anchorDiv) {
@@ -11079,6 +11114,8 @@
       isShadeMuted: isShadeMuted, toggleShadeMute: toggleShadeMute,
       runDrawerSelfCheck: runDrawerSelfCheck, cfgOn: cfgOn,
       getCfgState: getCfgState, restoreCfgState: restoreCfgState,
+      autoOpenVideoEnabled: autoOpenVideoEnabled, toggleAutoOpenVideo: toggleAutoOpenVideo, /* v10.13: tick "Tự mở cửa sổ video khi phát video" */
+      AUTO_OPEN_VIDEO_KEY: AUTO_OPEN_VIDEO_KEY, AUTO_OPEN_VIDEO_SUFFIX: AUTO_OPEN_VIDEO_SUFFIX,
       isAvsAnimEnabled: isAvsAnimEnabled, drawerAnimEnabled: drawerAnimEnabled,
       menuGroupVisible: menuGroupVisible, visButtonAction: visButtonAction,
       detachOptionOn: detachOptionOn, avsFromBottom: avsFromBottom,

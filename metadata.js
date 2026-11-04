@@ -59,8 +59,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var METADATA_VERSION = "10.12";
-  var EXPECTED_METADATA_VERSION = "10.12";
+  var METADATA_VERSION = "10.13";
+  var EXPECTED_METADATA_VERSION = "10.13";
   if (METADATA_VERSION !== EXPECTED_METADATA_VERSION) {
     throw new Error("metadata.js: METADATA_VERSION (" + METADATA_VERSION + ") khac EXPECTED_METADATA_VERSION (" + EXPECTED_METADATA_VERSION + ") — ban mix, dung lai");
   }
