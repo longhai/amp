@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.9";
-  var EXPECTED_RENDERER_VERSION = "10.9";
+  var RENDERER_VERSION = "10.10";
+  var EXPECTED_RENDERER_VERSION = "10.10";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -3760,6 +3760,55 @@
       });
     }
 
+    /* v10.10 — ĐO MÉP PHẢI NHÌN THẤY CỦA NÚT (thumb) từ bitmap thật của
+       skin đang nạp (không hardcode số 566 — skin khác có nút khác):
+       NGUYÊN NHÂN LỖI MAX (Hải 04/11 10:21, ảnh trên điện thoại thật):
+       công thức v10.9 cho fill kết thúc đúng MÉP PHẢI CỦA DIV NÚT
+       (thumb 21px: fill 185..269 = thumb 248..269, đo DOM headless
+       Chrome 360px + fit zoom: fillRight == thumbRight, sai số 0) —
+       nhưng bitmap nút có ~2,5px trong suốt ở mép phải (button_volume.png:
+       cột x=17 alpha 240, x=18 alpha 93, x=19 alpha 26, x=20 alpha 3;
+       nút trắng nhìn thấy chỉ tới ~x=18,5) nên mắt người vẫn thấy ~2,5px
+       vạch xanh thừa ra phải nút trắng. Tương tự seek (36px: hết alpha
+       >128 ở x=33 → 34), shade volume (16px → 14), shade seek (24px → 22).
+       Đo: cắt đúng vùng crop của bitmap nút, quét từ phải sang tìm cột
+       cuối có alpha > 128 (nét rõ, kể cả viền tối của nút) → visibleRight
+       = cột đó + 1 (px trong ô nút). Trả null khi không đo được (jsdom /
+       không canvas / ảnh lỗi) → gọi dùng tw (hành vi cũ). Cache theo id
+       bitmap trong lần nạp skin này (renderer mới mỗi skin nên không
+       lẫn skin khác). */
+    var thumbVisibleRightCache = new Map();
+    async function measureThumbVisibleRight(bitmapId) {
+      if (!bitmapId) return null;
+      if (thumbVisibleRightCache.has(bitmapId)) return thumbVisibleRightCache.get(bitmapId);
+      var v = null;
+      try {
+        var info = await bitmapInfoCached(bitmapId);
+        if (info && info.file) {
+          var url = await RES.fileURL(info.file);
+          var im = await loadImage(url);
+          if (im && im.naturalWidth > 0 && typeof document !== "undefined" && document.createElement) {
+            var cw = info.crop ? info.crop.w : info.w, ch = info.crop ? info.crop.h : info.h;
+            var cx0 = info.crop ? info.crop.x : 0, cy0 = info.crop ? info.crop.y : 0;
+            var cv = document.createElement("canvas");
+            var cx = cv.getContext ? cv.getContext("2d") : null;
+            if (cx && cw > 0 && ch > 0) {
+              cv.width = cw; cv.height = ch;
+              cx.drawImage(im, cx0, cy0, cw, ch, 0, 0, cw, ch);
+              var d = cx.getImageData(0, 0, cw, ch).data;
+              for (var x = cw - 1; x >= 0 && v === null; x--) {
+                for (var y = 0; y < ch; y++) {
+                  if (d[(y * cw + x) * 4 + 3] > 128) { v = x + 1; break; }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) { v = null; }
+      thumbVisibleRightCache.set(bitmapId, v);
+      return v;
+    }
+
     /* Tile đúng: cắt riêng vùng crop thành ảnh tile (cache dataURL) rồi
        lặp lại — thay vì dùng cả ảnh nguồn làm nền repeat (khi phần tử hẹp
        hơn ảnh nguồn thì repeat không lặp mà hiện một lát cắt liên tục, lôi
@@ -5377,7 +5426,7 @@
           if (thumb) { thumb.style.position = "absolute"; thumb.style.left = "0px"; thumb.style.top = "0px"; setAbs(thumb, div, 0, 0); div.appendChild(thumb); }
         }
       }
-      var rec = { div: div, thumb: thumb, w: w, h: h, tw: tw, th: th, vertical: vertical, action: action, cfgattrib: cfgattrib, key: key, sliderId: sliderId, param: param, frac: 0.5 };
+      var rec = { div: div, thumb: thumb, w: w, h: h, tw: tw, th: th, vertical: vertical, action: action, cfgattrib: cfgattrib, key: key, sliderId: sliderId, param: param, frac: 0.5, visibleRight: tw };
       if (action === "VOLUME") rec.frac = demo.volume;
       else if (action === "SEEK") rec.frac = demo.seekFrac;
       else if (action === "EQ_BAND") rec.frac = drawerState.eqBands[sliderId] !== undefined ? drawerState.eqBands[sliderId] : 0.5;
@@ -5520,6 +5569,19 @@
          sẽ tua demo.t về 0 (đồng hồ 0:00 thay vì 0:02 mẫu). */
       place();
       sliderRecords.push(rec);
+      /* v10.10: đo mép phải nhìn thấy của nút để fill dừng đúng đó
+         (xem measureThumbVisibleRight). Không chặn render: trước khi đo
+         xong visibleRight = tw (hành vi v10.9), đo xong thì vẽ lại fill.
+         Chỉ VOLUME/SEEK có fill; đo lỗi (null) thì giữ nguyên tw. */
+      if (thumb && thumbId && (action === "VOLUME" || action === "SEEK")) {
+        measureThumbVisibleRight(thumbId).then(function (v) {
+          if (v !== null && v > 0 && v <= tw) {
+            rec.visibleRight = v;
+            if (action === "VOLUME") updateVolumebar();
+            else updateProgress();
+          }
+        });
+      }
     }
 
     function cfgOn(attrib) {
@@ -7193,7 +7255,16 @@
        2 slider VOLUME riêng, cùng action); không thấy slider thì trả
        null để gọi lại dùng công thức cũ. Balance/preamp/EQ không có fill
        nên không đổi gì; Classic không có fill dạng width (chỉ thumb +
-       đổi nền track). */
+       đổi nền track).
+       v10.10 (04/11 — Hải 10:21 \"lên max còn\" trên điện thoại thật,
+       ảnh 1000094747_1_t1pd.jpg): công thức v10.9 đúng với DIV nút
+       (đo DOM headless 360px + fit: fillRight == thumbRight) nhưng SAI
+       với MẮT NGƯỜI — bitmap nút có ~2,5px trong suốt ở mép phải nên
+       vạch xanh vẫn thừa ra phải nút trắng nhìn thấy. Nay điểm đích là
+       MÉP PHẢI NHÌN THẤY của nút (rec.visibleRight, đo từ alpha bitmap
+       thật của skin — xem measureThumbVisibleRight; chưa đo được thì
+       = tw, hành vi v10.9): volume 566: 0→0, 0.5→40, 1→81; seek:
+       0→0, 0.5→122, 1→248; shade volume: 0→0, 0.5→23, 1→50. */
     function fillWidthToThumbRight(fillDiv, action, frac) {
       var best = null;
       for (var i = 0; i < sliderRecords.length; i++) {
@@ -7204,7 +7275,8 @@
       }
       if (!best) return null;
       var f = Math.max(0, Math.min(1, frac));
-      var w = (best.div._absX || 0) + f * best.w - (fillDiv._absX || 0);
+      var vr = (best.visibleRight != null && best.visibleRight > 0) ? best.visibleRight : best.tw;
+      var w = (best.div._absX || 0) + f * (best.w - best.tw + vr) - (fillDiv._absX || 0);
       if (!isFinite(w)) return null;
       return Math.max(0, Math.round(w));
     }
