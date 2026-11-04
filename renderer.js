@@ -18,7 +18,7 @@
    SVG feColorMatrix theo từng gammagroup), self-check lúc chạy.
    ĐỢT C (9.1 — KHÔNG đổi loader nên KHÔNG bump version): cửa sổ Playlist
    Editor 436×164 (frame playlistframe.nostatusbar, menubar File/Playlist/
-   Sort/Help đo từ PNG lúc chạy), danh sách thật từ radio.m3u (41 kênh),
+   Sort/Help đo từ PNG lúc chạy), danh sách thật từ iptv.m3u (218 mục, 13 nhóm),
    chọn 1 click / phát 2 click, ô tìm trong khung list, hàng
    nút Add/Rem/Sel/Misc/List mở menu, PLTime = tổng thời gian các mục có
    thời lượng. Nút PL (TOGGLE guid:pl) + menu View mở/đóng playlist.
@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.15";
-  var EXPECTED_RENDERER_VERSION = "10.15";
+  var RENDERER_VERSION = "10.17";
+  var EXPECTED_RENDERER_VERSION = "10.17";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -151,7 +151,7 @@
   };
 
   /* Đợt 9.5: KHÔNG còn bài Demo — người dùng chốt bỏ hết bài hát demo,
-     chỉ giữ nguồn radio.m3u của mình. DEMO_TRACKS giữ lại dạng rỗng để
+     chỉ giữ nguồn iptv.m3u của mình. DEMO_TRACKS giữ lại dạng rỗng để
      các hàm/export cũ không vỡ (demoPlaylistItems() trả [], ticker không
      còn hiện tên bài demo). Trước đây: 3 bài Llama Whippin' / Demo Song /
      Base Skin Theme (225s/187s/243s). */
@@ -416,7 +416,7 @@
     var onOpenMakiPanel = opts.onOpenMakiPanel || null; /* menu Help → "Xem script MAKI…" (index.html openMakiPanel) */
     var onMilkdropShownChange = opts.onMilkdropShownChange || null; /* v10.5: canvas Milkdrop đổi hiện/ẩn giữa chừng (video xuất hiện/biến mất) → index.html syncMilkdrop() để đồng bộ lại loop + banner ngay, không đợi lần render sau */
     var skinInfo = opts.skinInfo || null; /* Đợt D: bảng About — tên/tác giả/version skin (index.html đưa SKIN từ loader) */
-    var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại radio.m3u */
+    var onReloadRadio = opts.onReloadRadio || null;       /* đợt C: nạp lại iptv.m3u */
     var isPlaylistOpen = opts.isPlaylistOpen || null;     /* đợt C: tick menu View */
     var fetchFn = opts.fetchFn || null; /* Đợt L (9.8): fetch tiêm vào cho addUrl (.m3u) — test đưa mock, chạy thật dùng fetch global. */
     /* State ngăn kéo đợt B (sống trong closure, KHÔNG reset khi re-render):
@@ -1482,7 +1482,7 @@
         balance: drawerState.balance /* Đợt D (9.9): PAN — khôi phục vị trí Balance */
       };
     }
-    /* Khôi phục state phát đã lưu (index.html gọi sau khi nạp radio.m3u,
+    /* Khôi phục state phát đã lưu (index.html gọi sau khi nạp iptv.m3u,
        TRƯỚC khi người dùng bấm phát). Không tự phát lại (playing=false
        lúc nạp trang); mục local (file đã chọn tay) không khôi phục được
        vì trình duyệt không nhớ file local. */
@@ -2475,11 +2475,12 @@
        - filter: chuỗi tìm, lọc tức thì theo tên, KHÔNG đổi thứ tự gốc.
        - original: thứ tự lúc nạp (để Misc "Khôi phục thứ tự gốc").
        Mặc định (đợt 9.5): playlist RỖNG cho tới khi index.html nạp
-       radio.m3u xong gọi setPlaylistData để chèn 41 kênh (không còn
+       iptv.m3u xong gọi setPlaylistData để chèn 218 mục (không còn
        bài Demo — người dùng chốt bỏ hết, chỉ giữ nguồn của mình).
-       radio.m3u thật KHÔNG có group-title nào (41 kênh đều không thẻ) nên
-       nhóm mặc định của chúng là "Radio" (tên nguồn), ghi rõ ở đây — không
-       phải "Không rõ" như quy ước gom nhóm của Webamp fork. */
+       v10.17: group của mục lấy đúng group-title trong file (iptv.m3u
+       có 13 nhóm); mục nào không có group-title thì group để trống —
+       lúc vẽ playlist mới gom vào nhóm "Khác", còn file nào KHÔNG có
+       group-title nào thì hiện phẳng như cũ (không tiêu đề nhóm). */
     function demoPlaylistItems() {
       return DEMO_TRACKS.map(function (t) { return { name: t.name, url: "", len: t.len, group: "Demo", kind: "track" }; });
     }
@@ -2560,7 +2561,7 @@
     function playlistGroups() {
       var g = {};
       for (var i = 0; i < playlistState.items.length; i++) {
-        var k = playlistState.items[i].group || "Khong ro";
+        var k = playlistState.items[i].group || "Khác";
         g[k] = (g[k] || 0) + 1;
       }
       return g;
@@ -2588,6 +2589,41 @@
       var f = stripDiacritics((playlistState.filter || "").toLowerCase());
       for (var i = 0; i < playlistState.items.length; i++) {
         if (itemMatchesSearch(playlistState.items[i], f)) out.push({ item: playlistState.items[i], idx: i });
+      }
+      return out;
+    }
+    /* v10.17 — PLAYLIST THEO CHUYEN MUC (kieu IPTV Viewer v10):
+       playlistGroupedRows() tra ve danh sach HIEN THI gom 2 loai phan tu:
+       - { header: "Ten nhom", count: N } — tieu de nhom, dung truoc muc
+         dau tien cua nhom do;
+       - { item, idx } — muc kenh/bai nhu playlistFiltered() tra ve.
+       Thu tu nhom = lan xuat hien dau tien trong danh sach (sau loc);
+       cac muc cung nhom gom lien nhau duoi 1 tieu de, giu nguyen thu tu
+       goc trong nhom. Muc khong co group ("") gom vao nhom "Khác" (quy
+       uoc giong IPTV Viewer v10). Neu KHONG muc nao co group (vd file
+       .m3u khong co group-title nao) thi tra ve danh sach phang nhu cu
+       (khong tieu de). Tieu de chi de hien thi: khong co idx, khong nam
+       trong items, khong tinh vao so muc / thoi luong / so thu tu, khong
+       match khi tim kiem (no chi xuat hien khi nhom cua no co muc khop
+       loc); buildPlaylistRows/buildClassicPlRows ve no thanh hang rieng
+       khong bam/phat/chon duoc. */
+    function playlistGroupName(it) {
+      var g = (it && it.group) || "";
+      return g ? g : "Khác";
+    }
+    function playlistGroupedRows() {
+      var rows = playlistFiltered();
+      var order = [], byGroup = {};
+      for (var i = 0; i < rows.length; i++) {
+        var g = playlistGroupName(rows[i].item);
+        if (!byGroup[g]) { byGroup[g] = []; order.push(g); }
+        byGroup[g].push(rows[i]);
+      }
+      if (order.length === 1 && order[0] === "Khác") return rows; /* phang nhu cu */
+      var out = [];
+      for (var j = 0; j < order.length; j++) {
+        out.push({ header: order[j], count: byGroup[order[j]].length });
+        for (var k = 0; k < byGroup[order[j]].length; k++) out.push(byGroup[order[j]][k]);
       }
       return out;
     }
@@ -2624,12 +2660,15 @@
       if (/^https?:\/\//i.test(String(item.url || ""))) item.channels = 2;
       return item;
     }
-    /* Nạp nguồn .m3u làm dữ liệu chính: chỉ kênh radio (giữ tên +
-       thứ tự gốc). Đợt 9.5: không còn nối bài Demo vào cuối. Trả về
-       tổng số mục. */
+    /* Nạp nguồn .m3u làm dữ liệu chính (giữ tên + thứ tự gốc).
+       Đợt 9.5: không còn nối bài Demo vào cuối. v10.17: KHÔNG còn
+       gán group mặc định "Radio" cho mục không có group-title (như
+       trước) — group để trống, lúc vẽ playlist mới gom vào "Khác";
+       nhờ vậy file không có group-title nào vẫn hiện phẳng như cũ.
+       Trả về tổng số mục. */
     function setPlaylistData(m3uText, baseUrl, sourceName) {
       var radio = parseM3U(m3uText, baseUrl);
-      for (var i = 0; i < radio.length; i++) { if (!radio[i].group) radio[i].group = "Radio"; applyWebampChannels(radio[i]); }
+      for (var i = 0; i < radio.length; i++) { applyWebampChannels(radio[i]); }
       var items = radio;
       playlistState.items = items;
       playlistState.original = items.slice();
@@ -2637,7 +2676,7 @@
       playlistState.playing = false; playlistState.filter = "";
       demo.t = 0; demo.seekFrac = 0; demo.dur = undefined; /* v10.7 (107): playlist mới = chưa phát gì — quên vị trí bài cũ kẻo đồng hồ (chính + playlist) hiện số cũ của playlist trước (vd nạp lại radio khi đang ở 0:09 thì đồng hồ toàn-live hiện 0:09 dù chưa phát) */
       avsVideoEverHadPic = false; /* v10.3 — playlist moi: muc hien tai la luong moi, chua tung co hinh */
-      playlistState.source = sourceName || "radio.m3u";
+      playlistState.source = sourceName || "iptv.m3u";
       requestRerender();
       /* v10.3 (H2): goi thang setTickerText — truoc day chi requestRerender
          nen ticker khong duoc dong bo khi du lieu ve (render lai bat ky
@@ -4769,8 +4808,19 @@
       parentEl.appendChild(div);
       if (ctx && ctx.windowKind === "playlist") {
         var rows = [];
-        try { rows = playlistFiltered(); } catch (e) { rows = []; }
+        try { rows = playlistGroupedRows(); } catch (e) { rows = []; }
         for (var i = 0; i < rows.length; i++) {
+          if (rows[i].header) { /* v10.17 — tieu de nhom (nhu Pledit/Classic) */
+            var gh = document.createElement("div");
+            gh.className = "group-header";
+            gh.dataset.groupHeader = "1";
+            gh.style.whiteSpace = "nowrap"; gh.style.overflow = "hidden";
+            gh.style.textOverflow = "ellipsis"; gh.style.lineHeight = "13px";
+            gh.style.padding = "0 3px"; gh.style.fontWeight = "bold";
+            gh.textContent = rows[i].header + " (" + rows[i].count + ")";
+            div.appendChild(gh);
+            continue;
+          }
           var row = document.createElement("div");
           row.style.whiteSpace = "nowrap"; row.style.overflow = "hidden";
           row.style.textOverflow = "ellipsis"; row.style.lineHeight = "13px";
@@ -5274,12 +5324,32 @@
        main-window-test.js (row sel mặc định cũng là row đang hát và test
        khóa chữ 214,228,255), khác cascade CSS .row.cur đè sau trong skin-sim. */
     function buildPlaylistRows(listDiv) {
-      var olds = listDiv.querySelectorAll(".row");
+      var olds = listDiv.querySelectorAll(".row, .group-header");
       for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
       var sel = playlistSelColors();
-      var rows = playlistFiltered();
+      var rows = playlistGroupedRows();
       for (var r = 0; r < rows.length; r++) {
         (function (rec) {
+          /* v10.17 — tieu de nhom: hang phan cach, khong phai hang kenh
+             (khong dataset.idx, khong click/dblclick/contextmenu) — chi
+             de nhin, bam vao khong lam gi. */
+          if (rec.header) {
+            var h = document.createElement("div");
+            h.className = "group-header";
+            h.dataset.groupHeader = "1";
+            h.textContent = rec.header + " (" + rec.count + ")";
+            h.style.display = "block";
+            h.style.fontWeight = "bold";
+            h.style.background = rgbVal(sel.bg);
+            h.style.color = rgbVal(sel.text);
+            h.style.lineHeight = "13px";
+            h.style.padding = "0 3px";
+            h.style.whiteSpace = "nowrap";
+            h.style.overflow = "hidden";
+            h.style.textOverflow = "ellipsis";
+            listDiv.appendChild(h);
+            return;
+          }
           var row = document.createElement("div");
           row.className = "row" + (rec.idx === playlistState.selected ? " sel" : "") + (rec.idx === playlistState.current ? " cur" : "");
           if (rec.idx === playlistState.selected) {
@@ -6662,9 +6732,10 @@
     }
     /* Đợt v10.15 (04/11 — Hải 15:52: nút -rem bấm vào phải hiện menu
        "Xoá 1 bài" + "Xoá tất cả"; 16:00: "Nạp lại radio" đổi tên thành
-       "Nguồn mặc định" — chỉ đổi nhãn, hành động vẫn nạp lại radio.m3u;
-       số "(41 kênh)" bỏ luôn vì là số cứng ghi chết trong nhãn, đổi nội
-       dung radio.m3u thì số sẽ lệch). Dùng chung cho Modern (PE_REM)
+       "Nguồn mặc định" — chỉ đổi nhãn, hành động vẫn nạp lại file mặc
+       định (radio.m3u lúc đó, iptv.m3u từ v10.17); số "(41 kênh)" bỏ
+       luôn vì là số cứng ghi chết trong nhãn, đổi nội dung file mặc
+       định thì số sẽ lệch). Dùng chung cho Modern (PE_REM)
        lẫn Classic (pl-remove). */
     function removeMenuItems() {
       return [
@@ -7001,7 +7072,13 @@
       return {
         index: i, name: it.name || "", title: metadataDisplayName(it),
         artist: metadataDisplayArtist(it), album: metadataDisplayAlbum(it),
-        group: it.group || "", url: it.url || "",
+        /* v10.17: nhom HIEN THI (playlistGroupName — muc khong co
+           group-title thi "Khác"), khong phai group tho trong file —
+           de bang thong tin hien dung nhom nhu tieu de nhom trong
+           playlist (truoc day radio.m3u duoc fill "Radio" nen group
+           luon co; bo fill roi thi group tho la "" — hien "(không rõ)"
+           cho moi kenh radio la lui buoc). */
+        group: playlistGroupName(it), url: it.url || "",
         len: it.len != null ? it.len : null, lenText: live ? "Trực tiếp" : fmtTime(it.len),
         live: live, local: !!it.local, fileSize: it.fileSize || null, fileSizeText: fileSizeText,
         metaStatus: it.metaStatus || "none", metaSource: it.metaSource || "",
@@ -9946,12 +10023,30 @@
     }
     function buildClassicPlRows(listDiv) {
       if (!listDiv) return;
-      var olds = listDiv.querySelectorAll(".row");
+      var olds = listDiv.querySelectorAll(".row, .group-header");
       for (var o = 0; o < olds.length; o++) if (olds[o].parentElement) olds[o].parentElement.removeChild(olds[o]);
       var st = classicPlStyle();
-      var rows = playlistFiltered();
+      var rows = playlistGroupedRows();
       for (var r = 0; r < rows.length; r++) {
         (function (rec) {
+          /* v10.17 — tieu de nhom (nhu buildPlaylistRows Modern): hang
+             phan cach, khong bam/phat/chon duoc. */
+          if (rec.header) {
+            var h = document.createElement("div");
+            h.className = "group-header";
+            h.dataset.groupHeader = "1";
+            h.textContent = rec.header + " (" + rec.count + ")";
+            h.style.display = "block";
+            h.style.height = "13px"; h.style.lineHeight = "13px";
+            h.style.fontSize = "9px"; h.style.letterSpacing = "0.5px";
+            h.style.fontFamily = (st.font || "Arial") + ", Arial, sans-serif";
+            h.style.fontWeight = "bold";
+            h.style.background = st.selectedbg; h.style.color = st.current;
+            h.style.overflow = "hidden"; h.style.textOverflow = "ellipsis"; h.style.whiteSpace = "nowrap";
+            h.style.padding = "0 3px";
+            listDiv.appendChild(h);
+            return;
+          }
           var row = document.createElement("div");
           row.className = "row" + (rec.idx === playlistState.selected ? " sel" : "") + (rec.idx === playlistState.current ? " cur" : "");
           row.style.display = "flex";

@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.15 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.17 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -123,7 +123,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.15" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.17" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -132,26 +132,26 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.15";
+window.AMP_VERSION = "10.17";
 </script>
-<script src="classic.js?v=10.15"></script>
-<script src="skin-loader.js?v=10.15"></script>
-<script src="audio.js?v=10.15"></script>
-<script src="eqf.js?v=10.15"></script>
+<script src="classic.js?v=10.17"></script>
+<script src="skin-loader.js?v=10.17"></script>
+<script src="audio.js?v=10.17"></script>
+<script src="eqf.js?v=10.17"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
      GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
      cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
      (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
      milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
      / PRESETS_* / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.15"></script>
-<script src="metadata.js?v=10.15"></script>
-<script src="maki.js?v=10.15"></script>
-<script src="renderer.js?v=10.15"></script>
+<script src="milkdrop.js?v=10.17"></script>
+<script src="metadata.js?v=10.17"></script>
+<script src="maki.js?v=10.17"></script>
+<script src="renderer.js?v=10.17"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.15" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.17" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -163,7 +163,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.15";
+var VERSION = "10.17";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* crossfade + Milkdrop — chỉnh từ menu trong giao diện skin (File/
@@ -205,7 +205,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.15 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.17 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -215,7 +215,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.15 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.17 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -770,16 +770,16 @@ async function bootSkin(file, name) {
       isPlaylistOpen: function () { return playlistOpen; },
       /* menu Add "Nguồn mặc định" (v10.15 — trước đây nhãn "Nạp lại
          radio.m3u") — nạp lại file cùng thư mục rồi đặt làm dữ liệu
-         playlist (41 kênh). */
+         playlist (218 mục, 13 nhóm — iptv.m3u từ v10.17). */
       onReloadRadio: async function () {
         try {
-          var r = await fetch("radio.m3u");
+          var r = await fetch("iptv.m3u");
           if (r.ok) {
             var t = await r.text();
-            var n = renderer.setPlaylistData(t, "radio.m3u", "radio.m3u");
-            setStatus("Đã nạp lại radio.m3u: " + n + " mục.");
+            var n = renderer.setPlaylistData(t, "iptv.m3u", "iptv.m3u");
+            setStatus("Đã nạp lại iptv.m3u: " + n + " mục.");
           }
-        } catch (e) { setStatus("Không nạp lại được radio.m3u: " + (e.message || e), true); }
+        } catch (e) { setStatus("Không nạp lại được iptv.m3u: " + (e.message || e), true); }
       },
       /* đường (d) restore: lưu state AVS (mở/chế độ/tách rời/
          scale) mỗi khi đổi, để lần nạp trang sau mở lại đúng trạng thái. */
@@ -850,15 +850,15 @@ async function bootSkin(file, name) {
       ? await renderer.renderLayout("main", "shade", "WINAMP", {}, stage)
       : await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
     checkDrawer();
-    /* nạp radio.m3u cùng thư mục làm nguồn playlist mặc định
-       (41 kênh, giữ tên + thứ tự gốc). Không có file thì playlist
+    /* nạp iptv.m3u cùng thư mục làm nguồn playlist mặc định
+       (218 mục, 13 nhóm, giữ tên + thứ tự gốc). Không có file thì playlist
        trống, vẫn vẽ được. */
-    var playlistInfo = "Playlist: (trống) — chưa thấy radio.m3u cùng thư mục";
+    var playlistInfo = "Playlist: (trống) — chưa thấy iptv.m3u cùng thư mục";
     try {
-      var rr = await fetch("radio.m3u");
+      var rr = await fetch("iptv.m3u");
       if (rr.ok) {
         var rt = await rr.text();
-        var rn = renderer.setPlaylistData(rt, "radio.m3u", "radio.m3u");
+        var rn = renderer.setPlaylistData(rt, "iptv.m3u", "iptv.m3u");
         var pst = renderer.getPlaylistState();
         playlistInfo = "Playlist: " + pst.source + " — " + rn + " mục (nhóm: "
           + Object.keys(pst.groups).map(function (k) { return k + " " + pst.groups[k]; }).join(", ")
