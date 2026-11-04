@@ -41,8 +41,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MILKDROP_VERSION = "10.19";
-  var EXPECTED_MILKDROP_VERSION = "10.19";
+  var MILKDROP_VERSION = "10.20";
+  var EXPECTED_MILKDROP_VERSION = "10.20";
   if (MILKDROP_VERSION !== EXPECTED_MILKDROP_VERSION) {
     throw new Error("milkdrop.js: MILKDROP_VERSION (" + MILKDROP_VERSION + ") khac EXPECTED_MILKDROP_VERSION (" + EXPECTED_MILKDROP_VERSION + ") — ban mix, dung lai");
   }

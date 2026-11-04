@@ -37,8 +37,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var CLASSIC_VERSION = "10.19";
-  var EXPECTED_CLASSIC_VERSION = "10.19";
+  var CLASSIC_VERSION = "10.20";
+  var EXPECTED_CLASSIC_VERSION = "10.20";
   /* Manifest duy nhất window.AMP_VERSION (đặt ở index.html TRƯỚC khi nạp
      file này) — lệch thì MANIFEST_MISMATCH = true để trang báo "bản mix".
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */

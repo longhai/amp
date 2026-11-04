@@ -78,8 +78,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var MAKI_VERSION = "10.19";
-  var EXPECTED_MAKI_VERSION = "10.19";
+  var MAKI_VERSION = "10.20";
+  var EXPECTED_MAKI_VERSION = "10.20";
   if (MAKI_VERSION !== EXPECTED_MAKI_VERSION) {
     throw new Error("maki.js: MAKI_VERSION (" + MAKI_VERSION + ") khac EXPECTED_MAKI_VERSION (" + EXPECTED_MAKI_VERSION + ") — ban mix, dung lai");
   }
