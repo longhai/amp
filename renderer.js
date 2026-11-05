@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.29";
-  var EXPECTED_RENDERER_VERSION = "10.29";
+  var RENDERER_VERSION = "10.30";
+  var EXPECTED_RENDERER_VERSION = "10.30";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -693,8 +693,7 @@
       return { w: lay.w, h: lay.h };
     }
     /* Kéo mép đổi kích thước (việc 6, đợt v10.0 sửa 15:22 + 15:28;
-       v10.20: góc 64x64 + gờ chéo NHÌN THẤY RÕ, mép 32px — xem
-       attachResizeHandles):
+       v10.30: góc 64x64, mép 40px — xem attachResizeHandles):
        3 tay nắm trên cửa sổ kéo được — mép phải, mép đáy, góc dưới-phải.
        - Tay nắm THẤY ĐƯỢC: góc có gờ chéo trắng 0.55 + vạch tối 0.35
          (kiểu grip cổ điển, như grip của chính skin 566), mép trong
@@ -813,8 +812,37 @@
       if (s.edge === "right" || s.edge === "corner") w = s.w + (p.x - _lx) / _sCurX;
       if (s.edge === "bottom" || s.edge === "corner") h = s.h + (p.y - _ly) / _sCurY;
       s.lastX = p.x; s.lastY = p.y;
-      var c = clampWinSize(s.container, s.layoutId, w, h);
+      /* v10.30 — Playlist Classic: khung theo tay TỪNG PIXEL lúc kéo
+         (chỉ kẹp min 275×116, KHÔNG lượng tử hoá). Lượng tử hoá mỗi
+         khung (v10.23) làm mất chuyển động dưới đoạn: kéo chậm +5px/
+         khung thì w = 275+5 → làm tròn về 275 mãi, 10 bước +5px vẫn
+         275×116 (đo jsdom + Chrome thật v10.29) — vừa "nhảy nấc" vừa
+         "kéo chậm không ăn". Lượng tử về đoạn 25×29 chỉ lúc THẢ
+         (resizeEnd → setWinSize). Nội dung vẽ live ở cỡ lượng tử gần
+         nhất (onLiveSize nhận cỡ lượng tử, xem cuối hàm). */
+      var isClassicPl30 = lowerStr(s.container) === "classic" && lowerStr(s.layoutId) === "playlist";
+      var c;
+      if (isClassicPl30) c = { w: Math.max(275, Math.round(w)), h: Math.max(116, Math.round(h)) };
+      else c = clampWinSize(s.container, s.layoutId, w, h);
       if (!c) return;
+      /* v10.30 — Kẹp live cửa sổ rời Video/AVS ở chế độ Fit (như
+         detachedWinSize lúc build): trước đây kéo Video/AVS rộng hơn
+         main thì giữa lúc kéo to ra (466×268), thả ra bị co về rộng
+         main (354×268) mà localStorage vẫn lưu 466 — snap-back bất
+         ngờ, lần mở sau cũng về 354. Nay kẹp ngay lúc kéo nên thả ra
+         giữ đúng cỡ vừa kéo. Chế độ 1x không kẹp (stage mở rộng theo
+         bề rộng thật như playlist). */
+      if ((lowerStr(s.container) === "video" || lowerStr(s.container) === "avs") && isZoomFit) {
+        try {
+          if (isZoomFit()) {
+            var mw30 = detachedDefaultWidth();
+            if (mw30 > 0 && c.w > mw30) {
+              var mm30 = layoutMinMax(s.container, s.layoutId);
+              c.w = Math.max(mw30, mm30 ? mm30.minW : 0);
+            }
+          }
+        } catch (e30) { /* bỏ qua */ }
+      }
       s.w = c.w; s.h = c.h;
       try {
         s.live.style.width = c.w + "px";
@@ -904,8 +932,18 @@
          (playlist Classic: nền lát tile theo đoạn 25×29, xem trước nhẹ
          bằng stretch/anchor không đủ — tile phải thêm/bớt ô, nút phải
          dời theo cỡ mới). Callback tự bỏ qua khi cỡ lượng tử hoá không
-         đổi, nên chỉ chạy mỗi lần qua mốc đoạn. */
-      if (!skipLive && s.onLiveSize) { try { s.onLiveSize(s.w, s.h); } catch (eL) { /* bỏ qua */ } }
+         đổi, nên chỉ chạy mỗi lần qua mốc đoạn.
+         v10.30 — Classic nhận cỡ LƯỢNG TỬ gần nhất (không phải cỡ raw
+         của khung): nội dung chỉ rebuild khi qua mốc đoạn — rẻ, không
+         vỡ hình; khung thì theo tay từng pixel (s.w/s.h raw). */
+      if (!skipLive && s.onLiveSize) {
+        try {
+          if (isClassicPl30) {
+            var cq30 = clampWinSize(s.container, s.layoutId, s.w, s.h);
+            if (cq30) s.onLiveSize(cq30.w, cq30.h);
+          } else s.onLiveSize(s.w, s.h);
+        } catch (eL) { /* bỏ qua */ }
+      }
       /* v10.26 (1) — Fit/stage theo kịp NGAY lúc kéo + giữ transition tắt:
          (a) khẳng định lại transition "none" cho stage/wrap mỗi khung
          (timeout glide 250ms của lần thả trước có thể bật lại giữa lúc
@@ -925,7 +963,7 @@
       /* preventDefault da lam o resizeMove (dong bo, khong cho rAF). */
     }
     /* v10.19 (2), v10.20 (1) — CHẠM XUYÊN TAY NẮM (tap-through): tay nắm
-       nay to hơn (v10.20: 32px mép / 64px góc) nên đè lên hàng nút ở đáy
+       nay to hơn (v10.30: 40px mép / 64px góc) nên đè lên hàng nút ở đáy
        cửa sổ (Add/Rem/Sel/Misc/List) và mép phải của hàng kênh. Bấm (thả
        chuyển < 6px màn hình) thì KHÔNG phải kéo: hoàn lại kích thước xem
        trước về như cũ, không lưu, và "chạm xuyên" — gửi 1 sự kiện click
@@ -1046,23 +1084,32 @@
       if (lowerStr(container) === "main") return;
       wireResizeDocOnce();
       var edges = [
-        /* v10.21 (1+2) — Tay nắm XML-DRIVEN (Hải 19:59-20:05, test v10.20):
-           (a) 566 vốn đã kéo được, nhưng gờ v10.20 (64×64, vạch 0.55)
-           TO ĐÙNG + TRÀN KHUNG, che nút Manage Playlist → nay gờ góc
-           lấy theo XML của skin: skin có <layer resize="bottomright"
-           image="player.pl.resizer"> (566: resizer.png 17×17) thì ảnh
-           đó đã vẽ sẵn trong cửa sổ, tay nắm trong suốt, không vẽ thêm;
-           skin không có ảnh gờ thì chỉ vẽ miếng nhỏ 24×24 ở góc.
-           Vùng chạm góc 48×48 (trong suốt) cho ngón tay, mép 32px.
-           (b) Đổi skin khác (.wal) thì MẤT tay nắm vì cổng
-           isLayoutResizable chặn khi XML không khai minimum → nay bỏ
-           cổng (chỉ cửa sổ chính vẫn không tay nắm, cố định theo XML);
-           min/max XML chỉ kẹp cỡ khi kéo (layoutMinMax mặc định
-           200×100 khi không khai). Bấm (<6px) vẫn xuyên qua tay nắm
-           nhờ resizeTapThrough ở resizeEnd. */
-        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "32px", height: "100%" } },
-        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "32px" } },
-        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "48px", height: "48px" } }
+        /* v10.30 — Tay nắm TO HƠN, dễ tóm (Hải 05/11 08:33 "bấm góc để
+           kéo thì khi được khi không"): góc 48×48 → 64×64, mép 32px →
+           40px (v10.20 từng dùng góc 64×64, v10.21 thu về 48×48).
+           Đo Chrome thật v10.29 (luới chạm quanh góc playlist
+           Classic, 19 điểm): 13/19 bắt được tay nắm; trượt là các
+           điểm ngoài hẳn mép cửa sổ (>~10px màn hình — ngoài stage,
+           stage vừa đúng cửa sổ rộng/cao nhất + overflow:hidden nên
+           KHÔNG tràn tay nắm ra ngoài mép được) và điểm sâu trong
+           cửa sổ (-60,-60, ngoài cả góc 48 lẫn mép 32). Góc 64×64 +
+           mép 40px phủ luôn (-60,-60) và mọi điểm lệch trong; chạm
+           ngoài mép vẫn nhờ độ dung sai hit-test của Chrome (~10px
+           màn hình) như đã đo. Bấm (<6px) vẫn xuyên qua tay nắm nhờ
+           resizeTapThrough ở resizeEnd nên nút/hàng kênh dưới tay nắm
+           (vd nút List ở góc playlist Classic) vẫn bấm được.
+           Gờ góc vẫn XML-DRIVEN như v10.21 (Hải 19:59-20:05): skin có
+           <layer resize="bottomright" image="player.pl.resizer">
+           (566: resizer.png 17×17) thì ảnh đó đã vẽ sẵn trong cửa sổ,
+           tay nắm trong suốt, không vẽ thêm; skin không có ảnh gờ thì
+           chỉ vẽ miếng nhỏ 24×24 ở góc. Chỉ VÙNG CHẠM to lên (64×64),
+           gờ vẽ vẫn 24×24 như cũ. Cổng isLayoutResizable đã bỏ từ
+           v10.21 (chỉ cửa sổ chính vẫn không tay nắm, cố định theo
+           XML); min/max XML chỉ kẹp cỡ khi kéo (layoutMinMax mặc
+           định 200×100 khi không khai). */
+        { edge: "right", cursor: "ew-resize", css: { right: "0px", top: "0px", width: "40px", height: "100%" } },
+        { edge: "bottom", cursor: "ns-resize", css: { left: "0px", bottom: "0px", width: "100%", height: "40px" } },
+        { edge: "corner", cursor: "nwse-resize", css: { right: "0px", bottom: "0px", width: "64px", height: "64px" } }
       ];
       for (var i = 0; i < edges.length; i++) {
         (function (spec) {
@@ -1091,7 +1138,7 @@
              ảnh của chính skin là gờ, không vẽ thêm gì (không tràn
              khung, không che nút). Skin không có ảnh gờ thì vẽ 1 miếng
              NHỎ 24×24 ở góc (vạch chéo 0.45 + 0.30, gọn trong khung);
-             vùng chạm vẫn 48×48 (trong suốt) để ngón tay nắm được.
+             vùng chạm vẫn 64×64 (trong suốt) để ngón tay nắm được.
              v10.23 — opts.transparentCorner: skin Classic luôn có gờ
              chéo của chính skin ở góc đáy-phải pledit.bmp (đã kiểm bằng
              mắt: cả base-2.91 lẫn Winamp5 Classified đều vẽ sẵn vạch
@@ -10633,12 +10680,44 @@
       /* v10.7 (107): dùng chung playlistClockText() với Modern
          (tổng/đã chọn/toàn-live → thời gian đã phát) thay vì tính
          riêng — trước đây bản Classic tính riêng (sel>0 ? sel : total)
-         nên sửa 1 chỗ lệch 1 chỗ; 2 skin nay luôn hiện cùng 1 số. */
+         nên sửa 1 chỗ lệch 1 chỗ; 2 skin nay luôn hiện cùng 1 số.
+         v10.30: hàm này giữ nguyên cho ô giờ SHADE (14px, chỉ tên bài
+         đang phát + giờ của nó) — ô giờ cửa sổ playlist đầy đủ dùng
+         classicPlTotalTimeText() bên dưới. */
       try { return playlistClockText(); } catch (e) { return fmtTime(0); }
+    }
+    /* v10.30 — Ô giờ đáy playlist Classic: Winamp thật (fork
+       RunningTimeDisplay.tsx + selectors getRunningTimeMessage) hiện
+       "thời gian đã chọn / TỔNG thời gian" (vd "4:11/372:05", đệm 18
+       ký tự như fork — vừa đúng hộp 90px): Hải 05/11 08:52, ảnh
+       1000094890_13_zva2.jpg — playlist 105 mục đang hát "CA DAO ME
+       DIU HIEN (4:11)" mà đáy chỉ hiện "4:11" (giờ mục đã chọn), chưa
+       có TỔNG thời gian tất cả bài. Nay hiện cả 2 số như Winamp thật.
+       - Tổng = playlistTotalTime(): cộng dồn len các mục CÓ thời lượng
+         (file local đã probe metadata/duration); mục live/radio len
+         null thì BỎ QUA khi cộng (không bịa số) — fork cũng ghi chú
+         nên thêm "+" khi có mục chưa biết thời lượng, Amp chưa thêm
+         dấu "+" (giữ đúng 2 số như fork chưa có "+").
+       - Chưa có len nào (tổng = 0, vd toàn live): giữ đường cũ v10.7
+         — hiện thời gian đã phát của bài đang phát, chưa phát thì
+         "0:00" (không hiện "0:00/0:00" như fork vì hộp 0:00 trong khi
+         nhạc đang phát là điều Hải đã báo "chưa đầy đủ" ở v10.7).
+       - fmtTime() = phút-tổng:giây như fork getTimeStr (phút không
+         capped 59: tổng 372 phút hiện "372:05", không đổi sang giờ).
+       - Đồng hồ Modern (playlistClockText, ô PLTime) KHÔNG đổi. */
+    function classicPlTotalTimeText() {
+      try {
+        var total = playlistTotalTime();
+        if (total > 0) {
+          var sel = playlistSelectedTime();
+          return fmtTime(sel != null ? sel : 0) + "/" + fmtTime(total);
+        }
+      } catch (e) { /* rơi xuống đường cũ */ }
+      return classicPlTimeText();
     }
     function refreshClassicPlTime() {
       if (!classicPlTimeDiv) return;
-      var txt = classicPlTimeText();
+      var txt = classicPlTotalTimeText(); /* v10.30: "đã chọn/TỔNG" như Winamp thật (xem trên) */
       lastPlClockDrawn = txt; /* v10.7 (107): ghi text đã vẽ để tick chỉ vẽ lại khi đổi giây */
       while (txt.length < 18) txt += " ";
       classicPlTimeDiv.innerHTML = "";
@@ -10764,6 +10843,11 @@
     function buildClassicPlaylistContent(win, W, H) {
       var rec = { win: win, w: W, h: H, buttons: {} };
       var st = classicPlStyle();
+      /* v10.30 — Nền win = nền playlist (xem renderClassicPlaylistWindow:
+         lúc kéo, nội dung lượng tử có thể nhỏ hơn khung raw → khe hở
+         ở mép phải/dưới hiện đúng màu danh sách, không lộ nền đen của
+         stage). */
+      try { win.style.background = st.normalbg || "#000000"; } catch (eBG) { /* bỏ qua */ }
       /* --- top bar 20px: góc trái + 2 dải tile + title 100px + góc phải
          (fork: spacer chỉ khi rộng chẵn; 275 lẻ nên không có spacer). --- */
       var fillW = Math.floor((W - 25 - 100 - 25) / 2); /* 62 */
@@ -10900,14 +10984,25 @@
       win.style.position = "absolute";
       win.style.left = "0px"; win.style.top = topY + "px";
       win.style.width = W + "px"; win.style.height = H + "px";
+      /* v10.30 — Cắt tràn (overflow hidden): lúc kéo, khung theo tay
+         từng pixel (raw) còn nội dung vẽ ở cỡ lượng tử gần nhất nên
+         nội dung có thể rộng/cao hơn khung tối đa nửa đoạn (12×14px)
+         — cắt ở mép khung cho sạch, không để sprite góc đáy-phải thò
+         ra ngoài đè lên cửa sổ EQ bên dưới. Tay nắm vẫn nhận chạm vì
+         nằm gọn trong khung. Nền win = nền playlist (đặt trong
+         buildClassicPlaylistContent) để khe hở khi nội dung nhỏ hơn
+         khung (tối đa 24×28px) cũng cùng màu với danh sách. */
+      win.style.overflow = "hidden";
       win.dataset.classicWindow = "playlist";
       win._absX = T._absX || 0; win._absY = (T._absY || 0) + topY;
       T.appendChild(win);
       buildClassicPlaylistContent(win, W, H);
       /* v10.23 — 3 tay nắm (mép phải / mép đáy / góc dưới-phải) như
          Modern; gờ góc trong suốt (ảnh chéo của chính skin ở góc đáy-
-         phải pledit.bmp, đã kiểm bằng mắt ở cả 2 skin); kéo thì khung
-         đổi cỡ live theo đoạn + vẽ lại nội dung mỗi lần qua mốc đoạn. */
+         phải pledit.bmp, đã kiểm bằng mắt ở cả 2 skin); v10.30: kéo
+         thì khung đổi cỡ live TỪNG PIXEL theo tay (raw, chỉ kẹp min),
+         nội dung vẽ lại mỗi lần qua mốc đoạn (lượng tử gần nhất),
+         thả ra khớp về đoạn 25×29 gần nhất. */
       attachResizeHandles(win, "classic", "playlist", {
         transparentCorner: true,
         onLiveSize: function (w, h) { classicPlLiveResize(w, h); }
