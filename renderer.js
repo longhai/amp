@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.32";
-  var EXPECTED_RENDERER_VERSION = "10.32";
+  var RENDERER_VERSION = "10.33";
+  var EXPECTED_RENDERER_VERSION = "10.33";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -2937,7 +2937,7 @@
       menu.style.top = (((anchorDiv && anchorDiv._absY) || 0) + 12) + "px";
       menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      menu.style.font = MENU_FONT; menu.style.color = "#000"; /* v10.33: gon giong Webamp */
       var choices = [
         { label: "1 bài nhạc…", key: "localfile", fn: openLocalFilePicker },
         { label: "Cả thư mục…", key: "localdir", fn: openLocalFolderPicker }
@@ -2946,10 +2946,10 @@
         (function (ch) {
           var row = document.createElement("div");
           row.textContent = ch.label;
-          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          menuRowStyle(row); /* v10.33 */
           row.dataset.localAdd = ch.key;
-          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
-          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
+          row.onmouseover = function () { menuHoverOn(row); };
+          row.onmouseout = function () { menuHoverOff(row); };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             closePlaylistMenus();
@@ -3814,15 +3814,15 @@
       menu.style.top = ((anchor._absY || 0) + 12) + "px";
       menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      menu.style.font = MENU_FONT; menu.style.color = "#000"; /* v10.33: gon giong Webamp */
       for (var i = 0; i < presets.length; i++) {
         (function (preset) {
           var row = document.createElement("div");
           row.textContent = preset.name || "(khong ten)";
-          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          menuRowStyle(row); /* v10.33 */
           row.dataset.eqfPresetName = preset.name || "";
-          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
-          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
+          row.onmouseover = function () { menuHoverOn(row); };
+          row.onmouseout = function () { menuHoverOff(row); };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             closePlaylistMenus();
@@ -7001,7 +7001,7 @@
       if (!T || !box) return;
       var menuH = 0;
       try { menuH = box.offsetHeight || 0; } catch (e) { menuH = 0; }
-      if (!menuH) menuH = (rowCount || 1) * 21 + 2;
+      if (!menuH) menuH = (rowCount || 1) * 20 + 2; /* v10.33: buoc muc 20px (hop 16px + margin 2px x2, giong Webamp) */
       var stageH = parseInt(T.style.height || "0", 10) || 0;
       if (!stageH) { try { stageH = Math.round(T.getBoundingClientRect().height); } catch (e) { stageH = 0; } }
       if (!stageH) return;
@@ -7026,7 +7026,7 @@
         try { menuW = box.offsetWidth || 0; } catch (e) { menuW = 0; }
         if (!menuW) {
           /* jsdom khong do duoc offsetWidth: uoc theo dong dai nhat
-             (11px Arial ~7px/ky tu + padding 20px + vien 2px). */
+             (11px Tahoma ~7px/ky tu + padding 36px + vien 2px). */
           var maxLen = 0;
           try {
             var pRows = box.querySelectorAll ? box.querySelectorAll("div") : [];
@@ -7035,7 +7035,7 @@
               if (L > maxLen) maxLen = L;
             }
           } catch (e) { maxLen = 0; }
-          menuW = maxLen > 0 ? maxLen * 7 + 22 : 120;
+          menuW = maxLen > 0 ? maxLen * 7 + 38 : 120; /* v10.33: +38 (padding ngang 18px x2 + vien 2px) */
         }
         var left = parseInt(box.style.left || "0", 10) || 0;
         if (left + menuW > stageW) left = Math.max(0, stageW - menuW);
@@ -7067,18 +7067,18 @@
          KHÔNG phải đọc từ XML (skin không định nghĩa màu menu). */
       menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899";
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      menu.style.font = MENU_FONT; menu.style.color = "#000"; /* v10.33: gon giong Webamp */
       var names = Object.keys(EQ_PRESETS);
       for (var i = 0; i < names.length; i++) {
         (function (name) {
           var row = document.createElement("div");
           row.textContent = name;
-          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          menuRowStyle(row); /* v10.33 */
           row.dataset.presetName = name;
           /* v10.7 (107): preset đang chọn in đậm (suy từ dải hiện tại). */
           if (name === matchEqPresetName()) row.style.fontWeight = "bold";
-          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
-          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
+          row.onmouseover = function () { menuHoverOn(row); };
+          row.onmouseout = function () { menuHoverOff(row); };
           row.onclick = function (ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             closePlaylistMenus();
@@ -7091,14 +7091,14 @@
       /* Đợt v10.0 (việc 1: winamp-eqf) — nạp/lưu preset .eqf/.q1
          (mang qua lại được với Winamp PC). */
       var sep = document.createElement("div");
-      sep.style.borderTop = "1px solid #ACA899"; sep.style.margin = "2px 0";
+      menuSepStyle(sep); /* v10.33: vach ke giong Webamp */
       menu.appendChild(sep);
       var eqfLoadRow = document.createElement("div");
       eqfLoadRow.textContent = "Nạp preset .eqf…";
-      eqfLoadRow.style.padding = "4px 10px"; eqfLoadRow.style.cursor = "pointer"; eqfLoadRow.style.whiteSpace = "nowrap";
+      menuRowStyle(eqfLoadRow); /* v10.33 */
       eqfLoadRow.dataset.eqfLoad = "1";
-      eqfLoadRow.onmouseover = function () { eqfLoadRow.style.background = "#316AC5"; eqfLoadRow.style.color = "#fff"; };
-      eqfLoadRow.onmouseout = function () { eqfLoadRow.style.background = ""; eqfLoadRow.style.color = ""; };
+      eqfLoadRow.onmouseover = function () { menuHoverOn(eqfLoadRow); };
+      eqfLoadRow.onmouseout = function () { menuHoverOff(eqfLoadRow); };
       eqfLoadRow.onclick = function (ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         closePlaylistMenus();
@@ -7107,10 +7107,10 @@
       menu.appendChild(eqfLoadRow);
       var eqfSaveRow = document.createElement("div");
       eqfSaveRow.textContent = "Lưu preset .eqf…";
-      eqfSaveRow.style.padding = "4px 10px"; eqfSaveRow.style.cursor = "pointer"; eqfSaveRow.style.whiteSpace = "nowrap";
+      menuRowStyle(eqfSaveRow); /* v10.33 */
       eqfSaveRow.dataset.eqfSave = "1";
-      eqfSaveRow.onmouseover = function () { eqfSaveRow.style.background = "#316AC5"; eqfSaveRow.style.color = "#fff"; };
-      eqfSaveRow.onmouseout = function () { eqfSaveRow.style.background = ""; eqfSaveRow.style.color = ""; };
+      eqfSaveRow.onmouseover = function () { menuHoverOn(eqfSaveRow); };
+      eqfSaveRow.onmouseout = function () { menuHoverOff(eqfSaveRow); };
       eqfSaveRow.onclick = function (ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         exportCurrentEqf();
@@ -7120,6 +7120,49 @@
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, names.length + 3); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       armPanelCloser(anchorDiv); /* v10.9: neo anchor (xem armPanelCloser) */
+    }
+
+    /* v10.33 — menu GON giong Webamp (do that Chrome 360x780, xem
+       probe133-baseline/baseline.json; CSS chuan: context-menu.css cua
+       fork): Webamp dung chu Tahoma 11px, muc padding 1px 18px 3px 18px +
+       margin 2px (hop muc 16px, buoc 20px); vach ke padding 2px 0 +
+       margin 2px (hop 5px, buoc 9px); submenu mo sang phai (meo trai
+       -3px), mo sang trai khi sat mep phai. Amp truoc day: Arial 11px,
+       padding 4px 10px (hop muc 20px, buoc 20px) — buoc bang Webamp
+       nhung hop muc to hon 4px, nhin khoi hon; menu chinh Classic 37
+       muc phang (~750px) doi voi menu chinh Webamp 9 muc + submenu
+       (~187px). Nay: (1) muc/vach theo dung so Webamp o MOI menu
+       (chinh, playlist, video, EQ presets, chon .eqf, them local) +
+       hang Preferences; (2) showPlaylistMenu ho tro muc cha
+       {label, sub:[...]} mo submenu; (3) menu chinh Classic gom lai
+       kieu Webamp. Cham: hop muc 16px nhu Webamp — fork chay tren
+       dien thoai Hai voi dung so nay, bam duoc; buoc giu 20px nhu cu. */
+    var MENU_FONT = "11px Tahoma, Arial, sans-serif";
+    var MENU_ROW_PAD = "1px 18px 3px 18px";
+    var MENU_ROW_MARGIN = "2px";
+    function menuRowStyle(row) {
+      row.style.padding = MENU_ROW_PAD; row.style.margin = MENU_ROW_MARGIN;
+      row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+    }
+    function menuSepStyle(dv) {
+      dv.style.borderTop = "1px solid #ACA899";
+      dv.style.margin = MENU_ROW_MARGIN; dv.style.padding = "2px 0";
+    }
+    function menuHoverOn(row) { row.style.background = "#316AC5"; row.style.color = "#fff"; }
+    function menuHoverOff(row) { row.style.background = ""; row.style.color = ""; }
+    /* Uoc rong menu khi jsdom khong do duoc offsetWidth (giong khoi uoc
+       trong placePopupInStage): dong dai nhat x 7px + padding ngang 36px
+       + vien 2px (v10.33: padding ngang 18px x2 thay cho 10px x2 cu). */
+    function estMenuW(box) {
+      var maxLen = 0;
+      try {
+        var pRows = box.querySelectorAll ? box.querySelectorAll("div") : [];
+        for (var ri = 0; ri < pRows.length; ri++) {
+          var L = (pRows[ri].textContent || "").length;
+          if (L > maxLen) maxLen = L;
+        }
+      } catch (e) { maxLen = 0; }
+      return maxLen > 0 ? maxLen * 7 + 38 : 120;
     }
 
     /* ---------- menu playlist (đợt C) ----------
@@ -7291,40 +7334,125 @@
       menu.style.top = ((anchorDiv._absY || 0) + (parseInt(anchorDiv.style.height || "0", 10) || 12)) + "px";
       menu.style.background = "#ECE9D8"; menu.style.border = "1px solid #ACA899"; /* v9.6 (Điểm 5): nền sáng như menu Winamp thật */
       menu.style.zIndex = "10"; menu.style.pointerEvents = "auto";
-      menu.style.font = "11px Arial, sans-serif"; menu.style.color = "#000";
+      menu.style.font = MENU_FONT; menu.style.color = "#000"; /* v10.33: gon giong Webamp */
       for (var i = 0; i < items.length; i++) {
-        (function (it) {
-          /* v10.9 (Hải 09:47, ảnh image-22 — menu View hơi rối, chưa tách
-             từng loại): mục {sep:true} vẽ ĐƯỜNG KẺ phân cách nhóm (kiểu
-             Winamp thật: vạch #ACA899, margin 2px 0 — cùng kiểu với vạch
-             phân cách trong menu preset EQ), KHÔNG phải hàng bấm được
-             (không data-menu-item, không hover, không onclick) nên không
-             ảnh hưởng đếm mục trong test cũ. label:"" để code cũ gọi
-             it.label.indexOf(...) không crash ("" → -1, tự bỏ qua). */
-          if (it && it.sep) {
-            var dv = document.createElement("div");
-            dv.dataset.menuSep = "1";
-            dv.style.borderTop = "1px solid #ACA899"; dv.style.margin = "2px 0";
-            menu.appendChild(dv);
-            return;
-          }
-          var row = document.createElement("div");
-          row.textContent = it.label;
-          row.style.padding = "4px 10px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
-          row.dataset.menuItem = it.label;
-          row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
-          row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
-          row.onclick = function (ev) {
-            if (ev && ev.stopPropagation) ev.stopPropagation();
-            closePlaylistMenus();
-            it.action();
-          };
-          menu.appendChild(row);
-        })(items[i]);
+        buildMenuRow(menu, items[i]);
       }
       T.appendChild(menu);
       placePopupInStage(menu, anchorDiv, items.length); /* v9.6 (Điểm 5): mở hướng lên khi không đủ chỗ dưới */
       armPanelCloser(anchorDiv); /* v10.9: neo anchor (xem armPanelCloser) */
+    }
+    /* v10.33 — 1 hang menu (dung chung cho menu chinh + submenu):
+       {sep:true} = vach ke phan cach (khong bam duoc, giong v10.9);
+       {label, sub:[...]} = muc CHA mo submenu (dau ▸ ben phai, kieu
+       Webamp .parent:after — bam mo submenu, bam lai thi dong);
+       {label, action} = muc la: bam chay action + dong MOI menu. */
+    function buildMenuRow(menu, it) {
+      if (!it) return;
+      /* v10.9 (Hải 09:47, ảnh image-22 — menu View hơi rối, chưa tách
+         từng loại): mục {sep:true} vẽ ĐƯỜNG KẺ phân cách nhóm (kiểu
+         Winamp thật: vạch #ACA899 — cùng kiểu với vạch phân cách trong
+         menu preset EQ), KHÔNG phải hàng bấm được (không data-menu-item,
+         không hover, không onclick) nên không ảnh hưởng đếm mục trong
+         test cũ. label:"" để code cũ gọi it.label.indexOf(...) không
+         crash ("" → -1, tự bỏ qua). */
+      if (it.sep) {
+        var dv = document.createElement("div");
+        dv.dataset.menuSep = "1";
+        menuSepStyle(dv); /* v10.33: vach ke giong Webamp */
+        menu.appendChild(dv);
+        return;
+      }
+      var row = document.createElement("div");
+      row.textContent = it.label;
+      menuRowStyle(row); /* v10.33: muc gon giong Webamp */
+      row.dataset.menuItem = it.label;
+      row.onmouseover = function () { menuHoverOn(row); };
+      row.onmouseout = function () { menuHoverOff(row); };
+      if (it.sub && it.sub.length) {
+        /* Muc cha: dau ▸ ben phai (float right + margin am, kieu Webamp
+           .parent:after) — bam thi mo/dong submenu, khong chay action. */
+        var arrow = document.createElement("span");
+        arrow.textContent = "▸";
+        arrow.style.cssFloat = "right"; arrow.style.styleFloat = "right";
+        arrow.style.marginRight = "-12px";
+        row.appendChild(arrow);
+        row.dataset.menuParent = "1";
+        row.onclick = function (ev) {
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          if (row._subMenu && row._subMenu.parentElement) { closeSubMenu(menu); return; }
+          openSubMenu(menu, row, it.sub);
+        };
+      } else {
+        row.onclick = function (ev) {
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          closePlaylistMenus();
+          it.action();
+        };
+      }
+      menu.appendChild(row);
+    }
+    function closeSubMenu(menu) {
+      if (menu && menu._subMenu) {
+        var sub = menu._subMenu;
+        try { if (sub.parentElement) sub.parentElement.removeChild(sub); } catch (e) { /* jsdom */ }
+        if (sub._parentRow) { try { menuHoverOff(sub._parentRow); } catch (e) { /* jsdom */ } sub._parentRow._subMenu = null; }
+        menu._subMenu = null;
+      }
+    }
+    /* v10.33 — mo submenu cua 1 muc cha (kieu Webamp: mo sang PHAI, meo
+       trai -3px; tran mep phai thi mo sang TRAI; tran day thi day len).
+       Chi mo 1 submenu/con tai 1 thoi diem: mo cai moi thi dong cai cu
+       cua cung menu cha. Khong goi armPanelCloser (closer cap 1 da armed
+       san; insideMenu hoi [data-pl-menu] tren document nen bam trong
+       submenu khong dong menu) va khong goi closePlaylistMenus (se dong
+       ca menu cha). Submenu co the long nhau (buildMenuRow de quy). */
+    function openSubMenu(parentMenu, parentRow, subItems) {
+      closeSubMenu(parentMenu);
+      var T = lastStage;
+      if (!T) return null;
+      var sub = document.createElement("div");
+      sub.dataset.plMenu = "1";
+      sub.dataset.menuSub = "1";
+      sub.dataset.menuParentLabel = parentRow.dataset.menuItem || "";
+      sub.style.position = "absolute";
+      sub.style.background = "#ECE9D8"; sub.style.border = "1px solid #ACA899";
+      sub.style.zIndex = "10"; sub.style.pointerEvents = "auto";
+      sub.style.font = MENU_FONT; sub.style.color = "#000";
+      for (var i = 0; i < subItems.length; i++) buildMenuRow(sub, subItems[i]);
+      T.appendChild(sub);
+      var pLeft = parseInt(parentMenu.style.left || "0", 10) || 0;
+      var pTop = parseInt(parentMenu.style.top || "0", 10) || 0;
+      var pW = 0, rowTop = 0;
+      try { pW = parentMenu.offsetWidth || 0; } catch (e) { pW = 0; }
+      try { rowTop = parentRow.offsetTop || 0; } catch (e) { rowTop = 0; }
+      if (!pW) pW = estMenuW(parentMenu);
+      var subW = 0;
+      try { subW = sub.offsetWidth || 0; } catch (e) { subW = 0; }
+      if (!subW) subW = estMenuW(sub);
+      var stageW = parseInt(T.style.width || "0", 10) || 0;
+      if (!stageW) { try { stageW = Math.round(T.getBoundingClientRect().width); } catch (e) { stageW = 0; } }
+      var left = pLeft + pW - 3;
+      if (stageW > 0 && left + subW > stageW) left = pLeft - subW + 3; /* mo sang trai */
+      if (left < 0) left = 0;
+      var stageH = parseInt(T.style.height || "0", 10) || 0;
+      if (!stageH) { try { stageH = Math.round(T.getBoundingClientRect().height); } catch (e) { stageH = 0; } }
+      var top = pTop + rowTop - 2;
+      if (top < 0) top = 0;
+      var estH = 2;
+      for (var j = 0; j < subItems.length; j++) estH += (subItems[j] && subItems[j].sep) ? 9 : 20;
+      if (stageH > 0 && top + estH > stageH) top = Math.max(0, stageH - estH);
+      sub.style.left = left + "px";
+      sub.style.top = top + "px";
+      if (stageH > 0 && top + estH > stageH) {
+        sub.style.maxHeight = Math.max(40, stageH - 8) + "px";
+        sub.style.overflowY = "auto";
+      }
+      sub._parentRow = parentRow;
+      parentMenu._subMenu = sub;
+      parentRow._subMenu = sub;
+      menuHoverOn(parentRow); /* giu sang muc cha khi submenu dang mo, kieu Webamp :hover */
+      return sub;
     }
     function deriveNameFromUrl(url) {
       try {
@@ -7967,7 +8095,8 @@
           var row = document.createElement("div");
           row.dataset.prefKey = d.key;
           row.textContent = d.labelFn();
-          row.style.padding = "2px 4px"; row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
+          row.style.padding = "1px 4px 3px 4px"; row.style.lineHeight = "normal"; /* v10.33: gon nhu hang menu (hop ~16px thay cho 22px do line-height 1.6 cua hop) */
+          row.style.cursor = "pointer"; row.style.whiteSpace = "nowrap";
           row.onmouseover = function () { row.style.background = "#316AC5"; row.style.color = "#fff"; };
           row.onmouseout = function () { row.style.background = ""; row.style.color = ""; };
           row.onclick = function (ev) {
@@ -7980,7 +8109,8 @@
       }
       var closeRow = document.createElement("div");
       closeRow.textContent = "Đóng";
-      closeRow.style.padding = "4px 4px"; closeRow.style.cursor = "pointer"; closeRow.style.fontWeight = "bold";
+      closeRow.style.padding = "1px 4px 3px 4px"; closeRow.style.lineHeight = "normal"; /* v10.33 */
+      closeRow.style.cursor = "pointer"; closeRow.style.fontWeight = "bold";
       closeRow.onclick = function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); closePlaylistMenus(); };
       box.appendChild(closeRow);
       T.appendChild(box);
@@ -10234,19 +10364,59 @@
     }
     /* Menu chính từ nút O trên titlebar: gộp các mục File/Play/Options/
        View/Help đã có của Amp (showPlaylistMenu). */
+    /* v10.33 — menu chinh Classic gom lai kieu Webamp (menu chinh Webamp:
+       9 muc cap 1 + submenu, ~187px; menu Classic cu 37 muc phang ~750px
+       tran man hinh dien thoai). GIU NGUYEN toan bo muc + hanh dong cu
+       (File/Play/Options/View/Milkdrop/Help) — chi gom nhom lai:
+       "Phát" = File (tru "Đóng Amp"); hang doi cua so (✓) o cap 1;
+       "Giao diện" = Thu gon + Zoom; "Tùy chọn" = Options + Milkdrop;
+       "Cài đặt Video" = 7 muc video trong View; "Phát lại" = Play;
+       "Trợ giúp" = Help; "Đóng Amp" o cuoi. Muc nao cua View khong
+       xep duoc (them moi sau nay) roi vao "Tùy chọn" — khong bao gio
+       mat muc (test menu-compact-133 kiem hop cac nhan). */
+    function classicMainMenuItems(anchorDiv) {
+      var file = [], play = [], opts = [], view = [], help = [];
+      try { file = fileMenuItems(anchorDiv); } catch (e) { file = []; }
+      try { play = playMenuItems(); } catch (e) { play = []; }
+      try { opts = optionsMenuItems(anchorDiv); } catch (e) { opts = []; }
+      try { view = viewMenuItems(); } catch (e) { view = []; }
+      try { help = helpMenuItems(anchorDiv); } catch (e) { help = []; }
+      var closeItem = null;
+      var playSub = [];
+      for (var fi = 0; fi < file.length; fi++) {
+        if (file[fi] && file[fi].label === "Đóng Amp") closeItem = file[fi];
+        else playSub.push(file[fi]);
+      }
+      var stripTick = function (s) { return String(s || "").replace(/^✓ /, ""); };
+      var winRows = [], displaySub = [], videoSub = [], otherView = [];
+      for (var vi = 0; vi < view.length; vi++) {
+        var it = view[vi];
+        if (!it || it.sep) continue;
+        var lb = stripTick(it.label);
+        if (lb === "Playlist Editor" || lb === "Media Library" || lb === "Ngăn kéo (Drawer)" || lb === "Video" || lb === "Hiệu ứng (Vis)") winRows.push(it);
+        else if (lb === "Thu gọn (Shade)" || lb === "Zoom: Cỡ gốc 1x" || lb === "Zoom: Vừa màn hình") displaySub.push(it);
+        else if (lb === "Giữ tỉ lệ khung hình" || lb === "Cỡ thường (1x)" || lb.indexOf("(2x)") >= 0 || lb === "Toàn màn hình" || lb === "Phóng to cửa sổ" || lb === "Khôi phục cửa sổ" || lb.indexOf("Tách rời") >= 0 || lb.indexOf("Gắn lại") >= 0 || lb === "Đóng Video/Hiệu ứng") videoSub.push(it);
+        else otherView.push(it);
+      }
+      var optSub = opts.slice();
+      var md = null;
+      try { md = milkdropMenuItem(); } catch (e) { md = null; }
+      if (md) optSub.push(md);
+      for (var oi = 0; oi < otherView.length; oi++) optSub.push(otherView[oi]);
+      var items = [{ label: "Phát", sub: playSub }, { sep: true, label: "" }];
+      for (var wi = 0; wi < winRows.length; wi++) items.push(winRows[wi]);
+      items.push({ sep: true, label: "" });
+      items.push({ label: "Giao diện", sub: displaySub });
+      items.push({ label: "Tùy chọn", sub: optSub });
+      items.push({ label: "Cài đặt Video", sub: videoSub });
+      items.push({ label: "Phát lại", sub: play });
+      items.push({ label: "Trợ giúp", sub: help });
+      items.push({ sep: true, label: "" });
+      if (closeItem) items.push(closeItem);
+      return items;
+    }
     function classicOpenMainMenu(anchorDiv) {
-      var items = [];
-      try { items = items.concat(fileMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
-      try { items = items.concat(playMenuItems()); } catch (e) { /* bỏ qua */ }
-      try { items = items.concat(optionsMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
-      try { items = items.concat(viewMenuItems()); } catch (e) { /* bỏ qua */ }
-      /* v10.8: Classic KHONG co nut Vis Menu (khong co button.vis.misc
-         trong .wsz) nen menu chinh la cho duy nhat de bat/tat Milkdrop
-         — them muc Milkdrop rieng o day, sau nhom View. (Modern thi
-         Milkdrop o menu Vis, khong o View; Classic dung menu chinh
-         thay cho menu Vis.) */
-      try { var mdC = milkdropMenuItem(); if (mdC) items.push(mdC); } catch (e) { /* bỏ qua */ }
-      try { items = items.concat(helpMenuItems(anchorDiv)); } catch (e) { /* bỏ qua */ }
+      var items = classicMainMenuItems(anchorDiv);
       if (items.length) showPlaylistMenu(anchorDiv, items);
     }
     /* Vẽ cửa sổ chính Classic (275×116) vào T (div build). Trả rec. */
@@ -12168,7 +12338,8 @@
       isPopupMenuOpen: isPopupMenuOpen,
       viewMenuItems: viewMenuItems, fileMenuItems: fileMenuItems,
       playMenuItems: playMenuItems, optionsMenuItems: optionsMenuItems,
-      helpMenuItems: helpMenuItems, cycleRepeat: cycleRepeat,
+      helpMenuItems: helpMenuItems, classicMainMenuItems: classicMainMenuItems, /* v10.33 */
+      cycleRepeat: cycleRepeat,
       getTrackInfoState: getTrackInfoState, showTrackInfo: showTrackInfo,
       trackMenuItems: trackMenuItems,
       openPreferences: openPreferences, openAbout: openAbout,
