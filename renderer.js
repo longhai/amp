@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.33";
-  var EXPECTED_RENDERER_VERSION = "10.33";
+  var RENDERER_VERSION = "10.34";
+  var EXPECTED_RENDERER_VERSION = "10.34";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -7613,15 +7613,21 @@
         { label: "Lưu playlist (.m3u)", action: function () { exportPlaylistM3U(); } }
       ];
     }
+    /* v10.34 — menu View theo Winamp PC: chỉ còn 2 nhóm — (1) Cửa sổ:
+       Playlist Editor / Media Library / Ngăn kéo / Video / Hiệu ứng;
+       (2) Video: Giữ tỉ lệ / Cỡ thường / Cỡ gấp đôi / Toàn màn hình /
+       Phóng to / Tách rời / Đóng. "Thu gọn (Shade)" + Zoom DỜI sang menu
+       Tùy chọn (Options) như Winamp PC (Double Size nằm trong Options,
+       không nằm trong View) — trước đây Shade nằm cả 2 chỗ (View + Tùy
+       chọn) gây trùng trong menu chính Classic, nay chỉ còn 1 chỗ.
+       Ngăn kéo vẫn ở View cho menubar Modern (nó là cửa sổ của skin
+       Modern); menu chính Classic lọc nó ra riêng (xem
+       classicMainMenuItems) vì Winamp PC không có mục Ngăn kéo. */
     function viewMenuItems() {
       var plTick = "";
       try { plTick = (isPlaylistOpen && isPlaylistOpen()) ? "✓ " : ""; } catch (e) { plTick = ""; }
       var mlTick = "";
       try { mlTick = (isMlOpen && isMlOpen()) ? "✓ " : ""; } catch (e) { mlTick = ""; }
-      var shadeTick = "";
-      try { shadeTick = (isShadeMode && isShadeMode()) ? "✓ " : ""; } catch (e) { shadeTick = ""; }
-      var fitTick = "";
-      try { fitTick = (isZoomFit && isZoomFit()) ? "✓ " : ""; } catch (e) { fitTick = ""; }
       var items = [
         { label: plTick + "Playlist Editor", action: function () { if (onPlaylistToggle) onPlaylistToggle(); } },
         /* Đợt A (9.9, việc 1): Media Library trong menu View (như Winamp
@@ -7634,20 +7640,6 @@
            nhúng; skin Classic → cửa sổ rời (rẽ nhánh trong openAvs). */
         { label: (avsState.open && avsState.mode === "video" ? "✓ " : "") + "Video", action: function () { toggleVideoWindow(); } },
         { label: (avsState.open && avsState.mode === "vis" ? "✓ " : "") + "Hiệu ứng (Vis)", action: function () { if (avsState.open && avsState.mode === "vis") closeAvs(); else openAvs("vis"); } },
-        { label: shadeTick + "Thu gọn (Shade)", action: function () { if (onShadeToggle) onShadeToggle(!(isShadeMode && isShadeMode())); } },
-        /* v10.9 (Hải 09:47, ảnh image-22 — menu View hơi rối, chưa tách
-           từng loại): tách 3 nhóm bằng đường kẻ: (1) Cửa sổ: Playlist
-           Editor / Media Library / Ngăn kéo / Video / Hiệu ứng / Thu gọn;
-           (2) Zoom: Cỡ gốc 1x / Vừa màn hình; (3) Video: Giữ tỉ lệ / Cỡ
-           thường / Cỡ gấp đôi / Toàn màn hình / Phóng to / Tách rời /
-           Đóng. Chỉ tách nhóm, không đổi mục hay hành vi nào. */
-        { sep: true, label: "" },
-        /* 04/11 — bỏ nút menu góc dưới-phải: Zoom chuyển vào đây (cùng
-           đường onZoom của index.html; ✓ đọc từ isZoomFit, nhãn dựng mới
-           mỗi lần mở menu nên luôn đúng — thay cho khối cập nhật nhãn
-           zoom trong setZoom cũ). */
-        { label: (fitTick ? "" : "✓ ") + "Zoom: Cỡ gốc 1x", action: function () { if (onZoom) onZoom("1"); } },
-        { label: fitTick + "Zoom: Vừa màn hình", action: function () { if (onZoom) onZoom("fit"); } },
         { sep: true, label: "" },
         /* 04/11 — cài đặt Video/Vis chuyển từ menu cũ vào đây (hợp của
            videoMenuItems + visMenuItems, gộp trùng: Toàn màn hình, Tách
@@ -7676,15 +7668,16 @@
        trên web). Nay mỗi mục có menu con với các mục Winamp thật; mục nào
        nối được thì nối thật (dùng lại hàm đã có), mục nào chưa thì KHÔNG
        đưa vào menu (không đưa mục giả — xem README đợt D). */
+    /* v10.34 — rà soát theo Winamp PC: menu File của Winamp PC chỉ có
+       File/Folder/Location (mỗi thứ 1 mục). Mục thêm 1 bài cũ trùng
+       handler với "Phát file nhạc…" (cùng openLocalFilePicker) nên BỎ
+       — hết trùng nhãn (mục trùng này đã ghi từ đợt v10.15, nay dọn).
+       "Nạp skin…" vẫn ở đây cho menubar File của Modern; menu chính
+       Classic lọc nó sang submenu "Giao diện" (xem classicMainMenuItems)
+       cho giống Winamp PC (Skins là submenu riêng, không nằm trong Play). */
     function fileMenuItems(anchorDiv) {
       return [
         { label: "Phát file nhạc…", action: function () { openLocalFilePicker(); } },
-        /* 04/11 — 2 mục thêm nhạc chuyển từ nút menu góc dưới-phải vào
-           đây (cùng handler cũ: openLocalFilePicker/openLocalFolderPicker).
-           "Phát file nhạc…" ở trên vốn đã gọi openLocalFilePicker nên 2
-           mục này trùng đường — giữ cả 2 nhãn để không mất mục nào của
-           menu cũ; dọn trùng (nếu có) để đợt sau quyết. */
-        { label: "Thêm 1 bài nhạc…", action: function () { openLocalFilePicker(); } },
         { label: "Thêm thư mục nhạc…", action: function () { openLocalFolderPicker(); } },
         { label: "Phát URL…", action: function () { showAddUrlForm(anchorDiv); } },
         { label: "Nạp skin .wal/.wsz/.zip…", action: function () { if (onOpenSkinPicker) onOpenSkinPicker(); } },
@@ -7692,7 +7685,11 @@
       ];
     }
     /* Lặp lại xoay 3 trạng thái như nút Repeat trong display (xem
-       handleShuffleRepeat): 0 Tắt → 1 Lặp tất cả → -1 Lặp 1 bài → 0. */
+       handleShuffleRepeat): 0 Tắt → 1 Lặp tất cả → -1 Lặp 1 bài → 0.
+       Nút Repeat trên display GIỮ xoay 3 trạng thái (đúng nút Winamp).
+       Menu "Lặp lại" thì theo Winamp PC: chỉ bật/tắt Lặp tất cả
+       (xem toggleRepeatAll bên dưới — menu Options của Winamp PC cũng
+       chỉ bật/tắt Repeat All, không xoay qua Lặp 1 bài). */
     function cycleRepeat() {
       demo.repeat = demo.repeat === 0 ? 1 : demo.repeat === 1 ? -1 : 0;
       var keys = Object.keys(cfgGroups);
@@ -7703,25 +7700,64 @@
       return demo.repeat;
     }
     function repeatLabel() { return demo.repeat === 1 ? "Lặp tất cả" : demo.repeat === -1 ? "Lặp 1 bài" : "Tắt"; }
+    /* v10.34 — menu "Lặp lại" kiểu Winamp PC: bật/tắt Lặp tất cả (✓ khi
+       repeat === 1). Đang ở "Lặp 1 bài" (-1) thì bấm → về Lặp tất cả (1);
+       đang Lặp tất cả thì bấm → Tắt (0). Khác cycleRepeat (xoay 3 trạng
+       thái, chỉ dùng cho nút Repeat trên display + Preferences). */
+    function toggleRepeatAll() {
+      demo.repeat = (demo.repeat === 1) ? 0 : 1;
+      var keys = Object.keys(cfgGroups);
+      for (var i = 0; i < keys.length; i++) {
+        if (/;Repeat$/.test(keys[i])) { cfgState.set(keys[i], String(demo.repeat)); refreshCfgGroup(keys[i]); }
+      }
+      persistPlayback();
+      return demo.repeat;
+    }
+    /* v10.34 — menu Phát (Playback) theo đúng thứ tự + nội dung Winamp PC
+       (Webamp fork PlaybackContextMenu): Bài trước, Phát/Tạm dừng, Dừng,
+       Bài tiếp, vạch kẻ, Lùi 5 giây, Tới 5 giây, Lùi 10 bài, Tới 10 bài.
+       "Phát/Tạm dừng" giữ dạng gộp 1 mục (toggle) thay cho 2 mục riêng
+       của Winamp PC — cùng 2 hành động, đỡ 1 hàng trên điện thoại.
+       "Lặp lại" + "Phát ngẫu nhiên" DỜI sang menu Tùy chọn (Options) như
+       Winamp PC (Options của Winamp PC chứa Repeat/Shuffle, Playback thì
+       không). seekBy/playPlaylistItem đã có sẵn, kẹp đầu/cuối an toàn
+       (seekBy kẹp t >= 0; playPlaylistItem kẹp qua clampPlaylistIdx). */
     function playMenuItems() {
       return [
+        { label: "Bài trước", action: function () { prevTrack(); } },
         { label: (demo.playing ? "Tạm dừng" : "Phát"), action: function () { togglePlay(); } },
         { label: "Dừng", action: function () { stopPlayback(); } },
-        { label: "Bài trước", action: function () { prevTrack(); } },
-        { label: "Bài sau", action: function () { nextTrack(demo.repeat === 1 || demo.shuffle); } },
-        { label: "Lặp lại: " + repeatLabel(), action: function () { cycleRepeat(); } },
-        { label: (demo.shuffle ? "✓ " : "") + "Phát ngẫu nhiên (Shuffle)", action: function () { toggleShuffle(); } }
+        { label: "Bài tiếp", action: function () { nextTrack(demo.repeat === 1 || demo.shuffle); } },
+        { sep: true, label: "" },
+        { label: "Lùi 5 giây", action: function () { seekBy(-5); } },
+        { label: "Tới 5 giây", action: function () { seekBy(5); } },
+        { label: "Lùi 10 bài", action: function () { playPlaylistItem(playlistState.current - 10); } },
+        { label: "Tới 10 bài", action: function () { playPlaylistItem(playlistState.current + 10); } }
       ];
     }
+    /* v10.34 — menu Tùy chọn (Options) theo Winamp PC: Options của Winamp
+       PC chứa cỡ cửa sổ (Double Size), Lặp lại, Ngẫu nhiên. Nên Zoom
+       (Cỡ gốc 1x / Vừa màn hình — bản web của Double Size, vì Amp không
+       có chế độ 2x toàn app) DỜI từ menu View sang đây, và "Lặp lại"
+       (toggle Lặp tất cả kiểu Winamp PC) + "Phát ngẫu nhiên" DỜI từ menu
+       Phát sang đây. Các mục còn lại giữ nguyên (Preferences của Winamp
+       PC; Ngăn kéo là tab của skin Modern — chỉ có nghĩa trên Modern;
+       Crossfade/Tự mở video là tiện ích riêng của Amp, giữ + ghi rõ). */
     function optionsMenuItems(anchorDiv) {
       var shadeTick = "";
       try { shadeTick = (isShadeMode && isShadeMode()) ? "✓ " : ""; } catch (e) { shadeTick = ""; }
+      var fitTick = "";
+      try { fitTick = (isZoomFit && isZoomFit()) ? "✓ " : ""; } catch (e) { fitTick = ""; }
       var items = [
         { label: "Preferences…", action: function () { openPreferences(anchorDiv); } },
         { label: "Ngăn kéo: Equalizer", action: function () { openDrawerTab("eq"); } },
         { label: "Ngăn kéo: Options", action: function () { openDrawerTab("options"); } },
         { label: "Ngăn kéo: Color Themes", action: function () { openDrawerTab("colorthemes"); } },
-        { label: shadeTick + "Thu gọn (Shade)", action: function () { if (onShadeToggle) onShadeToggle(!(isShadeMode && isShadeMode())); } }
+        { label: shadeTick + "Thu gọn (Shade)", action: function () { if (onShadeToggle) onShadeToggle(!(isShadeMode && isShadeMode())); } },
+        { label: (fitTick ? "" : "✓ ") + "Zoom: Cỡ gốc 1x", action: function () { if (onZoom) onZoom("1"); } },
+        { label: fitTick + "Zoom: Vừa màn hình", action: function () { if (onZoom) onZoom("fit"); } },
+        { label: (demo.repeat === 1 ? "✓ " : "") + "Lặp lại", action: function () { toggleRepeatAll(); } },
+        { label: (demo.shuffle ? "✓ " : "") + "Phát ngẫu nhiên (Shuffle)", action: function () { toggleShuffle(); } }
       ];
       /* 04/11 — Crossfade chuyển từ nút menu góc dưới-phải vào đây (cùng
          đường onCycleCrossfade của index.html; nhãn động + ✓ đọc từ
@@ -10364,16 +10400,34 @@
     }
     /* Menu chính từ nút O trên titlebar: gộp các mục File/Play/Options/
        View/Help đã có của Amp (showPlaylistMenu). */
-    /* v10.33 — menu chinh Classic gom lai kieu Webamp (menu chinh Webamp:
-       9 muc cap 1 + submenu, ~187px; menu Classic cu 37 muc phang ~750px
-       tran man hinh dien thoai). GIU NGUYEN toan bo muc + hanh dong cu
-       (File/Play/Options/View/Milkdrop/Help) — chi gom nhom lai:
-       "Phát" = File (tru "Đóng Amp"); hang doi cua so (✓) o cap 1;
-       "Giao diện" = Thu gon + Zoom; "Tùy chọn" = Options + Milkdrop;
-       "Cài đặt Video" = 7 muc video trong View; "Phát lại" = Play;
-       "Trợ giúp" = Help; "Đóng Amp" o cuoi. Muc nao cua View khong
-       xep duoc (them moi sau nay) roi vao "Tùy chọn" — khong bao gio
-       mat muc (test menu-compact-133 kiem hop cac nhan). */
+    /* v10.34 — menu chinh Classic RA SOAT theo Winamp PC (Webamp fork
+       MainContextMenu: Phát ▸ / cửa sổ (✓) / Giao diện ▸ / Tùy chọn ▸ /
+       Phát lại ▸ / Thoát). So với v10.33 (12 hàng cấp 1 + 6 submenu):
+       - "Phát" chỉ còn File/Folder/URL (3 mục): "Nạp skin…" DỜI sang
+         "Giao diện" (Winamp PC: Skins là submenu riêng, không nằm trong
+         Play); "Đóng Amp" vẫn ở cuối (Exit của Winamp PC).
+       - Hàng cửa sổ chỉ còn Playlist Editor / Media Library / Video /
+         Hiệu ứng (Vis): "Ngăn kéo (Drawer)" BỎ khỏi menu chính Classic
+         (Winamp PC không có mục Ngăn kéo; trên Classic nó bấm không có
+         gì vì ngăn kéo chỉ có trên Modern — vẫn còn trong menubar View
+         của Modern).
+       - "Giao diện" nay là submenu Skins: chỉ còn "Nạp skin…" (Amp chỉ
+         nạp skin bằng file tay, không có danh sách skin như Winamp PC —
+         ghi rõ, không bịa danh sách).
+       - "Tùy chọn" = Options (Preferences, Ngăn kéo, Shade, Crossfade,
+         Tự mở video, Zoom, Lặp lại toggle, Shuffle, Milkdrop) — Zoom +
+         Lặp lại + Shuffle dời từ View/Phát sang đây như Winamp PC.
+       - "Cài đặt Video" BỎ khỏi menu chính Classic (Winamp PC không có
+         cài đặt video trong menu chính; các mục video vẫn còn đủ trong
+         menubar View của Modern + menu riêng của cửa sổ Video ≡).
+       - "Phát lại" = Playback kiểu Winamp PC (Bài trước, Phát/Tạm dừng,
+         Dừng, Bài tiếp, Lùi/Tới 5 giây, Lùi/Tới 10 bài).
+       - "Trợ giúp" giữ nguyên (Giới thiệu, Hướng dẫn nhanh, Xem script
+         MAKI… — MAKI là công cụ riêng của Amp, không phải của Winamp PC,
+         giữ để soi skin, ghi rõ trong báo cáo).
+       Muc nao cua View khong xep duoc (them moi sau nay) roi vao
+       "Tùy chọn" — khong bao gio mat muc (test menu-winamp-pc-134 kiem
+       hop cac nhan). */
     function classicMainMenuItems(anchorDiv) {
       var file = [], play = [], opts = [], view = [], help = [];
       try { file = fileMenuItems(anchorDiv); } catch (e) { file = []; }
@@ -10381,21 +10435,26 @@
       try { opts = optionsMenuItems(anchorDiv); } catch (e) { opts = []; }
       try { view = viewMenuItems(); } catch (e) { view = []; }
       try { help = helpMenuItems(anchorDiv); } catch (e) { help = []; }
-      var closeItem = null;
+      var closeItem = null, skinItem = null;
       var playSub = [];
       for (var fi = 0; fi < file.length; fi++) {
         if (file[fi] && file[fi].label === "Đóng Amp") closeItem = file[fi];
+        else if (file[fi] && file[fi].label.indexOf("Nạp skin") === 0) skinItem = file[fi];
         else playSub.push(file[fi]);
       }
       var stripTick = function (s) { return String(s || "").replace(/^✓ /, ""); };
-      var winRows = [], displaySub = [], videoSub = [], otherView = [];
+      var winRows = [], otherView = [];
       for (var vi = 0; vi < view.length; vi++) {
         var it = view[vi];
         if (!it || it.sep) continue;
         var lb = stripTick(it.label);
-        if (lb === "Playlist Editor" || lb === "Media Library" || lb === "Ngăn kéo (Drawer)" || lb === "Video" || lb === "Hiệu ứng (Vis)") winRows.push(it);
-        else if (lb === "Thu gọn (Shade)" || lb === "Zoom: Cỡ gốc 1x" || lb === "Zoom: Vừa màn hình") displaySub.push(it);
-        else if (lb === "Giữ tỉ lệ khung hình" || lb === "Cỡ thường (1x)" || lb.indexOf("(2x)") >= 0 || lb === "Toàn màn hình" || lb === "Phóng to cửa sổ" || lb === "Khôi phục cửa sổ" || lb.indexOf("Tách rời") >= 0 || lb.indexOf("Gắn lại") >= 0 || lb === "Đóng Video/Hiệu ứng") videoSub.push(it);
+        if (lb === "Playlist Editor" || lb === "Media Library" || lb === "Video" || lb === "Hiệu ứng (Vis)") winRows.push(it);
+        /* v10.34 — bỏ khỏi menu chính Classic (không mất chức năng):
+           "Ngăn kéo (Drawer)" chỉ có trên Modern; các mục video thuộc
+           về menubar View + menu cửa sổ Video, không thuộc menu chính
+           kiểu Winamp PC. */
+        else if (lb === "Ngăn kéo (Drawer)") { /* bỏ */ }
+        else if (lb === "Giữ tỉ lệ khung hình" || lb === "Cỡ thường (1x)" || lb.indexOf("(2x)") >= 0 || lb === "Toàn màn hình" || lb === "Phóng to cửa sổ" || lb === "Khôi phục cửa sổ" || lb.indexOf("Tách rời") >= 0 || lb.indexOf("Gắn lại") >= 0 || lb === "Đóng Video/Hiệu ứng") { /* bỏ khỏi menu chính Classic */ }
         else otherView.push(it);
       }
       var optSub = opts.slice();
@@ -10406,9 +10465,8 @@
       var items = [{ label: "Phát", sub: playSub }, { sep: true, label: "" }];
       for (var wi = 0; wi < winRows.length; wi++) items.push(winRows[wi]);
       items.push({ sep: true, label: "" });
-      items.push({ label: "Giao diện", sub: displaySub });
+      items.push({ label: "Giao diện", sub: skinItem ? [skinItem] : [] });
       items.push({ label: "Tùy chọn", sub: optSub });
-      items.push({ label: "Cài đặt Video", sub: videoSub });
       items.push({ label: "Phát lại", sub: play });
       items.push({ label: "Trợ giúp", sub: help });
       items.push({ sep: true, label: "" });
@@ -12339,7 +12397,10 @@
       viewMenuItems: viewMenuItems, fileMenuItems: fileMenuItems,
       playMenuItems: playMenuItems, optionsMenuItems: optionsMenuItems,
       helpMenuItems: helpMenuItems, classicMainMenuItems: classicMainMenuItems, /* v10.33 */
-      cycleRepeat: cycleRepeat,
+      addMenuItems: addMenuItems, removeMenuItems: removeMenuItems,
+      selectMenuItems: selectMenuItems, miscMenuItems: miscMenuItems,
+      manageMenuItems: manageMenuItems, /* v10.34: export menu playlist de test */
+      cycleRepeat: cycleRepeat, toggleRepeatAll: toggleRepeatAll, /* v10.34 */
       getTrackInfoState: getTrackInfoState, showTrackInfo: showTrackInfo,
       trackMenuItems: trackMenuItems,
       openPreferences: openPreferences, openAbout: openAbout,

@@ -84,8 +84,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.33";
-  var EXPECTED_AUDIO_VERSION = "10.33";
+  var AUDIO_VERSION = "10.34";
+  var EXPECTED_AUDIO_VERSION = "10.34";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
