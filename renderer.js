@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.27";
-  var EXPECTED_RENDERER_VERSION = "10.27";
+  var RENDERER_VERSION = "10.29";
+  var EXPECTED_RENDERER_VERSION = "10.29";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -6333,6 +6333,19 @@
       div.style.position = "absolute";
       div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = w + "px"; div.style.height = h + "px";
+      /* v10.29 — ruột ML PHẢI NẰM TRÊN các lớp khung (ml.frame.layout):
+         trong Winamp thật, <component> là cửa sổ con (HWND) của plugin ML
+         nên luôn vẽ trên các bitmap khung của skin. Amp vẽ frame SAU
+         component trong cùng DOM (XML để <group id="ml.frame.layout">
+         sau <component>) nên khung đè lên ruột: 2 ảnh góc dưới
+         player.ml.bottomleft/bottomright (khối đặc #4c5360, 20×52) đè lên
+         42px cuối của ruột xanh ở 2 góc, nhìn như 2 "vệt" xám đậm (Hải
+         05/11 07:39, ảnh 1000094869_10_b37q.jpg). Đặt z-index 1 để ruột
+         xanh che phần trên của góc khung, chỉ chừa viền L mỏng (6px cạnh
+         + 10px đáy, khớp dải bottomcenter) như Winamp thật. Tay nắm kéo
+         (z-index 30) vẫn nằm trên cùng nên kéo được; titlebar/menubar ở
+         container frame riêng (vẽ sau cdiv) không bị ảnh hưởng. */
+      div.style.zIndex = "1";
       div.style.display = "flex";
       div.style.background = colorOf("wasabi.list.background");
       div.style.color = colorOf("wasabi.list.text");

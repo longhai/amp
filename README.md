@@ -1,6 +1,17 @@
-# Amp v10.27 — Winamp Modern (đợt v10.27: makeup gain +4dB cho đường EQ BẬT — EQ bật nay to bằng EQ tắt trên điện thoại thật; 1 GainNode `makeup` riêng giữa master và limiter, hằng số duy nhất EQ_MAKEUP_GAIN_DB dễ chỉnh; đo headless Chrome: +3,94 → +3,96 dB trên tín hiệu thường, limiter vẫn chặn quá tải)
+# Amp v10.29 — Winamp Modern (đợt v10.29: sửa đứng nhạc khi tắt/mở EQ + hết vệt 2 góc dưới cửa sổ ML)
 
-Bản phát hành duy nhất: **version 10.27** (đợt v10.27 bump từ 10.26 — 1 việc, xem mục "Đợt v10.27" bên dưới: makeup gain +4dB cho đường EQ BẬT — 1 GainNode `makeup` riêng giữa master và limiter, hằng số duy nhất EQ_MAKEUP_GAIN_DB dễ chỉnh; đo headless Chrome: EQ bật to hơn EQ tắt +3,94 → +3,96 dB trên tín hiệu thường, limiter vẫn chặn quá tải).
+Bản phát hành duy nhất: **version 10.29** (đợt v10.29 bump từ 10.28 — 2 việc, xem mục "Đợt v10.29" bên dưới: sửa đứng nhạc khi tắt/mở EQ + hết vệt 2 góc dưới cửa sổ ML).
+
+## Đợt v10.29 (05/11 — sửa đứng nhạc khi tắt/mở EQ + hết vệt 2 góc dưới ML)
+
+Hải báo máy thật 05/11 07:39–07:45 (video test EQ + ảnh ML 1000094869_10_b37q.jpg):
+
+(1) Tắt/mở EQ thỉnh thoảng làm nhạc ĐỨNG LUÔN, không hát nữa; bấm Play không thì không ăn — chỉ bấm Dừng (■) rồi Play, hoặc bấm lại kênh trong playlist, mới hát lại. Nguyên nhân: `setEqOn` (on→off, có source) đặt lạc quan `playing=true` + `loadState="playing"` ngay sau `setSrcAndPlay`, trước khi thẻ mới phát thật — `togglePlay()` thấy `playing=true` nên chỉ `pause()` thẻ đã pause (không bắn event nên cờ không bao giờ gỡ), và `armNativeTimer` return sớm khi `playing=true` nên timer 6s không bao giờ cứu. Sửa: `setEqOn` để `loadState="loading"` (không "playing" lạc quan); `armNativeTimer` chỉ bỏ qua khi thẻ THẬT SỰ phát (không pause); `togglePlay` chỉ pause khi thẻ thật sự đang phát, không thì đi `resume()`; `resume()` gặp `playing=true` mà thẻ đã pause thì nạp lại đầy đủ như bấm kênh; `loadHlsCtor` hẹn giờ 8s (`HLS_CDN_TIMEOUT_MS`) chống treo khi script CDN không onload/onerror. Test mới `eq-toggle-recover-129-test.js` (đổi EQ lúc phát on→off/off→on, đổi lúc dừng, đổi 2 lần liên tiếp, timer tự cứu, Pause thường không hồi quy, CDN treo 8s).
+
+(2) Cửa sổ ML còn vệt ở cả 2 góc dưới. Nguyên nhân: 2 ảnh khung `player.ml.bottomleft`/`bottomright` (khối đặc #4c5360, 20×52) vẽ ĐÚNG vị trí/kích thước theo XML, nhưng Amp vẽ frame SAU component trong cùng DOM nên khung đè lên ruột ML (đè 42px cuối ruột xanh ở 2 góc). Trong Winamp thật, `<component>` là cửa sổ con (HWND) nên luôn vẽ TRÊN bitmap khung. Sửa: `.ml-content` thêm `z-index: 1` (trên khung, dưới tay nắm kéo z=30) — ruột xanh che phần trên của góc khung, chỉ chừa viền L mỏng (6px cạnh + 10px đáy, khớp dải `bottomcenter`). Test mới `ml-corners-129-test.js`.
+
+Giữ nguyên v10.28: makeup gain EQ bật +6dB, live-fit, hàng nút, gờ ML theo XML, ML 790, iptv.m3u.
+
 
 ## Có gì trong gói
 
@@ -21,6 +32,14 @@ Bản phát hành duy nhất: **version 10.27** (đợt v10.27 bump từ 10.26 �
 | `winampmodern566.wal` | — | Skin Winamp Modern 566 (mặc định, tự nạp lúc mở trang) |
 | `base-2.91.wsz` | — | Skin Classic mẫu — **đợt v10.1 vẽ được cửa sổ chính + shade, nút bấm được** (trước đây chỉ phát tiếng qua cửa sổ Video/Hiệu ứng rời) |
 | `iptv.m3u` | — | Playlist mặc định: 218 mục (41 Radio + 177 TV, 13 nhóm) (không còn bài Demo) (giữ tên + thứ tự gốc) |
+
+## Đợt v10.28 (05/11 — tăng makeup gain EQ BẬT từ +4dB lên +6dB)
+
+> Hải test v10.27 máy thật (05/11 07:30): bật EQ vẫn "nghe chưa bằng lúc tắt eq" — makeup +4dB chưa đủ. Đo track tiếng trong video test của Hải: đoạn giữa to hơn đoạn đầu/cuối ~2dB (radio live nên không sạch, nhưng gợi ý còn thiếu ~2dB) → tăng makeup từ +4 lên +6dB.
+
+- Chỉ đổi 1 số `EQ_MAKEUP_GAIN_DB` trong `audio.js`: 4 → 6 (gain `EQ_MAKEUP_GAIN = 10^(6/20) ≈ 1,9953`). Không đổi gì khác về tiếng: vẫn 1 GainNode `makeup` giữa master và limiter, limiter ngưỡng 0dB vẫn chặn quá tải, đường EQ tắt không đổi, preamp/bands/volume/crossfade không đổi.
+- Đo bằng headless Chrome (OfflineAudioContext, xem `eq-loudness-128-report.md`): EQ bật ở preset Mặc định phẳng TO HƠN EQ tắt **+5,94 → +5,96 dB** trên tín hiệu thường/nhỏ (sine 1 kHz đỉnh −6 dB: +5,94; mix đỉnh −6 dB: +5,95; quiet kiểu Đà Nẵng RMS −32 dB: +5,96) — đúng +6,00 dB makeup trừ ~0,05 dB hao hụt của limiter. Tín hiệu nóng thì limiter bóp bớt (mix đỉnh −3 dB: +3,92 dB; hot master MP3 thật decode: +1,64 dB; đỉnh ra +0,71 → +1,29 dB thay vì +5/+7 dB nếu không có limiter) — vẫn to hơn EQ tắt, đúng thiết kế chống clip. Chuỗi v10.26 (không makeup) vẫn unity −0,04 → −0,06 dB → makeup là delta duy nhất; bypass (EQ tắt) đúng 0,00 dB trên mọi tín hiệu.
+- Test mới `eq-makeup-128-test.js` (thay `eq-makeup-127-test.js`; 34 PASS: hằng số makeup +6dB, topology master → makeup → limiter, limiter không đổi, EQ tắt không đổi, volume/master tách riêng, preamp/bands không đổi); test cũ `audio-test.js` cập nhật giá trị makeup (319 PASS). Lưu ý: `ml-xml-125-test.js` có 1 regex `?v=10\.27` sót lại sau khi bump version (giống đợt v10.27) — đã sửa thành `?v=10\.28`.
 
 ## Đợt v10.27 (05/11 — makeup gain +4dB cho đường EQ BẬT: EQ bật nay to bằng EQ tắt)
 

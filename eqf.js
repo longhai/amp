@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var EQF_VERSION = "10.27";
-  var EXPECTED_EQF_VERSION = "10.27";
+  var EQF_VERSION = "10.29";
+  var EXPECTED_EQF_VERSION = "10.29";
   if (EQF_VERSION !== EXPECTED_EQF_VERSION) {
     throw new Error("eqf.js: EQF_VERSION (" + EQF_VERSION + ") khac EXPECTED_EQF_VERSION (" + EXPECTED_EQF_VERSION + ") — ban mix, dung lai");
   }

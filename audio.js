@@ -84,8 +84,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.27";
-  var EXPECTED_AUDIO_VERSION = "10.27";
+  var AUDIO_VERSION = "10.29";
+  var EXPECTED_AUDIO_VERSION = "10.29";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -101,6 +101,7 @@
   var EQ_FREQS = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
   var EQ_Q = 1;
   var HLS_CDN_URL = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";
+  var HLS_CDN_TIMEOUT_MS = 8000; /* v10.29 — nạp HLS.js quá 8s chưa xong (onload/onerror đều không tới) thì reject, khỏi treo vĩnh viễn. */
   var NATIVE_TIMEOUT_MS = 6000;   /* native 6s chưa phát -> rơi về HLS */
   var ERROR_RECHECK_MS = 3000;    /* lỗi nạp: thử lại sau 3s chống báo oan */
   var MAX_LOAD_RETRIES = 2;       /* thử lại tối đa 2 lần (tổng 3 lần nạp) trước khi báo lỗi */
@@ -123,19 +124,23 @@
      đỉnh giữ ở +0.44 dB thay vì +6 dB). */
   var LIMITER_THRESHOLD_DB = 0, LIMITER_KNEE_DB = 0, LIMITER_RATIO = 20;
   var LIMITER_ATTACK = 0.002, LIMITER_RELEASE = 0.1;
-  /* Makeup gain cho đường EQ BẬT (v10.27): trên điện thoại thật (Android),
-     đường Web Audio nghe nhỏ hơn NHIỀU so với đường native (EQ tắt = bypass
-     tuyệt đối, tiếng to nhất) dù EQ để mặc định phẳng — đã loại trừ code
-     thụt lùi (dựng lại v10.14 y hệt từ GitHub, test máy thật 05/11: "cũng
-     nhỏ như vậy"; chuỗi EQ đo unity 0,00 dB ở headless Chrome v10.16).
-     Bù +4 dB (gain ≈ 1,585) vào đường EQ bật để nghe to bằng lúc tắt.
+  /* Makeup gain cho đường EQ BẬT (v10.27, v10.28 tăng +4 → +6): trên điện
+     thoại thật (Android), đường Web Audio nghe nhỏ hơn NHIỀU so với đường
+     native (EQ tắt = bypass tuyệt đối, tiếng to nhất) dù EQ để mặc định
+     phẳng — đã loại trừ code thụt lùi (dựng lại v10.14 y hệt từ GitHub,
+     test máy thật 05/11: "cũng nhỏ như vậy"; chuỗi EQ đo unity 0,00 dB ở
+     headless Chrome v10.16). v10.27 bù +4 dB nhưng Hải test máy thật
+     05/11 07:30 vẫn "nghe chưa bằng lúc tắt eq" (đo track tiếng trong
+     video test: đoạn giữa to hơn đoạn đầu/cuối ~2 dB, radio live nên
+     không sạch — gợi ý còn thiếu ~2 dB) → v10.28 tăng lên +6 dB
+     (gain ≈ 1,995) vào đường EQ bật để nghe to bằng lúc tắt.
      CHỈ 1 số này để chỉnh: muốn to/nhỏ hơn thì đổi EQ_MAKEUP_GAIN_DB rồi
-     đo lại headless (xem eq-loudness-127-report.md). Đặt TRƯỚC limiter
+     đo lại headless (xem eq-loudness-128-report.md). Đặt TRƯỚC limiter
      (master -> makeup -> limiter) để limiter ngưỡng 0 dB vẫn chặn quá tải:
      preset boost + makeup vượt 0 dBFS vẫn bị bóp về ≤ ~0 dB. Không đụng
      preamp/bands/limiter/volume/crossfade; đường EQ tắt (bypass/native)
      không qua node này nên không đổi. */
-  var EQ_MAKEUP_GAIN_DB = 4;
+  var EQ_MAKEUP_GAIN_DB = 6;
   var EQ_MAKEUP_GAIN = Math.pow(10, EQ_MAKEUP_GAIN_DB / 20);
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
@@ -709,14 +714,26 @@
       if (hlsLoading) return hlsLoading;
       hlsLoading = new Promise(function (resolve, reject) {
         if (!doc || !doc.createElement) { reject(new Error("khong co document de nap HLS.js")); return; }
+        var done = false;
+        /* v10.29 — hẹn giờ: script CDN treo (không onload/onerror) thì
+           promise cũ treo vĩnh viễn, tryHls không bao giờ chạy tiếp.
+           Quá 8s thì reject để rơi vào handleLoadFailure("hls-cdn") và
+           thử lại / báo lỗi như thường; onload/onerror tới muộn bị bỏ. */
+        var timer = setTimeout(function () {
+          if (done) return; done = true;
+          hlsLoading = null;
+          reject(new Error("nap HLS.js het gio"));
+        }, HLS_CDN_TIMEOUT_MS);
+        if (timer && typeof timer.unref === "function") { try { timer.unref(); } catch (e) { /* bỏ qua */ } }
         var s = doc.createElement("script");
         s.src = hlsUrl;
         s.onload = function () {
+          if (done) return; done = true; clearTimeout(timer);
           hlsLoading = null;
           if (win && win.Hls) resolve(win.Hls);
           else reject(new Error("nap HLS.js xong nhung khong co window.Hls"));
         };
-        s.onerror = function () { hlsLoading = null; reject(new Error("khong tai duoc HLS.js (can mang)")); };
+        s.onerror = function () { if (done) return; done = true; clearTimeout(timer); hlsLoading = null; reject(new Error("khong tai duoc HLS.js (can mang)")); };
         (doc.head || doc.getElementsByTagName("head")[0] || doc.documentElement).appendChild(s);
       });
       return hlsLoading;
@@ -772,8 +789,17 @@
         if (destroyed || seq !== loadSeq || !currentItem || !currentEl) return;
         /* v10.7 fix Stop tu phat lai (04/11): chi roi HLS / bao loi khi
            dang nap lan dau (loadState "loading"). Da dung han (Stop, doi
-           EQ luc dung) thi timer nay (neu con) khong duoc phat lai. */
-        if (playing || loadState !== "loading") return;
+           EQ luc dung) thi timer nay (neu con) khong duoc phat lai.
+           v10.29 — KHONG dung co playing (cung khong dung el.paused) de
+           bo qua: setEqOn dat playing=true lac quan truoc khi the moi
+           phat that, nen timer cu (return khi playing) khong bao gio chay
+           khi the ket sau doi EQ; va el.paused=false ngay sau play() ke
+           ca khi luong chua co du lieu (tai cham) nen dung paused se lam
+           mat roi HLS khi tai cham (audio-test timeout 60ms). Chi can
+           loadState: dang phat that thi 'playing'/'timeupdate' da dat
+           loadState="playing" nen timer tu bo qua; van "loading" sau 6s
+           la ket/cham -> roi HLS / bao loi de thu lai. */
+        if (loadState !== "loading") return;
         if (isHlsUrl(currentItem.url) && !hlsTried) tryHls(seq);
         else handleLoadFailure("timeout");
       }, nativeTimeoutMs);
@@ -1140,6 +1166,17 @@
       if (ctx && ctx.state === "suspended" && ctx.resume) {
         try { ctx.resume(); } catch (e) { /* bỏ qua */ }
       }
+      /* v10.29 — the da pause trong khi co playing van true (ket sau doi
+         EQ: setEqOn dat playing lac quan, the moi khong phat duoc; play()
+         tran khong go duoc the/trang thai nap ket) -> nap lai day du nhu
+         bam kenh (playItem/loadAndPlay), khong phai play() tran. Chi khi
+         playing=true (Pause thuong cua nguoi dung thi playing=false va
+         play() tran la du de tiep tuc). */
+      var elPaused = false;
+      try { elPaused = !!currentEl.paused; } catch (e) { elPaused = false; }
+      if (playing && elPaused && currentItem) {
+        return playItem(currentItem, { on: eqOn, preamp: eqValues.preamp, bands: eqValues.bands.slice() });
+      }
       /* v10.7 fix Stop tu phat lai (04/11): resume la y dinh phat that —
          dat "loading" de loi sau day duoc thu lai / bao loi (setEqOn luc
          dung de "idle", khong co dong nay thi Play sau Stop + doi EQ se
@@ -1153,7 +1190,15 @@
     }
     function togglePlay() {
       if (!currentEl) return { ok: false, reason: "nothing" };
-      if (playing) { pause(); return { ok: true, paused: true }; }
+      /* v10.29 — ket sau doi EQ: co playing co the true trong khi the that
+         da pause (setEqOn dat lac quan). Bam Play luc nay phai di resume
+         (nap lai neu can), khong duoc pause the da pause — pause the da
+         pause khong ban event nen co playing khong bao gio go, nut Play
+         nhu khong an (Hai 05/11 07:45). Chi pause khi the that su dang
+         phat (playing=true + khong pause). */
+      var elPaused = false;
+      try { elPaused = !!currentEl.paused; } catch (e) { elPaused = false; }
+      if (playing && !elPaused) { pause(); return { ok: true, paused: true }; }
       return resume();
     }
     function stop() {
@@ -1295,8 +1340,16 @@
                cũ trong freshElement bắn sự kiện 'pause' làm cờ playing về
                false — khôi lại cờ ngay để renderer/watchdog không tưởng
                là đã dừng; thẻ mới bắn 'playing'/'timeupdate' sẽ xác nhận
-               lại. */
-            playing = true; loadState = "playing";
+               lại.
+               v10.29 — KHÔNG đặt loadState="playing" lạc quan: thẻ mới
+               chưa phát thật (đang nạp). Để "loading" để native timer
+               (6s) còn cứu được nếu thẻ kẹt (thẻ pause mà loadState
+               "loading" -> rơi HLS / thử lại); "playing" làm timer tưởng
+               đã phát nên không làm gì, và nút Play (togglePlay) tưởng
+               đang phát nên chỉ pause thẻ đã pause (không gỡ được kẹt —
+               Hải 05/11 07:45: bấm Play không thì không ăn, chỉ Dừng rồi
+               Play hoặc bấm lại kênh mới hát lại). playing=true thì giữ. */
+            playing = true; loadState = "loading";
             if (onPlayingChange) { try { onPlayingChange(true); } catch (e) { /* bỏ qua */ } }
           }
           applyVolume();
@@ -1418,6 +1471,7 @@
     EQ_FREQS: EQ_FREQS, EQ_Q: EQ_Q,
     EQ_MAKEUP_GAIN_DB: EQ_MAKEUP_GAIN_DB, EQ_MAKEUP_GAIN: EQ_MAKEUP_GAIN, /* v10.27: bù gain đường EQ bật */
     HLS_CDN_URL: HLS_CDN_URL,
+    HLS_CDN_TIMEOUT_MS: HLS_CDN_TIMEOUT_MS, /* v10.29: nạp HLS.js quá 8s thì reject */
     NATIVE_TIMEOUT_MS: NATIVE_TIMEOUT_MS,
     ERROR_RECHECK_MS: ERROR_RECHECK_MS,
     MAX_LOAD_RETRIES: MAX_LOAD_RETRIES, /* thử lại tối đa 2 lần trước khi báo lỗi */
