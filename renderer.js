@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.34";
-  var EXPECTED_RENDERER_VERSION = "10.34";
+  var RENDERER_VERSION = "10.35";
+  var EXPECTED_RENDERER_VERSION = "10.35";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -2428,6 +2428,12 @@
         } catch (e) { /* bỏ qua */ }
       }
       updateStatusEls();
+      /* v10.35 (135): phat/dung thi ve lai ca o KBPS/KHZ Modern (updateInfoEls)
+         — truoc day chung chi ve lai khi doi bai hoac duration ve; bam
+         Phat tren bai dang chon (togglePlay, khong doi bai) thi Modern
+         ket o so cu/trong trong khi dang phat. Classic da ve qua
+         updateStatusEls -> refreshClassicMain. */
+      updateInfoEls();
       refreshPlaylistRows();
       updateChannelsIndicator();
       /* Đợt B (9.9): phát/dừng thì đồng bộ vòng cuộn ticker (chữ dài cuộn
@@ -8501,24 +8507,67 @@
          Đài live / file chưa biết len -> null -> hiện "128" demo: luồng
          HLS/MP3 không báo bitrate nên không đo được (không bịa).
        demo.dur chỉ dùng khi đang phát (là thời lượng bài đang phát do engine
-       báo); không phát thì demo.dur có thể là của bài cũ nên không dùng. */
+       báo); không phát thì demo.dur có thể là của bài cũ nên không dùng.
+       --- v10.35 (135, Hải 13:05 + 12:59): BỎ HẲN số demo "128"/"44" —
+       không có số liệu thì để TRỐNG, không bịa. Chưa phát / đã dừng thì
+       cả 2 ô đều trống (Winamp PC cũng để trống khi không phát), không
+       kẹt "128"/"48" (Modern lúc chưa phát đã hiện sẵn "128"/"44" là
+       lỗi này). Chỉ khi có tín hiệu mới hiện số thật:
+       - KBPS: file local = fileSize*8/len (vd FLAC 24966803 byte /
+         213,8s -> 934 kbps, khớp ffprobe 934328 bps); chưa biết len
+         thì tagBitrate (tag, bps -> kbps); đài live / chưa đo được ->
+         trống (VOV1 thật 72 kbps mà "128" demo là sai).
+       - KHZ: ưu tiên tần số lấy mẫu của BÀI đang phát qua tag
+         (tagSampleRate, vd FLAC 44100 -> "44" — trước đây hiện "48"
+         của thiết bị là sai với file 44,1kHz); chưa có tag thì tần số
+         của THIẾT BỊ (AudioContext, vd 48000 -> "48") — đúng khi file
+         cũng 48kHz (vd mp3 mẫu 320kbps/48kHz, file của Hải hiện "48"
+         là đúng). Chưa phát thì KHZ cũng trống dù graph đã có.
+       "Có tín hiệu" = đang phát, hoặc đã tạm dừng (bài còn nạp, t>0);
+       dừng hẳn (Stop / chưa phát bao giờ, t=0) thì trống. */
+    function songInfoHasSignal() {
+      try { return !!(playlistState.playing || (demo && demo.t > 0)); } catch (e) { return false; }
+    }
+    /* v10.35 (135): căn số vào giữa khung ô Classic (TEXT 5×6, 5px/chữ).
+       Số hẹp hơn khung thì căn giữa (thừa 1px mỗi bên với "382" 15px
+       trong khung 18px, "48" 10px trong khung 13px); số rộng hơn khung
+       (KBPS 4 chữ số "1411" = 20px > khung 18px) thì dồn trái, vẽ tràn
+       qua mép phải như Winamp PC (không cắt chữ, không thu font). */
+    function classicInfoTextOffset(text, boxW) {
+      var n = String(text == null ? "" : text).length;
+      var tw = n * 5;
+      if (tw <= 0 || tw >= boxW) return 0;
+      return Math.floor((boxW - tw) / 2);
+    }
     function songInfoValues() {
+      /* v10.35 (135): khong con so demo nao — khong tin hieu thi 2 o
+         TRONG (khz/kbps null), co tin hieu nhung khong do duoc thi o do
+         cung trong. Co demo (khzDemo/kbpsDemo) giu lai de tuong thich
+         (test cu doc) nhung luon false: khong co gia tri nao hien ra la
+         so uoc tinh nua. */
+      if (!songInfoHasSignal()) return { khz: null, khzDemo: false, kbps: null, kbpsDemo: false };
+      var cur = playlistState.items[playlistState.current];
+      /* KHZ: tag của file đang phát trước (số thật của nguồn), rồi mới
+         tới sample rate thiết bị (AudioContext). */
       var sr = null;
-      try { sr = audioEngine && audioEngine.getSampleRate ? audioEngine.getSampleRate() : null; } catch (e) { sr = null; }
+      try { if (cur && cur.tagSampleRate && cur.tagSampleRate > 0) sr = cur.tagSampleRate; } catch (e) { sr = null; }
+      if (sr === null) {
+        try { sr = audioEngine && audioEngine.getSampleRate ? audioEngine.getSampleRate() : null; } catch (e) { sr = null; }
+      }
       var khz = null;
       if (sr && sr > 0) khz = String(Math.round(sr / 1000));
-      var cur = playlistState.items[playlistState.current];
       var len = null;
       if (cur && cur.len != null) len = cur.len;
       else if (playlistState.playing && demo.dur != null && demo.dur > 0) len = demo.dur;
       var kbps = null;
       if (cur && cur.local && cur.fileSize && len && len > 0) kbps = String(Math.round(cur.fileSize * 8 / len / 1000));
-      return { khz: khz, khzDemo: khz === null, kbps: kbps, kbpsDemo: kbps === null };
+      else if (cur && cur.local && cur.tagBitrate && cur.tagBitrate > 0) kbps = String(Math.round(cur.tagBitrate / 1000));
+      return { khz: khz, khzDemo: false, kbps: kbps, kbpsDemo: false };
     }
     function songInfoText(id) {
       var v = songInfoValues();
-      if (id === "Frequency") return v.khz !== null ? v.khz : "44";
-      if (id === "Bitrate") return v.kbps !== null ? v.kbps : "128";
+      if (id === "Frequency") return v.khz !== null ? v.khz : "";
+      if (id === "Bitrate") return v.kbps !== null ? v.kbps : "";
       return "";
     }
     /* v10.12 (P0 C): thông tin mục đang chọn cho map display. Tên bài lấy
@@ -8532,7 +8581,10 @@
     function currentTrackLengthText() { var it = currentTrackItem(); return (it && it.len != null) ? fmtTime(it.len) : ""; }
     function songInfoLineText() {
       var v = songInfoValues();
-      return (v.kbps !== null ? v.kbps : "128") + " kbps " + (v.khz !== null ? v.khz : "44") + " kHz";
+      var parts = [];
+      if (v.kbps !== null) parts.push(v.kbps + " kbps");
+      if (v.khz !== null) parts.push(v.khz + " kHz");
+      return parts.join(" ");
     }
     function systemClockText() {
       var d = new Date();
@@ -8555,7 +8607,7 @@
     }
     function getSongInfoState() {
       var v = songInfoValues();
-      return { khz: v.khz !== null ? v.khz : "44", khzDemo: v.khzDemo, kbps: v.kbps !== null ? v.kbps : "128", kbpsDemo: v.kbpsDemo };
+      return { khz: v.khz !== null ? v.khz : "", khzDemo: v.khzDemo, kbps: v.kbps !== null ? v.kbps : "", kbpsDemo: v.kbpsDemo };
     }
     /* Vẽ lại PLTime (đồng hồ playlist, việc 3 đợt A) tại chỗ sau khi
        thêm/xóa/sắp xếp/chọn mục — không cần re-render toàn cửa sổ. */
@@ -10313,12 +10365,17 @@
           if (info.kbps !== rec.kbpsText) {
             rec.kbpsText = info.kbps;
             rec.kbpsDiv.innerHTML = "";
-            rec.kbpsDiv.appendChild(classicTextRow(info.kbps));
+            var krow = classicTextRow(info.kbps);
+            /* v10.35 (135): căn số vào giữa khung (xem classicInfoTextOffset). */
+            krow.style.marginLeft = classicInfoTextOffset(info.kbps, rec.kbpsBoxW || 18) + "px";
+            rec.kbpsDiv.appendChild(krow);
           }
           if (rec.khzDiv && info.khz !== rec.khzText) {
             rec.khzText = info.khz;
             rec.khzDiv.innerHTML = "";
-            rec.khzDiv.appendChild(classicTextRow(info.khz));
+            var hrow = classicTextRow(info.khz);
+            hrow.style.marginLeft = classicInfoTextOffset(info.khz, rec.khzBoxW || 13) + "px";
+            rec.khzDiv.appendChild(hrow);
           }
         }
       }
@@ -10657,7 +10714,12 @@
       rec.kbpsDiv.style.position = "absolute";
       rec.kbpsDiv.style.left = G.kbps.x + "px"; rec.kbpsDiv.style.top = G.kbps.y + "px";
       rec.kbpsDiv.style.width = G.kbps.w + "px"; rec.kbpsDiv.style.height = G.kbps.h + "px";
-      rec.kbpsDiv.style.overflow = "hidden";
+      /* v10.35 (135): KHÔNG cắt ở mép khung — Winamp PC vẽ chữ số không
+         kẹp khung: số 4 chữ số ("1411" = 20px > khung 18px) vẽ tràn qua
+         mép phải thay vì bị cắt; số thường (<=3 chữ số) vẫn nằm gọn
+         trong khung. Rộng khung lấy từ classic.js (đúng khung đen skin). */
+      rec.kbpsDiv.style.overflow = "visible";
+      rec.kbpsBoxW = G.kbps.w;
       setAbs(rec.kbpsDiv, win, G.kbps.x, G.kbps.y);
       win.appendChild(rec.kbpsDiv);
       rec.khzDiv = document.createElement("div");
@@ -10665,7 +10727,8 @@
       rec.khzDiv.style.position = "absolute";
       rec.khzDiv.style.left = G.khz.x + "px"; rec.khzDiv.style.top = G.khz.y + "px";
       rec.khzDiv.style.width = G.khz.w + "px"; rec.khzDiv.style.height = G.khz.h + "px";
-      rec.khzDiv.style.overflow = "hidden";
+      rec.khzDiv.style.overflow = "visible";
+      rec.khzBoxW = G.khz.w;
       setAbs(rec.khzDiv, win, G.khz.x, G.khz.y);
       win.appendChild(rec.khzDiv);
       /* Mono/stereo. */
@@ -12369,7 +12432,8 @@
       getAvsFrame: getAvsFrame, AVS_BARS: AVS_BARS, AVS_ROWS: AVS_ROWS,
       getVisEqualizeTable: getVisEqualizeTable, visLogValue: visLogValue, /* v10.11: bảng equalize Nullsoft + ánh xạ log cho vis display */
       stepTicker: stepTicker, syncTickerAnim: syncTickerAnim,
-      getSongInfoState: getSongInfoState, songInfoText: songInfoText,
+      getSongInfoState: getSongInfoState, songInfoText: songInfoText, songInfoLineText: songInfoLineText,
+      classicInfoTextOffset: classicInfoTextOffset, /* v10.35 (135): căn số KBPS/KHZ vào giữa khung Classic */
       runAvsSelfCheck: runAvsSelfCheck, runAudioSelfCheck: runAudioSelfCheck,
       applyColorTheme: applyColorTheme, selectColorTheme: selectColorTheme,
       gammaScale: gammaScale, gammaMatrixValues: gammaMatrixValues,

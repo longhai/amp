@@ -37,8 +37,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var CLASSIC_VERSION = "10.34";
-  var EXPECTED_CLASSIC_VERSION = "10.34";
+  var CLASSIC_VERSION = "10.35";
+  var EXPECTED_CLASSIC_VERSION = "10.35";
   /* Manifest duy nhất window.AMP_VERSION (đặt ở index.html TRƯỚC khi nạp
      file này) — lệch thì MANIFEST_MISMATCH = true để trang báo "bản mix".
      Không có manifest (chạy test trực tiếp bằng require) thì không kiểm. */
@@ -585,8 +585,17 @@
     time: { x: 39, y: 26, w: 59, h: 13, digitXs: [9, 21, 39, 51], minus: { x: -1, y: 6, w: 5, h: 1 } },
     vis: { x: 24, y: 43, w: 76, h: 16 },
     marquee: { x: 111, y: 24, w: 154, h: 6 },
-    kbps: { x: 111, y: 43, w: 15, h: 6 },
-    khz: { x: 156, y: 43, w: 10, h: 6 },
+    /* v10.35 (135): khung ô KBPS/KHZ = đúng khung đen trong MAIN.bmp
+       của skin Classic — .wsz KHÔNG có XML nên MAIN.bmp + TEXT.bmp là
+       định nghĩa duy nhất (đo từ base-2.91.wsz: khung đen KBPS px
+       109–126, KHZ px 154–166, cao 10px y41–50; hàng chữ 6px đặt ở
+       y43 = giữa dọc khung). Trước đây Amp vẽ ô hẹp hơn khung
+       (15px/10px, x=111/156) nên số 3 chữ số "382" lấp đầy sát mép ô,
+       nhìn như sắp tràn; nay ô rộng đúng khung (18px/13px), số căn
+       giữa trong ô (classicInfoTextOffset ở renderer.js), font giữ
+       nguyên TEXT 5×6, không thu nhỏ. */
+    kbps: { x: 109, y: 43, w: 18, h: 6 },
+    khz: { x: 154, y: 43, w: 13, h: 6 },
     monoStereo: {
       x: 212, y: 41, w: 57, h: 12, sheet: "MONOSTER",
       mono: { x: 0, w: 27, sprite: "MAIN_MONO", selectedSprite: "MAIN_MONO_SELECTED" },

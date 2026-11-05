@@ -84,8 +84,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.34";
-  var EXPECTED_AUDIO_VERSION = "10.34";
+  var AUDIO_VERSION = "10.35";
+  var EXPECTED_AUDIO_VERSION = "10.35";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -1389,12 +1389,15 @@
     }
     /* KHZ đo thật: sample rate của AudioContext (thiết bị phát, vd 48000
        -> KHZ hiện "48"). Chỉ có khi graph đã được tạo (lần phát đầu với
-       EQ bật); chưa có graph thì null -> renderer hiện "44" demo (ghi rõ
-       demo, không bịa thành số đo). Tắt EQ KHÔNG hủy graph nên sampleRate
-       vẫn đọc được sau khi tắt — đúng vì đó là sample rate của thiết bị,
-       không đổi khi bypass. Lưu ý: đây là rate của THIẾT BỊ, không phải
-       của file (trình duyệt không cho đọc sample rate file qua thẻ
-       media). */
+       EQ bật); chưa có graph thì null -> renderer để TRỐNG (v10.35 bỏ
+       số demo "44"). Tắt EQ KHÔNG hủy graph nên sampleRate vẫn đọc được
+       sau khi tắt — đúng vì đó là sample rate của thiết bị, không đổi
+       khi bypass. Lưu ý: đây là rate của THIẾT BỊ, không phải của file
+       (trình duyệt không cho đọc sample rate file qua thẻ media);
+       v10.35 renderer ưu tiên tagSampleRate của file đang phát trước,
+       chỉ dùng số này khi chưa có tag (đài live / file chưa probe xong).
+       Chưa phát thì renderer để trống dù số này đã có (không mắc "48"
+       khi không có tín hiệu). */
     function getSampleRate() {
       return ctx ? ctx.sampleRate : null;
     }

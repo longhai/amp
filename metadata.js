@@ -14,9 +14,18 @@
      nạp lib bằng bundler; Amp không có build step nên nạp lib qua CDN
      bằng dynamic import() (xem dưới).
    - reducers/tracks.ts — SET_MEDIA_TAGS: ghi title/artist/album (+ kbps/
-     khz từ bitrate/sampleRate) vào track. Amp KHÔNG lấy KBPS/KHZ từ tag
-     (đã chốt): bitrate/sampleRate của tag chỉ lưu vào model
-     (tagBitrate/tagSampleRate) mà KHÔNG đưa lên viên KBPS/KHZ.
+     khz từ bitrate/sampleRate) vào track. Amp v10.35 (135) LẤY KHZ/KBPS
+     từ tag cho file local đang phát (xem songInfoValues ở renderer.js):
+     tagSampleRate là tần số lấy mẫu thật của file (44100 -> "44",
+     đúng hơn sample rate thiết bị 48000 -> "48" khi file 44,1kHz);
+     tagBitrate là dự phòng khi chưa biết thời lượng để tính trung bình
+     fileSize/len. Thứ tự ưu tiên KHZ: tagSampleRate -> thiết bị;
+     KBPS: fileSize/len -> tagBitrate -> trống (đài live không có tag).
+     Trước v10.35 Amp KHÔNG lấy KBPS/KHZ từ tag (đã chốt đợt metadata):
+     bitrate/sampleRate chỉ lưu model (tagBitrate/tagSampleRate). Quyết
+     định đó đổi ở v10.35 vì ffprobe chứng minh KHZ thiết bị sai với
+     file 44,1kHz (FLAC mẫu 44100 Hz hiện "48") và KBPS demo "128" sai
+     với đài thật (VOV1 72 kbps).
 
    ---------------------------------------------------------------------------
    CDN — ĐÃ KIỂM SỐNG 03/11 (curl, HTTP 200):
@@ -59,8 +68,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var METADATA_VERSION = "10.34";
-  var EXPECTED_METADATA_VERSION = "10.34";
+  var METADATA_VERSION = "10.35";
+  var EXPECTED_METADATA_VERSION = "10.35";
   if (METADATA_VERSION !== EXPECTED_METADATA_VERSION) {
     throw new Error("metadata.js: METADATA_VERSION (" + METADATA_VERSION + ") khac EXPECTED_METADATA_VERSION (" + EXPECTED_METADATA_VERSION + ") — ban mix, dung lai");
   }
@@ -476,7 +485,9 @@
      - artist/album (tag) thắng nghệ sĩ/album suy từ thư mục.
      - duration (tag/lib) chỉ ghi khi item.len còn null (thời lượng
        probe bằng thẻ audio — nếu đã có — giữ nguyên).
-     - bitrate/sampleRate chỉ lưu model, KHÔNG dùng cho viên KBPS/KHZ.
+     - bitrate/sampleRate lưu model (tagBitrate/tagSampleRate); v10.35
+      (135) renderer lấy tagSampleRate/tagBitrate làm số KBPS/KHZ cho
+      file local đang phát (xem songInfoValues) — trước đây không dùng.
      Trả true nếu có trường nào đổi. */
   function applyMetadataToItem(item, meta, fallback) {
     if (!item || !meta) return false;
