@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.35 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v1 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -79,7 +79,12 @@
      skin-browser.js) ĐÃ GỠ HẲN theo chốt của Hải — chạy trên mạng
      không nạp trực tiếp skin từ kho vào được mà phải tải về đưa lên
      nên cửa sổ đó vô dụng. Chỉ giữ "Nạp skin .wal/.wsz/.zip…" chọn file
-     tay làm cách duy nhất để nạp skin. Quy tắc [hidden] còn lại cho
+     tay làm cách duy nhất để nạp skin. v1 (137) thêm 2 cách nữa CÙNG
+     CHỖ (menu Giao diện / "Nạp skin…", renderer.js skinMenuItems):
+     nạp bằng URL (o nhap link .wal/.wsz) và "Chọn skin có sẵn"
+     (danh sách skins/ — skins.json + GitHub API, cả .wal Modern lẫn
+     .wsz Classic, ghi rõ loại). Kho skin duyệt trên mạng vẫn gỡ hẳn,
+     không khôi phục. Quy tắc [hidden] còn lại cho
      #btn-reopen và #maki-panel. */
   #btn-reopen[hidden],#maki-panel[hidden]{display:none;}
   /* bảng xem MAKI — nền sáng như menu Winamp thật (#ECE9D8, chữ đen,
@@ -123,7 +128,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.35" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "1" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -131,27 +136,28 @@
    version trong 8 file JS + ?v= trên 8 thẻ script.
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
-   đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.35";
+   đã GỠ hẳn — v1 (137) chỉ thêm nạp bằng URL + danh sách skins/ có
+   sẵn, không phải kho duyệt trên mạng. */
+window.AMP_VERSION = "1";
 </script>
-<script src="classic.js?v=10.35"></script>
-<script src="skin-loader.js?v=10.35"></script>
-<script src="audio.js?v=10.35"></script>
-<script src="eqf.js?v=10.35"></script>
+<script src="js/classic.js?v=1"></script>
+<script src="js/skin-loader.js?v=1"></script>
+<script src="js/audio.js?v=1"></script>
+<script src="js/eqf.js?v=1"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
      GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
      cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
      (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
      milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
      / PRESETS_* / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.35"></script>
-<script src="metadata.js?v=10.35"></script>
-<script src="maki.js?v=10.35"></script>
-<script src="renderer.js?v=10.35"></script>
+<script src="js/milkdrop.js?v=1"></script>
+<script src="js/metadata.js?v=1"></script>
+<script src="js/maki.js?v=1"></script>
+<script src="js/renderer.js?v=1"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.35" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "1" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -163,9 +169,62 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.35";
+var VERSION = "1";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
+/* AUDIT V2: generation counter của bootSkin — mỗi lần gọi tăng 1; chỉ
+   lần mới nhất mới được áp dụng kết quả / khôi phục skin cũ / hủy engine
+   cũ. Lần cũ bị hủy thì bỏ qua im lặng, kể cả ở nhánh catch. */
+var bootToken = 0;
+/* AUDIT R6-3: park AVS của renderer LỖI mà catch không dọn được ngay
+   (wrap đang live trên stage — dọn lúc đó sẽ rút cả video đang hiện)
+   thì ghi lại vào đây để dọn bù sau: lần render/boot thành công kế tiếp
+   (wrap đã tách khỏi stage) hoặc ngay sau khi catch vẽ lại skin cũ.
+   Chỉ dọn khi wrap đã tách / đã park / không còn media — xem
+   disposeOrphanedParks. */
+var orphanedRenderers = [];
+function disposeOrphanedParks() {
+  if (!orphanedRenderers.length) return;
+  var kept = [];
+  for (var i = 0; i < orphanedRenderers.length; i++) {
+    var r = orphanedRenderers[i];
+    var disposed = false;
+    try {
+      /* Không bao giờ dọn park của renderer đang chạy. */
+      if (r && r !== renderer && r.disposeAvsPark) {
+        var st = null;
+        try { if (r.getAvsParkState) st = r.getAvsParkState(); } catch (e) { st = null; }
+        var wrap = (st && st.wrap) || null;
+        if (!wrap) {
+          /* Round 8 — R8-4 (renderer): tham do wrap -> uu tien getAvsMediaWrap(), fallback getAvsMedia() khi khong co (stub/renderer cu chi co getAvsMedia; renderer that: getAvsMedia() chi delegate ve getAvsMediaWrap()). */
+          try { if (r.getAvsMediaWrap) { var _m = r.getAvsMediaWrap(); wrap = _m && _m.wrap; } } catch (e) { wrap = null; }
+          if (!wrap && r.getAvsMedia) { try { var _m2 = r.getAvsMedia(); wrap = _m2 && _m2.wrap; } catch (e) { /* bo qua */ } }
+        }
+        /* An toàn khi: không còn media, wrap đã park trong holder ẩn,
+           hoặc wrap đã tách khỏi document (lần render sau đã thay stage).
+           Wrap đang gắn mà KHÔNG park = đang hiện trên stage → để lại.
+           Không đủ bằng chứng (không có state lẫn wrap) thì giữ lại
+           (fail-closed như R5-b: thà rò 1 div còn hơn rút nhầm video). */
+        var safe = false;
+        if (st && !st.hasMedia) safe = true;
+        else if (st && st.parked) safe = true;
+        else if (wrap) {
+          if (typeof wrap.isConnected === "boolean") safe = !wrap.isConnected;
+          else safe = !wrap.parentElement && !wrap.parentNode;
+        }
+        if (safe) { try { r.disposeAvsPark(); disposed = true; } catch (e) { disposed = false; } }
+        /* AUDIT R7-3 (renderer, phía gọi): park đã dọn xong thì gọi luôn
+           dispose() của renderer đó trước khi bỏ tham chiếu — chỉ trông
+           chờ GC (WeakRef) thì renderer cũ còn sống chừng nào
+           orphanedRenderers còn giữ mạnh nó. Guard typeof + try/catch
+           như các lần dọn khác; renderer đang chạy đã loại ở trên. */
+        if (disposed && r && typeof r.dispose === "function") { try { r.dispose(); } catch (e) { /* bỏ qua */ } }
+      }
+    } catch (e) { disposed = false; }
+    if (!disposed) kept.push(r);
+  }
+  orphanedRenderers = kept;
+}
 /* crossfade + Milkdrop — chỉnh từ menu trong giao diện skin (File/
    Play/Options/View/Help của skin Modern, nút O của skin Classic),
    lưu localStorage.
@@ -205,7 +264,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.35 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v1 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -215,7 +274,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.35 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v1 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -260,15 +319,21 @@ function loadPlaybackState() {
     return s && typeof s === "object" ? s : null;
   } catch (e) { return null; }
 }
+/* AUDIT N14: giữ 1 promise dùng chung — CDN lỗi thì mỗi lần boot trước
+   đây append thêm 1 thẻ <script> hỏng nữa. Lỗi thì xóa cache để lần thử
+   lại sau append thẻ mới (thẻ cũ đã chết). */
+var jsZipPromise = null;
 function ensureJSZip() {
-  return new Promise(function (resolve, reject) {
-    if (window.JSZip) return resolve(window.JSZip);
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  if (jsZipPromise) return jsZipPromise;
+  jsZipPromise = new Promise(function (resolve, reject) {
     var s = document.createElement("script");
     s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-    s.onload = function () { window.JSZip ? resolve(window.JSZip) : reject(new Error("không tải được JSZip")); };
-    s.onerror = function () { reject(new Error("không tải được JSZip (cần mạng)")); };
+    s.onload = function () { if (window.JSZip) resolve(window.JSZip); else { jsZipPromise = null; reject(new Error("không tải được JSZip")); } };
+    s.onerror = function () { jsZipPromise = null; reject(new Error("không tải được JSZip (cần mạng)")); };
     document.head.appendChild(s);
   });
+  return jsZipPromise;
 }
 /* chỉ 2 chế độ zoom: "1" (cỡ gốc) và "fit" (Vừa màn hình).
    Đợt 9.5 (lỗi 3+4): fit được phép THU NHỎ dưới 1x để vừa màn hình
@@ -281,6 +346,7 @@ function ensureJSZip() {
    Nút 2x/3x đã bỏ khỏi thanh công cụ (người dùng chốt 3/11: web chỉ
    cần 1x + fit). Mọi mode khác "fit" đều về 1x. Zoom giữ mượt như cũ
    (scale transform + image-rendering:auto, KHÔNG pixelated). */
+var zoomTransitionTimer = 0; /* AUDIT N15: id timer dọn transition của setZoom (clear trước khi đặt mới) */
 function setZoom(mode, opts) {
   if (mode !== "fit") mode = "1";
   zoom = mode;
@@ -309,7 +375,10 @@ function setZoom(mode, opts) {
      xảy ra trong thực tế.) */
   if (opts && opts.animateZoom) {
     stage.style.transition = "transform 180ms ease-out, height 250ms ease";
-    setTimeout(function () { stage.style.transition = ""; }, 250);
+    /* AUDIT N15: timer cũ không được clear — lần setZoom sau có thể bị
+       timer của lần trước xóa transition mới đặt. */
+    if (zoomTransitionTimer) clearTimeout(zoomTransitionTimer);
+    zoomTransitionTimer = setTimeout(function () { stage.style.transition = ""; zoomTransitionTimer = 0; }, 250);
   } else if (stage.style.transition && stage.style.transition.indexOf("transform") >= 0) {
     stage.style.transition = "";
   }
@@ -397,7 +466,10 @@ function syncMilkdrop() {
        khong doi gi). Chung 1 hop avsMedia cho ca Modern/AVS lan
        Classic/cua so Video roi. */
     try {
-      var wrapNow = renderer.getAvsMedia ? renderer.getAvsMedia().wrap : null;
+      /* Round 8 — R8-4 (renderer): tham do wrap -> uu tien getAvsMediaWrap(), fallback getAvsMedia() khi khong co (stub/renderer cu chi co getAvsMedia; renderer that: getAvsMedia() chi delegate ve getAvsMediaWrap()). */
+      var wrapNow = null;
+      try { var _wm = renderer.getAvsMediaWrap ? renderer.getAvsMediaWrap() : null; wrapNow = _wm && _wm.wrap; } catch (e) { wrapNow = null; }
+      if (!wrapNow && renderer.getAvsMedia) { try { var _mm = renderer.getAvsMedia(); wrapNow = _mm && _mm.wrap; } catch (e) { /* bo qua */ } }
       if (wrapNow && milkdropCtl.attachTo) milkdropCtl.attachTo(wrapNow);
     } catch (e) { /* bỏ qua */ }
     /* v10.4 — CHO GAY MILKDROP DEN (anh dien thoai that 22:05: Milkdrop
@@ -425,8 +497,10 @@ function syncMilkdrop() {
     var er = milkdropCtl.ensureReady();
     /* v10.5 — chi bao loi SAU KHI ensureReady xong (promise): bao ngay
        lap tuc o day se bao loi CU trong khi ensureReady sap xoa no
-       (vd vua mo AVS / vua bam Play). Khong co promise thi bao ngay. */
-    if (er && er.then) er.then(function () { reportMilkdropError(); });
+       (vd vua mo AVS / vua bam Play). Khong co promise thi bao ngay.
+       AUDIT V10: them .catch — ensureReady() reject truoc day la
+       unhandled rejection (khong banner, chi log console). */
+    if (er && er.then) er.then(function () { reportMilkdropError(); }).catch(function (e) { if (window.console && console.warn) console.warn("[Amp] Milkdrop ensureReady: " + (e && e.message ? e.message : e)); });
     else reportMilkdropError();
   } catch (e) { /* bỏ qua */ }
 }
@@ -467,8 +541,40 @@ function reportMilkdropError() {
     setStatus(shownText(ms.error), true);
   } catch (e) { /* bỏ qua */ }
 }
-async function toggleMilkdrop() {
-  if (milkdropOn) {
+/* AUDIT B2-V2: setMilkdrop(on) — ĐẶT TRỰC TIẾP trạng thái mong muốn thay
+   vì đảo theo trạng thái hiện tại. Khôi phục sau đổi skin cần tắt rồi
+   bật lại: toggle cũ đọc milkdropOn hiện tại nên lần nạp cũ xen vào
+   giữa 2 lần toggle sẽ đảo ngược trạng thái của lần mới (vd lần cũ tắt
+   → lần mới bật → lần cũ bật lại thành tắt). setMilkdrop(false) rồi
+   setMilkdrop(true) thì kết quả cuối luôn là trạng thái mong muốn, dù
+   xen kẽ thứ tự nào. toggleMilkdrop() giữ làm vỏ bọc cho menu View/
+   Vis (đảo trạng thái khi người dùng bấm). */
+/* AUDIT R3-L2: setMilkdrop(true) co await ctl.enable() — trong luc cho,
+   lan boot moi hon co the bat dau (IIFE khoi phuc Milkdrop cua lan cu
+   khong nam trong hang doi renderQueue). Truyen token cua lan boot vao
+   (IIFE truyen myToken; menu toggle khong truyen = khong kiem tra, vi
+   bam tay luon la moi nhat): sau await ma token da cu thi dung, KHONG
+   dat milkdropOn=true, khong goi setMilkdropActive/syncMilkdrop tren
+   renderer moi — de lan moi tu khoi phuc Milkdrop cua no.
+   AUDIT R4-L1: token co the bi "dot" ma khong co lan boot ke tiep that
+   (loadSkinFromUrl/List cap token truoc fetch roi fetch loi) — chi
+   token cu thi chua du ket luan lan boot da het hieu luc. IIFE truyen
+   them renderer cua lan boot (bootRenderer): chi coi la cu khi token
+   cu VA renderer hien tai khong con la renderer cua lan boot nay
+   (ke tiep that su da thay the skin); token cu nhung renderer van la
+   cua minh thi van khoi phuc Milkdrop binh thuong. */
+async function setMilkdrop(on, token, bootRenderer) {
+  if (!on) {
+    /* AUDIT R5-c: nhanh tat nay truoc day khong co guard — IIFE khoi phuc
+       goi setMilkdrop(false) tran (khong token/renderer) nen neu lan boot
+       moi hon da thay renderer thi van tat Milkdrop + goi
+       setMilkdropActive(false) tren renderer cua lan moi. Nay IIFE truyen
+       myToken/myRenderer (xem duoi) va guard o day dung im khi token cu
+       VA renderer hien tai khong con la renderer cua lan boot nay — giong
+       2 guard o nhanh bat (R3-L2/R4-L1). Khong truyen token (menu toggle)
+       thi khong kiem tra, nhu cu. */
+    if (typeof token === "number" && token !== bootToken && renderer !== bootRenderer) return false;
+    if (!milkdropOn) return false;
     milkdropOn = false;
     try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e) { /* bỏ qua */ }
     if (milkdropCtl) milkdropCtl.disable();
@@ -476,16 +582,26 @@ async function toggleMilkdrop() {
     markMenuChecks();
     return false;
   }
+  if (milkdropOn) return true;
   var ctl = ensureMilkdropCtl();
   if (!ctl) { setStatus("Không nạp được milkdrop.js.", true); return false; }
   if (audioEngine && audioEngine.ensureGraph) audioEngine.ensureGraph(); /* cần AudioContext trước */
   var wrap = null;
-  try { wrap = renderer ? renderer.getAvsMedia().wrap : null; } catch (e) { wrap = null; }
+  /* Round 8 — R8-4 (renderer): tham do wrap de gan Milkdrop -> uu tien getAvsMediaWrap(), fallback getAvsMedia() khi khong co (stub/renderer cu chi co getAvsMedia; renderer that: getAvsMedia() chi delegate ve getAvsMediaWrap()). */
+  try { var _wm = (renderer && renderer.getAvsMediaWrap) ? renderer.getAvsMediaWrap() : null; wrap = _wm && _wm.wrap; } catch (e) { wrap = null; }
+  if (!wrap && renderer && renderer.getAvsMedia) { try { var _mm = renderer.getAvsMedia(); wrap = _mm && _mm.wrap; } catch (e) { /* bo qua */ } }
   if (!wrap) { setStatus("Chưa có cửa sổ AVS để gắn Milkdrop.", true); return false; }
   var canvas = ctl.attachTo(wrap);
   if (renderer && renderer.setMilkdropCanvas) renderer.setMilkdropCanvas(canvas);
   try {
     var mdState = await ctl.enable();
+    /* AUDIT R3-L2 (xem tren): token cu trong luc cho enable() — lan boot
+       moi hon da tiep quan renderer; dung o day, khong dat milkdropOn,
+       khong cham vao renderer moi. Canvas da gan vao wrap cu truoc
+       await thi ke no (wrap cu da tach khoi stage, lan moi gan canvas
+       cua no khi khoi phuc). AUDIT R4-L1: chi dung khi token cu VA
+       renderer hien tai khong con la renderer cua lan boot nay. */
+    if (typeof token === "number" && token !== bootToken && renderer !== bootRenderer) return false;
     /* enable() có thể xong mà chưa có visualizer (chưa có AudioContext):
        khi đó Milkdrop vẫn BẬT để ensureReady() tự tạo nốt khi phát nhạc,
        nhưng phải báo RÕ ra banner đỏ chứ không để AVS đen im lặng. */
@@ -505,6 +621,12 @@ async function toggleMilkdrop() {
       }
     }
   } catch (e) {
+    /* AUDIT R3-L2: nhu tren — enable() loi ma token da cu thi dung im,
+       khong tat Milkdrop / khong goi setMilkdropActive(false) tren
+       renderer cua lan boot moi (de lan moi tu xu ly trang thai cua no).
+       AUDIT R4-L1: chi dung khi token cu VA renderer hien tai khong
+       con la renderer cua lan boot nay. */
+    if (typeof token === "number" && token !== bootToken && renderer !== bootRenderer) return false;
     milkdropOn = false;
     try { localStorage.setItem("amp9-milkdrop-v1", "0"); } catch (e2) { /* bỏ qua */ }
     if (renderer && renderer.setMilkdropActive) renderer.setMilkdropActive(false);
@@ -519,6 +641,7 @@ async function toggleMilkdrop() {
   markMenuChecks();
   return true;
 }
+async function toggleMilkdrop() { return setMilkdrop(!milkdropOn); }
 /* "Animate Video/Vis Drawer" tắt thì AVS mở/đóng TỨC THÌ
    (không trượt theo transition height 250ms của .stage/#stage-wrap).
    Theo dõi trạng thái AVS + ngăn kéo lần render trước: chỉ tắt transition
@@ -527,7 +650,20 @@ async function toggleMilkdrop() {
    sau 60ms (sau khi chiều cao mới đã áp — trả ngay trong cùng lượt thì
    trình duyệt có thể gom batch và vẫn trượt). */
 var prevAvsOpenAnim = null, prevDrawerOpenAnim = null;
-async function renderCurrent(hint) {
+/* AUDIT V10: hàng đợi render — setPlaylistOpen/setShadeMode/setMlOpen/
+   toggleDrawer/onRerender đều gọi renderCurrent() không chờ nhau; bấm
+   nhanh có thể vẽ chồng 2 lần render async. Nay các lần gọi xếp hàng
+   nối tiếp qua chuỗi promise (renderQueue): lần sau chỉ chạy khi lần
+   trước xong (kể cả khi lần trước lỗi — chuỗi không kẹt). renderCurrent
+   vẫn trả promise của chính lượt đó để caller .catch/await như cũ. */
+var renderQueue = Promise.resolve();
+var avsTransitionTimer = 0; /* AUDIT N15: id timer dọn transition của instantAvs (clear trước khi đặt mới) */
+function renderCurrent(hint) {
+  var p = renderQueue.then(function () { return renderCurrentInner(hint); });
+  renderQueue = p.catch(function () { /* nuốt lỗi ở chuỗi chung, lượt đó đã trả lỗi cho caller qua p */ });
+  return p;
+}
+async function renderCurrentInner(hint) {
   if (!renderer) return;
   var avsNow = false;
   try { avsNow = !!(renderer.getAvsState && renderer.getAvsState().open); } catch (e) { avsNow = false; }
@@ -557,9 +693,19 @@ async function renderCurrent(hint) {
   setZoom(zoom, hint);
   checkDrawer();
   syncMilkdrop(); /* Milkdrop theo trạng thái AVS sau mỗi render */
+  /* AUDIT R7-6 (nhẹ, lỗ hổng của sửa R6-3): park mồ côi chỉ được dọn khi
+     boot thành công hoặc khi vẽ lại R6-2 chạy — boot lỗi mà không vẽ lại
+     (vd vẽ lại cũng lỗi) thì không có ai dọn. Render thường xong (mở
+     playlist/shade, đổi cửa sổ...) thì wrap lỗi chắc chắn đã tách khỏi
+     stage nên dọn bù ở đây sau mỗi lần render thành công. */
+  try { disposeOrphanedParks(); } catch (e) { /* bỏ qua */ }
   } finally {
     prevAvsOpenAnim = avsNow; prevDrawerOpenAnim = drawerOpen;
-    if (instantAvs) setTimeout(function () { stage.style.transition = ""; stageWrap.style.transition = ""; }, 60);
+    /* AUDIT N15: như setZoom — clear timer cũ trước khi đặt mới. */
+    if (instantAvs) {
+      if (avsTransitionTimer) clearTimeout(avsTransitionTimer);
+      avsTransitionTimer = setTimeout(function () { stage.style.transition = ""; stageWrap.style.transition = ""; avsTransitionTimer = 0; }, 60);
+    }
   }
 }
 /* chuyển normal<->shade (nút winshade trong skin / bấm đúp nền
@@ -682,8 +828,339 @@ function hideUi() {
   try { stageWrap.style.display = "none"; } catch (e) { /* bỏ qua */ }
   try { btnReopen.hidden = false; } catch (e) { /* bỏ qua */ }
 }
-async function bootSkin(file, name) {
+/* v1 (137): danh sach skin co san trong skins/ — doc tu 2 nguon, gop
+   lai, cache vao bundledSkins (menu Giao dien/File doc qua
+   getBundledSkins):
+   (1) skins/skins.json — kem theo zip, luon dong bo voi skin da giao
+       (8 skin: 4 .wal Modern + 4 .wsz Classic);
+   (2) GitHub API contents/skins — doc thang thu muc skins/ tren kho
+       longhai/amp, de skin Hai up them sau (vd .wsz) tu hien ra ma
+       khong can sua skins.json; muc da co trong manifest thi giu ten
+       than thien cua manifest. API hong / khong co file moi thi chi
+       dung manifest — khong bao loi, khong chan boot. */
+var bundledSkins = []; /* [{name, file, kind, label}] */
+/* AUDIT R4-L2: dedup in-flight — mo submenu "Chon skin co san" nhieu
+   lan / bam muc cho trong luc dang tai truoc day moi lan goi 1 lan
+   skins.json + 1 lan GitHub API (60 req/gio, khong xac thuc). Nay cac
+   lan goi dong thoi dung chung 1 promise dang chay; chi xoa cache khi
+   promise settle (then/catch) nen lan goi sau khi xong van fetch lai
+   (thu lai sau loi van duoc). Boot + onReloadBundledSkins dung chung
+   duong nay. */
+var bundledSkinsInflight = null;
+/* AUDIT R6-5/R6-1: mọi fetch nạp skin/manifest đều có timeout (mạng
+   black-hole treo hàng phút thì boot treo theo) + chặn file skin quá lớn
+   theo Content-Length TRƯỚC khi đọc body (64 MB — skin thật lớn nhất
+   ~1 MB; loader kiểm lại bằng file.size/entry size, xem skin-loader.js
+   R6-1). Hết timeout thì AbortController hủy fetch, lỗi đi vào cùng
+   nhánh catch hiện có (banner + giữ skin cũ). */
+var SKIN_MAX_BYTES = 64 * 1024 * 1024;
+function fetchWithTimeout(url, ms, opts) {
+  opts = opts || {};
+  var ctrl = null;
+  try { if (typeof AbortController !== "undefined") ctrl = new AbortController(); } catch (e) { ctrl = null; }
+  var fetchOpts = {};
+  for (var _k in opts) { if (Object.prototype.hasOwnProperty.call(opts, _k)) fetchOpts[_k] = opts[_k]; }
+  if (ctrl) fetchOpts.signal = ctrl.signal;
+  /* AUDIT R8-4 (nhẹ): deadline cho cả quá trình đọc body — timer trên
+     chỉ tính tới lúc nhận header (clear khi fetch resolve); server gửi
+     header rồi stall giữa body thì readSkinResponseBody treo vĩnh viễn.
+     Ghi deadline (tính từ lúc bắt đầu fetch) lên response để
+     readSkinResponseBody tự race từng lần read() với thời gian còn lại. */
+  var _fetchStart = Date.now();
+  var p = fetch(url, fetchOpts);
+  if (!ctrl) return p;
+  var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) { /* bỏ qua */ } }, ms);
+  return p.then(function (r) {
+    clearTimeout(timer);
+    try { if (r && (typeof r === "object" || typeof r === "function")) r._ampFetchDeadline = _fetchStart + ms; } catch (e) { /* response không gắn thêm được thì readSkinResponseBody tự lấy deadline mặc định */ }
+    return r;
+  }, function (e) { clearTimeout(timer); throw e; });
+}
+function checkSkinResponseSize(r, label) {
+  /* Content-Length (nếu host gửi) vượt ngưỡng thì dừng TRƯỚC khi đọc
+     body — không có header thì loader kiểm lại sau khi tải (file.size). */
+  var cl = null;
+  try { cl = (r.headers && r.headers.get) ? r.headers.get("content-length") : null; } catch (e) { cl = null; }
+  var n = (cl == null) ? NaN : parseInt(cl, 10);
+  if (isFinite(n) && n > SKIN_MAX_BYTES) throw new Error(label + " quá lớn (" + Math.round(n / 1048576) + " MB) — tối đa 64 MB, không nạp");
+}
+/* AUDIT R7-3 (vừa): arrayBuffer() đọc HẾT body trước khi mọi kiểm tra
+   kích thước có hiệu lực — server dùng chunked encoding (không có
+   Content-Length) hoặc khai Content-Length nhỏ hơn thật thì tab OOM ở
+   arrayBuffer() trước khi tới được lỗi "tối đa 64 MB". Đọc body bằng
+   streaming (getReader, cộng dồn byte, hủy + throw khi vượt 64 MB);
+   checkSkinResponseSize giữ làm lớp chặn sớm khi có header. Response
+   không có body streaming (stub/test, fetch cũ) thì rơi về arrayBuffer()
+   rồi kiểm kích thước sau khi đọc. Trả ArrayBuffer như arrayBuffer(). */
+async function readSkinResponseBody(r, label) {
+  /* AUDIT R8-4 (nhẹ): deadline cho cả quá trình đọc body — xem
+     fetchWithTimeout (deadline gắn trên response, tính từ lúc bắt đầu
+     fetch). Mỗi lần read()/arrayBuffer() race với thời gian còn lại;
+     hết hạn thì cancel reader + throw vào cùng nhánh catch hiện có
+     (banner + giữ skin cũ). Response không có deadline gắn sẵn
+     (stub/test) thì lấy mặc định 30s tính từ lúc bắt đầu đọc. */
+  var _deadline = (r && typeof r._ampFetchDeadline === "number") ? r._ampFetchDeadline : (Date.now() + 30000);
+  function _timeoutError() { return new Error(label + " quá hạn khi đọc nội dung (hết 30s kể từ lúc bắt đầu tải) — không nạp"); }
+  /* Race 1 promise với thời gian còn lại của deadline; hết hạn thì trả
+     { timedOut: true } thay vì treo. Promise thua race vẫn treo nền
+     (reader đã cancel / arrayBuffer bỏ đi) nhưng không chặn caller. */
+  async function _raceDeadline(p) {
+    var _remain = _deadline - Date.now();
+    if (_remain <= 0) return { timedOut: true, value: null };
+    var _timer = null, _fired = false;
+    var _to = new Promise(function (res) { _timer = setTimeout(function () { _fired = true; res(null); }, _remain); });
+    var _v = null;
+    try { _v = await Promise.race([p, _to]); }
+    finally { if (_timer) clearTimeout(_timer); }
+    return { timedOut: _fired, value: _v };
+  }
+  if (!r.body || typeof r.body.getReader !== "function") {
+    var _r0 = await _raceDeadline(r.arrayBuffer());
+    if (_r0.timedOut) throw _timeoutError();
+    var buf0 = _r0.value;
+    if (buf0.byteLength > SKIN_MAX_BYTES) throw new Error(label + " quá lớn (" + Math.round(buf0.byteLength / 1048576) + " MB) — tối đa 64 MB, không nạp");
+    return buf0;
+  }
+  var reader = r.body.getReader();
+  var chunks = [], total = 0;
+  for (;;) {
+    var _rr = await _raceDeadline(reader.read());
+    if (_rr.timedOut) {
+      try { if (reader.cancel) await reader.cancel(); } catch (e) { /* bỏ qua */ }
+      throw _timeoutError();
+    }
+    var step = _rr.value;
+    if (step.done) break;
+    var v = step.value;
+    total += v ? v.byteLength : 0;
+    if (total > SKIN_MAX_BYTES) {
+      try { if (reader.cancel) await reader.cancel(); } catch (e) { /* bỏ qua */ }
+      throw new Error(label + " quá lớn (" + Math.round(total / 1048576) + " MB) — tối đa 64 MB, không nạp");
+    }
+    if (v) chunks.push(v);
+  }
+  var out = new Uint8Array(total), off = 0;
+  for (var i = 0; i < chunks.length; i++) { out.set(chunks[i], off); off += chunks[i].length; }
+  return out.buffer;
+}
+async function loadBundledSkins() {
+  if (bundledSkinsInflight) return bundledSkinsInflight;
+  var p = loadBundledSkinsInner();
+  bundledSkinsInflight = p;
+  try { return await p; } finally { if (bundledSkinsInflight === p) bundledSkinsInflight = null; }
+}
+async function loadBundledSkinsInner() {
+  var fromManifest = [], fromApi = [];
+  try {
+    /* AUDIT B2-V6c: ?v=AMP_VERSION chống cache cũ sau deploy (cùng họ
+       với ?v= trên 8 thẻ script) — danh sách skin mới up mới hiện.
+       AUDIT R6-5: timeout 10s cho manifest + API. */
+    var r = await fetchWithTimeout("skins/skins.json?v=" + (window.AMP_VERSION || "1"), 10000);
+    if (r.ok && window.AmpSkinLoader && window.AmpSkinLoader.parseSkinsManifest) {
+      fromManifest = window.AmpSkinLoader.parseSkinsManifest(await r.text());
+    }
+  } catch (e) { /* khong co manifest -> cho API */ }
+  try {
+    var ra = await fetchWithTimeout("https://api.github.com/repos/longhai/amp/contents/skins", 10000, { headers: { "Accept": "application/vnd.github+json" } });
+    if (ra.ok) {
+      var arr = await ra.json();
+      if (Array.isArray(arr)) {
+        for (var i = 0; i < arr.length; i++) {
+          var e = arr[i];
+          if (!e || e.type !== "file" || !e.name) continue;
+          if (!/\.(wal|wsz)$/i.test(e.name)) continue;
+          fromApi.push({ name: e.name, file: e.name });
+        }
+      }
+    }
+  } catch (e) { /* API hong / het rate limit -> chi dung manifest */ }
+  try {
+    var merged = (window.AmpSkinLoader && window.AmpSkinLoader.mergeSkinsLists)
+      ? window.AmpSkinLoader.mergeSkinsLists(fromManifest, fromApi) : fromManifest;
+    bundledSkins = merged.map(function (e) {
+      var label = (window.AmpSkinLoader && window.AmpSkinLoader.skinDisplayName)
+        ? window.AmpSkinLoader.skinDisplayName(e) : (e.name || e.file);
+      return { name: e.name, file: e.file, kind: e.kind, label: label };
+    });
+  } catch (e) { bundledSkins = fromManifest; }
+}
+/* v1 (139): GHI NHỚ SKIN ĐÃ CHỌN (Hải 05/11 19:00) — lần sau mở lại
+   tự nạp đúng skin đó thay vì lúc nào cũng về mặc định 566.
+   Lưu localStorage key "amp9-skin-v1": {kind:"bundled", file} (skin
+   trong skins/), {kind:"url", url} (nạp bằng URL), {kind:"file", name}
+   (chọn file tay — chỉ nhớ TÊN, trình duyệt không đọc lại file trên
+   máy được nên lần sau về mặc định 566; không lưu file vào IndexedDB
+   ở đợt này vì thêm cả hệ lưu trữ/quota/lỗi mới trong khi skin Hải
+   dùng thật đều nằm trong skins/ hoặc qua URL).
+   Chỉ lưu khi bootSkinInner nạp THÀNH CÔNG (cuối try); lần boot về
+   566 (không có choice) không ghi đè lựa chọn đã nhớ. */
+var SKIN_CHOICE_KEY = "amp9-skin-v1";
+function saveSkinChoice(choice) {
+  try {
+    if (!choice || typeof choice !== "object") return;
+    localStorage.setItem(SKIN_CHOICE_KEY, JSON.stringify(choice));
+  } catch (e) { /* private mode / đầy quota thì thôi, không chặn nạp skin */ }
+}
+function loadSkinChoice() {
+  var raw = null;
+  try { raw = localStorage.getItem(SKIN_CHOICE_KEY); } catch (e) { return null; }
+  if (!raw) return null;
+  var c = null;
+  try { c = JSON.parse(raw); } catch (e) { return null; }
+  if (!c || typeof c !== "object") return null;
+  if (c.kind === "bundled") {
+    if (typeof c.file !== "string" || !c.file) return null;
+    if (c.file.indexOf("..") >= 0 || c.file.charAt(0) === "/") return null;
+    return { kind: "bundled", file: c.file };
+  }
+  if (c.kind === "url") {
+    if (typeof c.url !== "string" || !c.url) return null;
+    return { kind: "url", url: c.url };
+  }
+  if (c.kind === "file") {
+    if (typeof c.name !== "string" || !c.name) return null;
+    return { kind: "file", name: c.name };
+  }
+  return null;
+}
+/* v1 (137): nap skin bang URL — giong webmod (o skinUrl + nut Nap).
+   fetch URL -> arrayBuffer -> bootSkin (chung duong voi nap file tay,
+   giu skin cu khi loi). URL phai tro thang file .wal/.wsz va host phai
+   cho CORS (host cua Hai — GitHub Pages — cho CORS *).
+   AUDIT B2-V8: chi kiem TRA PHAN MO RONG khi URL co phan mo rong —
+   co duoi ma sai (.html/.php/.txt…) thi bao ro truoc khi fetch (trang
+   loi HTML tra HTTP 200 truoc day tai het roi moi hong o JSZip voi
+   thong bao chung chung); URL khong co duoi / ket thuc bang "/" thi
+   VAN CHO QUA de bootSkin doan Modern/Classic theo noi dung (nhu file
+   picker) — chi chan khi chac chan khong phai skin. */
+async function loadSkinFromUrl(url, token) {
+  var u = String(url || "").trim();
+  if (!u) return;
+  var pathPart = u.split("?")[0].split("#")[0];
+  var lastSeg = pathPart.split("/").pop();
+  var extM = /\.([^.\/]+)$/.exec(lastSeg);
+  if (extM && !/^(wal|wsz|zip)$/i.test(extM[1])) {
+    setStatus("Không nạp được skin từ URL — link phải trỏ tới file .wal/.wsz/.zip (đã nhận ." + extM[1] + ").", true);
+    return;
+  }
+  setStatus("Đang tải skin từ URL…");
+  /* Token cap TRUOC fetch (xem bootSkin): yeu cau nao goi truoc thi
+     thang, ke ca fetch cua no xong sau (file lon hon). Neu fetch loi
+     thi token nay bi "dot" — lan boot cu dang chay (neu co) thay token
+     da cu: neu no chua ve xong lan dau thi dung som o kiem tra truoc
+     render (o yen skin cu + banner bao loi); neu da ve xong thi KHONG
+     dung som nua (AUDIT R3-M1) ma chay het de don dep (destroy engine
+     goc + thu hoi URL goc) roi hien skin moi do + banner bao loi cua
+     lan URL nay. Ca hai truong hop deu khong vo trang thai.
+     AUDIT R8-1: token tuy chon — boot IIFE truyen token cua no de ca
+     luong boot (skin da nho + fallback 566) dung chung 1 token; goi tu
+     menu thi khong truyen, cap moi nhu cu. */
+  var myToken = (typeof token === "number") ? token : ++bootToken;
+  try {
+    /* AUDIT R6-5/R6-1: timeout 30s cho file skin + chặn Content-Length
+       > 64 MB trước khi đọc body. AUDIT v1-139b (cache ghi-nhớ-skin):
+       { cache: "reload" } — trình duyệt KHÔNG được phục vụ bản skin cũ
+       trong HTTP cache khi file trên host đã đổi/xóa (probe thật: xóa
+       Paper-Amp.wsz khỏi skins/ rồi tải lại vẫn hiện Paper-Amp do
+       transferSize 0; chỉ khi tắt cache mới về đúng 566 + báo rõ). */
+    var r = await fetchWithTimeout(u, 30000, { cache: "reload" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    checkSkinResponseSize(r, "File skin");
+    var buf = await readSkinResponseBody(r, "File skin");
+    var name = u.split("/").pop().split("?")[0].split("#")[0] || "skin";
+    try { name = decodeURIComponent(name); } catch (e) { /* giữ nguyên */ }
+    /* v1 (139): nạp thành công thì ghi nhớ lựa chọn (bootSkinInner trả
+       true/false — xem bootSkin); lỗi thì catch dưới trả false. */
+    return await bootSkin(buf, name, myToken, { kind: "url", url: u });
+  } catch (e) {
+    setStatus("Không nạp được skin từ URL (" + (e && e.message ? e.message : e) + ") — vẫn dùng skin cũ. Link phải trỏ thẳng file .wal/.wsz và host phải cho CORS.", true);
+    return false;
+  }
+}
+/* v1 (137): nap skin trong skins/ (menu "Chon skin co san") — fetch
+   skins/<file> -> bootSkin. Loi thi o yen skin cu (bootSkin tu khoi
+   phuc + bao loi). */
+async function loadSkinFromList(file) {
+  var f = String(file || "").trim();
+  if (!f) return;
+  setStatus("Đang nạp skin " + f + " …");
+  /* Token cap TRUOC fetch nhu loadSkinFromUrl (xem bootSkin). */
+  var myToken = ++bootToken;
+  try {
+    /* AUDIT B2-V5: encodeURIComponent — ten file co "#" hoac "?" thi
+       fetch thuong hieu nham thanh fragment/query -> 404 du file co
+       that ("Skin #1.wal"). Khoang trang/unicode/\" thi URL parser tu
+       ma hoa nen khong can lo. AUDIT B2-V6c: ?v=AMP_VERSION chong
+       cache cu sau deploy. AUDIT R6-6: mã hoá theo từng đoạn — encode
+       cả "sub/x.wal" thành "sub%2Fx.wal" làm nhiều static host (kể cả
+       GitHub Pages) 404 dù file có thật. AUDIT R6-5/R6-1: timeout 30s +
+       chặn Content-Length > 64 MB. AUDIT v1-139b (cache ghi-nhớ-skin,
+       vong 8 follow-up): { cache: "reload" } nhu loadSkinFromUrl +
+       skin-da-nho — Hai up de file skin cung ten roi chon lai tu menu
+       thi trinh duyet khong duoc phuc vu ban cache cu. */
+    var r = await fetchWithTimeout("skins/" + f.split("/").map(encodeURIComponent).join("/") + "?v=" + (window.AMP_VERSION || "1"), 30000, { cache: "reload" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    checkSkinResponseSize(r, "File skin " + f);
+    var buf = await readSkinResponseBody(r, "File skin " + f);
+    /* v1 (139): nạp thành công thì ghi nhớ lựa chọn (xem loadSkinFromUrl). */
+    return await bootSkin(buf, f, myToken, { kind: "bundled", file: f });
+  } catch (e) {
+    setStatus("Không nạp được skin " + f + " (" + (e && e.message ? e.message : e) + ") — vẫn dùng skin cũ.", true);
+    return false;
+  }
+}
+/* AUDIT B2-V1: 2 lan bootSkin chay song song (keo-tha skin moi trong luc
+   566 dang nap, hoac 2 lan keo-tha lien tiep) truoc day cung renderLayout
+   len cung #stage: lan nao swapIn sau thi thang, du renderer/model/toan
+   cuc (RES/renderer/audioEngine) da la cua lan kia — stage hien skin cu
+   trong khi registry cua renderer moi tro vao DOM da tach roi (dong ho/
+   ticker/vis/slider chet, cung trieu chung B1). Cung ho: renderCurrent
+   (hang doi V10) khong xep hang chung voi renderLayout goi truc tiep
+   trong bootSkin — bam PL/phim tat giua luc boot cung ve chong len nhau.
+   Nay bootSkin xep hang QUA CHUNG renderQueue voi renderCurrent: lan
+   sau (boot hay render thuong) chi chay khi lan truoc chay xong hoan
+   toan. Khong ket cheo: bootSkinInner khong await renderCurrent (chi
+   goi truc tiep renderer.renderLayout + setZoom/checkDrawer dong bo),
+   con onRerender trong luc boot chi enqueue renderCurrent cho chay sau
+   boot. Token bootToken giu lai lam phong thu sau (cac cho kiem tra
+   isLatestBoot() cu van con). Token cap NGAY LUC BAT DAU YEU CAU (thu
+   tu goi), khong phai luc bootSkinInner chay (thu tu hang doi) hay luc
+   fetch xong: nap bang URL/list thi fetch xong moi goi bootSkin, file
+   nao nho fetch xong truoc se xep hang truoc — neu cap token muon thi
+   lan yeu cau TRUOC nhung fetch cham hon lai thang, sai y nguoi dung
+   (vd bam MMD3 truoc roi CornerAmp sau, CornerAmp nho hon fetch xong
+   truoc nen MMD3 van thang). loadSkinFromUrl/loadSkinFromList cap token
+   truoc fetch roi truyen vao; keo-tha/chon file/tu nap thi du lieu da
+   co san nen bootSkin tu cap neu khong truyen token. */
+/* v1 (139): bootSkin tra boolean — true khi skin moi nap thanh cong
+   (de loadSkinFromUrl/loadSkinFromList/boot biet co nap duoc khong);
+   false khi loi/stale. choice (neu co) la lua chon can ghi nho
+   {kind:"bundled",file}|{kind:"url",url}|{kind:"file",name} — chi luu
+   khi nap thanh cong (cuoi try cua bootSkinInner). */
+function bootSkin(file, name, token, choice) {
+  var myToken = (typeof token === "number") ? token : ++bootToken;
+  var p = renderQueue.then(function () { return bootSkinInner(file, name, myToken, choice); });
+  renderQueue = p.catch(function () { /* nuốt lỗi ở chuỗi chung, lượt đó đã trả lỗi cho caller qua p */ });
+  return p;
+}
+async function bootSkinInner(file, name, myToken, choice) {
   setStatus("Đang mở " + name + " …");
+  /* AUDIT V2: generation token — lan goi nay chi duoc ap dung khi con la
+     lan moi nhat. Token truyen vao tu bootSkin, cap luc bat dau yeu cau
+     (xem tren) nen "moi nhat" la theo thu tu yeu cau, khong phai thu tu
+     fetch/hang doi. Auto-load 566 luc boot chay song song voi keo-tha/chon file tay: truoc day ben
+     nao await xong sau thi thang, bat ke thu tu bat dau; prevSkin cua lan
+     sau con chup truoc khi lan truoc gan RES nen lan sau loi thi catch
+     khoi phuc ve skin TRUOC ca lan truoc. */
+  /* AUDIT R4-L1: "moi nhat" khong chi la token — token co the bi dot boi
+     1 lan fetch URL/list loi ma khong co lan boot ke tiep that su (xem
+     setMilkdrop). Sau khi renderer cua lan nay da tao xong (myRenderer),
+     lan boot van la chu neu renderer hien tai con la cua no, du token
+     da cu; chi khi ke tiep that su da thay renderer thi lan nay moi het
+     hieu luc. Truoc khi tao renderer (myRenderer=null) thi van chi
+     dung token nhu cu. */
+  var myRenderer = null;
+  function isLatestBoot() { return myToken === bootToken || (myRenderer && renderer === myRenderer); }
   /* GIỮ SKIN CŨ khi skin mới nạp lỗi: chụp lại toàn bộ trạng
      thái đang chạy (model + renderer + engine + DOM stage) TRƯỚC khi thay
      bằng skin mới. Lỗi ở bất cứ bước nào (zip hỏng, không có layout chính
@@ -694,9 +1171,26 @@ async function bootSkin(file, name) {
      bị thay trước lúc render. */
   var prevSkin = { RES: RES, SKIN: SKIN, renderer: renderer, audioEngine: audioEngine,
     shadeMode: shadeMode };
+  /* AUDIT B2-V3: true khi skin moi DA VE xong lan dau — catch chi thu hoi
+     blob URL cua skin moi khi no chua tung ve xong (loi o loader/renderer);
+     ve xong roi ma buoc sau (vd getClassicMainState) moi nem loi thi
+     KHONG thu hoi, vi stage dang hien chinh skin moi do. */
+  var renderedNew = false;
   try {
     await ensureJSZip();
+    /* AUDIT B2-V4: lan nap cu van giai ca file zip truoc khi bi loai o
+       duoi — kiem tra token ngay sau await nay de dung som, do CPU. */
+    if (!isLatestBoot()) return false;
     var loaded = await window.AmpSkinLoader.loadSkinFile(file, { JSZip: window.JSZip, name: name });
+    /* AUDIT V2: đã có lần nạp mới hơn bắt đầu trong lúc chờ load — bỏ qua
+       kết quả cũ, không gán RES/renderer, không hủy engine cũ (lần mới
+       sở hữu chúng). Thu hồi blob URL của lần nạp bị bỏ này (AUDIT V1). */
+    if (!isLatestBoot()) {
+      if (loaded && loaded.resolve && loaded.resolve.revokeSkinUrls) {
+        try { loaded.resolve.revokeSkinUrls(); } catch (e) { /* bỏ qua */ }
+      }
+      return false;
+    }
     SKIN = loaded.skin; RES = loaded.resolve;
     renderer = window.AmpRenderer.createRenderer(RES, document, {
       /* truyền tường minh lib classic.js để renderer
@@ -755,6 +1249,19 @@ async function bootSkin(file, name) {
          mở hộp chọn file .wal/.wsz của trang (giống mục "Nạp skin…"
          trong menu File của skin và kéo-thả file vào trang). */
       onOpenSkinPicker: function () { fileInput.click(); },
+      /* v1 (137): 3 cach nap skin — file picker (tren), URL + danh
+         sach skins/ (duoi, xem loadSkinFromUrl / loadSkinFromList /
+         loadBundledSkins). */
+      onLoadSkinUrl: function (url) { loadSkinFromUrl(url); },
+      onLoadBundledSkin: function (file) { loadSkinFromList(file); },
+      getBundledSkins: function () { return bundledSkins; },
+      /* AUDIT B2-V7: loadBundledSkins chỉ chạy 1 lần lúc boot — mạng chập
+         chờn lúc đó thì menu kẹt ở "Đang tải danh sách skin…" tới khi
+         tải lại trang. Renderer gọi lại khi mở submenu mà danh sách còn
+         trống (xem bundledSkinSubItems trong renderer.js). */
+      /* AUDIT R3-L1: tra ve promise de renderer ve lai submenu mo khi
+         fetch xong (xem bundledSkinSubItems trong renderer.js). */
+      onReloadBundledSkins: function () { return loadBundledSkins(); },
       /* menu View của skin "Zoom": 1x / Vừa màn hình (cùng đường
          setZoom; chỉ 2 chế độ này, theo chốt 3/11). */
       onZoom: function (mode) { setZoom(mode); },
@@ -770,9 +1277,6 @@ async function bootSkin(file, name) {
       /* menu Help của skin "Xem script MAKI…": mở bảng xem script
          của skin đang nạp (chỉ xem, không chạy). */
       onOpenMakiPanel: function () { openMakiPanel(); },
-      /* nút D trên clutter bar Classic cần biết zoom hiện
-         tại để đổi 1x/fit + sáng đèn khi đang fit. */
-      isZoomFit: function () { return zoom === "fit"; },
       /* Preferences / menu Options "Thu gọn (Shade)":
          đọc trạng thái shade hiện tại để đánh dấu ✓ và đảo trạng thái. */
       isShadeMode: function () { return shadeMode; },
@@ -796,11 +1300,17 @@ async function bootSkin(file, name) {
          playlist (218 mục, 13 nhóm — iptv.m3u từ v10.17). */
       onReloadRadio: async function () {
         try {
-          var r = await fetch("iptv.m3u");
+          /* AUDIT N13/R6-5: ?v=AMP_VERSION chống cache cũ sau deploy +
+             timeout 30s (fetch trần trước đây không có cả hai). */
+          var r = await fetchWithTimeout("iptv.m3u?v=" + (window.AMP_VERSION || "1"), 30000);
           if (r.ok) {
             var t = await r.text();
             var n = renderer.setPlaylistData(t, "iptv.m3u", "iptv.m3u");
             setStatus("Đã nạp lại iptv.m3u: " + n + " mục.");
+          } else {
+            /* AUDIT V9: trước đây fetch 404 thì bấm menu không có phản
+               hồi gì — nay báo rõ mã HTTP. */
+            setStatus("Không nạp lại được iptv.m3u (HTTP " + r.status + ")", true);
           }
         } catch (e) { setStatus("Không nạp lại được iptv.m3u: " + (e.message || e), true); }
       },
@@ -820,6 +1330,9 @@ async function bootSkin(file, name) {
         try { localStorage.setItem("amp9-cfg-v9", JSON.stringify(st)); } catch (e) { /* private mode */ }
       }
     });
+    /* AUDIT R4-L1: chup renderer cua lan boot nay — tu day isLatestBoot()
+       con dung khi token bi dot ma chua co lan boot ke tiep that su. */
+    myRenderer = renderer;
     /* khôi phục cfg Options đã lưu TRƯỚC lần render đầu
        (ghi đè mặc định trong renderer; EQ/Shuffle/Repeat khôi sau qua
        state phát, không xung đột vì 2 key khác nhau). */
@@ -834,25 +1347,24 @@ async function bootSkin(file, name) {
         document: document, window: window,
         getVideoEl: function () { return renderer.getAvsMedia().video; },
         resetVideoEl: function () { return renderer.resetAvsMedia(); },
+        markAvsMediaOwned: function () { return renderer.markAvsMediaEngineOwned(); }, /* R8-4 (vong 8 follow-up): engine bao nhan nuoi the video sau khi gan src — tang cuong, khong chan (media co src that/dang phat da duoc giu nho kiem tra src o disposeAvsMediaIfCreated) */
         isVideoItem: function (it) { return renderer.isVideoItem(it); },
         onTimeUpdate: function (t, dur, seekable) { renderer.onAudioTimeUpdate(t, dur, seekable); },
         onEnded: function () { renderer.onAudioEnded(); },
         onError: function (info) { renderer.onAudioError(info); },
         onEqFallback: function (info) { renderer.onAudioEqFallback(info); }, /* bật EQ gặp đài không CORS: engine tự về native, báo rõ */
-        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) milkdropCtl.ensureReady(); } syncMilkdrop(); /* v10.5 — doi phat/dung la 1 lan doi trang thai (Webamp: loop chay theo playing): dong bo lai hien/loi/nguon tin hieu that-mau ngay, khong doi lan render sau */ },
+        onPlayingChange: function (p) { renderer.onAudioPlayingChange(p); checkDrawer(); /* phát/dừng thì chạy lại self-check tiếng */ if (milkdropCtl) { milkdropCtl.setPlaying(p); if (p) { var _erP = milkdropCtl.ensureReady(); if (_erP && _erP.catch) _erP.catch(function () { /* AUDIT V10: khong de unhandled rejection */ }); } } syncMilkdrop(); /* v10.5 — doi phat/dung la 1 lan doi trang thai (Webamp: loop chay theo playing): dong bo lai hien/loi/nguon tin hieu that-mau ngay, khong doi lan render sau */ },
+        onLiveBitrate: function () { renderer.updateInfoEls(); }, /* v1 (136): KBPS that cua dai live ve -> ve lai o KBPS/KHZ */
         onAnalyser: function (an) { renderer.setAvsAnalyser(an); }
       });
       renderer.setAudioEngine(audioEngine);
       /* áp thời gian crossfade đã lưu (mặc định 2s). */
       if (audioEngine.setCrossfade) audioEngine.setCrossfade(crossfadeMs);
-      /* AUDIT (đổi skin): hủy engine cũ hẳn. Trước đây engine
-         cũ không bị dừng → thẻ audio cũ (không nằm trong DOM) vẫn phát
-         tiếp → chồng tiếng với engine mới + rò AudioContext. Hủy SAU khi
-         engine mới tạo xong để nếu tạo mới lỗi thì catch vẫn khôi phục
-         được engine cũ còn nguyên. */
-      if (prevSkin.audioEngine && prevSkin.audioEngine !== audioEngine && prevSkin.audioEngine.destroy) {
-        try { prevSkin.audioEngine.destroy(); } catch (e) { /* bỏ qua */ }
-      }
+      /* AUDIT V3: KHÔNG hủy engine cũ ở đây nữa — renderLayout đầu tiên
+         chạy SAU đoạn này; nếu render lỗi, catch khôi phục prevSkin.
+         audioEngine mà engine đó đã bị destroy thì tiếng chết tới khi tải
+         lại trang. Hủy engine cũ SAU KHI render đầu tiên thành công
+         (xem sau `finalH` dưới đây). */
     }
     /* restore trạng thái AVS đã lưu TRƯỚC lần render đầu. */
     try {
@@ -898,13 +1410,25 @@ async function bootSkin(file, name) {
     var finalH = shadeMode
       ? await renderer.renderLayout("main", "shade", "WINAMP", {}, stage)
       : await renderer.renderLayout("main", "normal", "WINAMP", { drawerOpen: drawerOpen }, stage);
+    /* AUDIT R3-M1: KHONG dung o day du token da cu — lan nap moi hon chi
+       cap token luc yeu cau, bootSkinInner cua no con xep hang SAU lan
+       nay (renderQueue) nen chua chay; no se thay the lan nay sau khi
+       lan nay xong. Dung som o day se bo qua doan don dep cuoi try
+       (destroy engine cu + thu hoi URL skin cu): prevSkin cua lan moi
+       chi chup the he cua lan nay, khong phai the he goc, nen engine
+       goc se khong bao gio duoc destroy (van phat chong tieng) va URL
+       goc khong bao gio duoc thu hoi. Cu chay het: dat playlist/state
+       phat len renderer cua chinh lan nay (chua bi thay), IIFE Milkdrop
+       o duoi tu bao ve bang isLatestBoot(). */
+    renderedNew = true;
     checkDrawer();
     /* nạp iptv.m3u cùng thư mục làm nguồn playlist mặc định
        (218 mục, 13 nhóm, giữ tên + thứ tự gốc). Không có file thì playlist
        trống, vẫn vẽ được. */
     var playlistInfo = "Playlist: (trống) — chưa thấy iptv.m3u cùng thư mục";
     try {
-      var rr = await fetch("iptv.m3u");
+      /* AUDIT N13/R6-5: như onReloadRadio — ?v=AMP_VERSION + timeout 30s. */
+      var rr = await fetchWithTimeout("iptv.m3u?v=" + (window.AMP_VERSION || "1"), 30000);
       if (rr.ok) {
         var rt = await rr.text();
         var rn = renderer.setPlaylistData(rt, "iptv.m3u", "iptv.m3u");
@@ -914,6 +1438,11 @@ async function bootSkin(file, name) {
           + ") · tổng thời gian " + Math.floor(pst.total / 60) + ":" + String(pst.total % 60).padStart(2, "0");
       }
     } catch (e) { /* giữ playlist trống */ }
+    /* AUDIT R3-M1: cung ly do nhu sau render dau tien — khong dung som
+       sau fetch iptv.m3u: phai chay het try de destroy engine cu + thu
+       hoi URL skin cu o cuoi. Lan moi hon con xep hang sau, chua chay,
+       nen dat playlist/state phat o day van la len renderer cua lan
+       nay, khong dung vao renderer cua lan moi. */
     /* khôi phục state phát đã lưu (volume/EQ/repeat/shuffle/
        mục đang chọn). Không tự phát lại. */
     try {
@@ -927,7 +1456,7 @@ async function bootSkin(file, name) {
     if (SKIN.author) lines.push("Tác giả: " + SKIN.author);
     lines.push("Bitmap: " + Object.keys(RES.bitmaps).length + " · Font: " + Object.keys(RES.fonts).length
       + " · Màu: " + Object.keys(RES.colors).length + " · Group: " + Object.keys(RES.groupdefs).length
-      + " · Layout: " + Object.keys(RES.layouts).length);
+      + " · Layout: " + (RES.layoutList ? RES.layoutList.length : Object.keys(RES.layouts).length)); /* AUDIT N20: đếm theo layoutList — Object.keys(layouts) đếm gấp đôi layout có alias khác chữ hoa/thường */
     if (lay) lines.push("Layout main|normal" + (layResolved && layResolved.fallback !== "exact" ? " (fallback " + layResolved.fallback + ": " + layResolved.container + "|" + layResolved.layoutId + ")" : "") + ": " + lay.w + "×" + lay.h + " · contentH=" + lay.contentH
       + " (frameOffsetY=" + lay.frameOffsetY + ") · snapadjustbottom=" + lay.snapadjustbottom
       + " · drawerRestY=" + lay.drawerRestY + " · cửa sổ chính sau trim: " + lay.w + "×" + finalH);
@@ -959,12 +1488,25 @@ async function bootSkin(file, name) {
        Đợt v10.2 — AUDIT: trước đây gọi toggleMilkdrop() khi milkdropOn=true
        thì TẮT luôn Milkdrop sau mỗi lần đổi skin (toggle đảo trạng thái),
        trái ý "khôi phục". Sửa: tắt → reset visualizer (nó giữ ctx/analyser
-       của engine cũ) → bật lại với canvas/ctx mới. */
+       của engine cũ) → bật lại với canvas/ctx mới.
+       AUDIT B2-V2: toggle 2 lần vẫn còn race — toggle đọc milkdropOn
+       HIỆN TẠI nên lần nạp cũ xen vào giữa 2 lần toggle của lần mới (hoặc
+       ngược lại) sẽ đảo ngược trạng thái của lần mới, kết quả cuối khó
+       đoán. Nay đặt TRỰC TIẾP bằng setMilkdrop(false) rồi setMilkdrop(true)
+       (không đảo theo trạng thái hiện tại) + kiểm tra isLatestBoot()
+       trước mỗi bước — lần nạp mới hơn đã bắt đầu thì dừng, để lần đó
+       tự khôi phục Milkdrop của nó. */
     if (milkdropOn) {
       (async function () {
-        try { await toggleMilkdrop(); } catch (e) { /* bỏ qua */ }
+        if (!isLatestBoot()) return;
+        /* AUDIT R5-c: truyen myToken/myRenderer — goi tran truoc day co the
+           tat nham Milkdrop cua lan boot moi hon (guard trong setMilkdrop
+           chi co o nhanh bat). */
+        try { await setMilkdrop(false, myToken, myRenderer); } catch (e) { /* bỏ qua */ }
+        if (!isLatestBoot()) return;
         try { if (milkdropCtl && milkdropCtl.reset) milkdropCtl.reset(); } catch (e) { /* bỏ qua */ }
-        try { await toggleMilkdrop(); } catch (e) { /* bỏ qua */ }
+        if (!isLatestBoot()) return;
+        try { await setMilkdrop(true, myToken, myRenderer); } catch (e) { /* bỏ qua */ }
       })();
     }
     if (RES.kind === "classic") {
@@ -975,7 +1517,190 @@ async function bootSkin(file, name) {
     } else {
       setStatus("Đã nạp: " + (SKIN.name || name) + " — ngăn kéo mở bằng nút trong skin / menu View; nút PL (hoặc menu View) mở Playlist; nhấp đúp kênh để phát (Space = Play/Pause; thêm phím tắt ở menu Help → Hướng dẫn nhanh). Kênh TV (Đà Nẵng…) chỉ xem được khi EQ TẮT — bật EQ thì crossOrigin=anonymous, server không có CORS nên không nạp được (như Webamp fork).");
     }
+    /* AUDIT B2-V9 (V3 còn sót): hủy engine cũ + thu hồi URL skin cũ ở
+       CUỐI try, sau khi mọi bước sau render (fetch iptv, resolveLayout/
+       getClassicMainState/setZoom/dựng lines) đã xong. Trước đây hủy ngay
+       sau render đầu tiên nên bước sau mà ném lỗi thì catch khôi phục
+       prevSkin mà engine của nó đã bị destroy → tiếng chết tới khi tải
+       lại trang. Nay lỗi ở bước sau vẫn khôi phục được skin cũ nguyên vẹn
+       (engine cũ chưa hủy, URL cũ chưa thu hồi). */
+    /* AUDIT V3: render đầu tiên ĐÃ thành công — giờ mới hủy engine cũ hẳn
+       (trước đây engine cũ không bị dừng → thẻ audio cũ vẫn phát tiếp,
+       chồng tiếng + rò AudioContext). Cờ _ampDestroyed để 2 lần boot
+       không destroy cùng 1 engine cũ (AUDIT V2). */
+    if (prevSkin.audioEngine && prevSkin.audioEngine !== audioEngine && prevSkin.audioEngine.destroy && !prevSkin.audioEngine._ampDestroyed) {
+      try { prevSkin.audioEngine.destroy(); prevSkin.audioEngine._ampDestroyed = true; } catch (e) { /* bỏ qua */ }
+    }
+    /* AUDIT V1: skin mới đã vẽ xong, renderer cũ không còn dùng nữa —
+       thu hồi blob URL của skin cũ (giữ ArrayBuffer ảnh tới khi đóng tab
+       nếu không thu hồi). */
+    if (prevSkin.RES && prevSkin.RES.revokeSkinUrls) {
+      try { prevSkin.RES.revokeSkinUrls(); } catch (e) { /* bỏ qua */ }
+    }
+    /* ROUND 4 — Light-1: dọn park div + <video> AVS của renderer cũ
+       (mỗi renderer tạo 1 #amp-avs-park + 1 <video>; không dọn thì mỗi
+       lần đổi skin để lại 1 <video> chết trong document + trùng id).
+       Chỉ chạm renderer cũ, không chạm renderer mới. */
+    if (prevSkin.renderer && prevSkin.renderer.disposeAvsPark) { try { prevSkin.renderer.disposeAvsPark(); } catch (e) { /* bỏ qua */ } }
+    /* AUDIT R7-3 (renderer, phía gọi): skin mới đã vẽ xong, renderer cũ
+       không còn dùng nữa — gọi dispose() để dừng vòng rAF/ticker + gỡ
+       resize handler của nó (nhóm renderer làm phần dừng rAF trong
+       dispose(); ở đây chỉ gọi, có guard typeof + try/catch). */
+    if (prevSkin.renderer && typeof prevSkin.renderer.dispose === "function") { try { prevSkin.renderer.dispose(); } catch (e) { /* bỏ qua */ } }
+    /* AUDIT R6-3: lần boot thành công — stage đã là skin mới nên wrap của
+       renderer lỗi ở lần boot trước (nếu có) chắc chắn đã tách khỏi
+       stage; dọn bù park mồ côi còn sót. */
+    try { disposeOrphanedParks(); } catch (e) { /* bỏ qua */ }
+    /* v1 (139): nạp thành công — ghi nhớ lựa chọn skin nếu caller có
+       truyền choice (nạp tay/URL/list); boot fallback về 566 không
+       truyền choice nên không ghi đè lựa chọn đã nhớ. */
+    if (choice) saveSkinChoice(choice);
+    return true;
   } catch (e) {
+    /* AUDIT V2: đã có lần nạp mới hơn — để lần đó sở hữu trạng thái,
+       không khôi phục đè lên nó (trước đây lần sau lỗi thì catch khôi
+       phục về skin TRƯỚC cả lần trước, vứt bỏ skin vừa nạp thành công).
+       AUDIT R4-M1: du token da cu, van phai don dep TAI NGUYEN MA LAN
+       NAY DA DAY DI TRUOC KHI TRA VE SOM — neu khong, engine goc van
+       phat ma khong ai destroy nua: lan ke tiep (B) chup prevSkin tu
+       trang thai cua lan nay (engine A), nen B chi destroy engine A,
+       engine goc song mai (ghost audio, khong dieu khien duoc) toi khi
+       tai lai trang. Chi don dep, KHONG khoi phuc toan cuc (RES/
+       renderer/audioEngine) — B dang so huu chung. Cua so chua khoi
+       phuc: tu luc gan audioEngine moi (~:1060) den cuoi try; await
+       duy nhat khong co try/catch rieng trong cua so do la renderLayout.
+       Thu hoi URL resolve moi khi chua ve xong (!renderedNew) nhu
+       nhanh khong cu; destroy engine goc khi lan nay da day no di
+       (audioEngine !== prevSkin.audioEngine), co co _ampDestroyed
+       chong destroy 2 lan nhu cuoi try. */
+    /* AUDIT R5-M1: "moi nhat" o day phai la isLatestBoot() (renderer-aware)
+       nhu moi cho khac, khong phai kiem tra token chat: token co the bi dot
+       boi 1 lan fetch URL/list loi ma khong co lan boot that nao sau do —
+       lan boot nay van la chu (renderer van la cua no) thi phai khoi phuc
+       nhu nhanh khong cu, khong duoc coi la stale roi bo qua khoi phuc
+       (truoc day giet engine cu dang phat tieng). Chi khi lan boot moi hon
+       THAT SU da thay renderer thi moi la stale: chi don dep, khong khoi
+       phuc toan cuc. */
+    if (!isLatestBoot()) {
+      if (!renderedNew && loaded && loaded.resolve && loaded.resolve.revokeSkinUrls) {
+        try { loaded.resolve.revokeSkinUrls(); } catch (e2) { /* bỏ qua */ }
+      }
+      if (audioEngine !== prevSkin.audioEngine && prevSkin.audioEngine && prevSkin.audioEngine.destroy && !prevSkin.audioEngine._ampDestroyed) {
+        try { prevSkin.audioEngine.destroy(); prevSkin.audioEngine._ampDestroyed = true; } catch (e2) { /* bỏ qua */ }
+      }
+      /* AUDIT R5-a: lan boot nay da day prevSkin di (RES/renderer da la
+         cua lan nay) thi lan moi hon se KHONG don dep gium phan goc: B
+         chup prevSkin tu trang thai cua lan nay (RES/renderer cua A) nen
+         B chi don dep tai nguyen cua A, tai nguyen goc (URL blob cua
+         prevSkin.RES, park AVS cua prevSkin.renderer) se mo coi mai neu
+         lan nay khong don. Chi don khi lan nay that su da day di (guard
+         RES/renderer khac prev — loi truoc khi tao renderer thi prev van
+         dang song, khong duoc dung toi). Park chi go khi an toan (xem
+         _prevParkSafe): wrap cua prev dang hien tren stage (!renderedNew)
+         thi de yen — go park luc do se rut ca wrap video dang hien. */
+      if (renderer !== prevSkin.renderer) {
+        if (RES !== prevSkin.RES && prevSkin.RES && prevSkin.RES.revokeSkinUrls) {
+          try { prevSkin.RES.revokeSkinUrls(); } catch (e2) { /* bỏ qua */ }
+        }
+        if (prevSkin.renderer && prevSkin.renderer.disposeAvsPark) {
+          var _prevParkSafe = false;
+          try {
+            if (prevSkin.renderer.getAvsParkState) { var _pps = prevSkin.renderer.getAvsParkState(); _prevParkSafe = !_pps.hasMedia || !!_pps.parked || renderedNew; }
+          } catch (e2) { _prevParkSafe = false; }
+          if (_prevParkSafe) { try { prevSkin.renderer.disposeAvsPark(); } catch (e2) { /* bỏ qua */ } }
+        }
+      }
+      /* AUDIT R6-4: nhánh stale trước đây không dọn gì của renderer/
+         engine MỚI mà chính lần boot này đã tạo (chỉ dọn phần cũ).
+         Dọn park của renderer mới (myRenderer — KHÔNG dùng renderer toàn
+         cục vì lần boot mới hơn có thể đã thay nó) khi an toàn theo cùng
+         guard R5-b, cộng kiểm tra wrap đã tách khỏi stage (lần mới hơn đã
+         render xong nên wrap của lần này chắc chắn đã tách); chưa an toàn
+         thì ghi vào orphanedRenderers để dọn bù sau. Engine mới thì
+         destroy (lần mới hơn sẽ tạo engine của nó; cờ _ampDestroyed
+         chống destroy 2 lần). Chỉ dọn khi lần này thật sự đã tạo
+         renderer/engine mới (myRenderer khác null). */
+      if (myRenderer && myRenderer !== prevSkin.renderer) {
+        var _staleNewSafe = false, _staleWrapDetached = false;
+        try {
+          if (myRenderer.getAvsParkState) { var _snps = myRenderer.getAvsParkState(); _staleNewSafe = !_snps.hasMedia || !!_snps.parked || !renderedNew; }
+        } catch (e2) { _staleNewSafe = false; }
+        try {
+          var _sw = null;
+          if (myRenderer.getAvsParkState) { var _snps2 = myRenderer.getAvsParkState(); _sw = _snps2 && _snps2.wrap; }
+          if (!_sw && myRenderer.getAvsMediaWrap) { try { var _swm = myRenderer.getAvsMediaWrap(); _sw = _swm && _swm.wrap; } catch (e2) { /* bo qua */ } }
+          if (!_sw && myRenderer.getAvsMedia) { try { var _swm2 = myRenderer.getAvsMedia(); _sw = _swm2 && _swm2.wrap; } catch (e2) { /* bo qua */ } }
+          if (_sw) _staleWrapDetached = (typeof _sw.isConnected === "boolean") ? !_sw.isConnected : !_sw.parentElement;
+        } catch (e2) { _staleWrapDetached = false; }
+        if (myRenderer.disposeAvsPark) {
+          if (_staleNewSafe || _staleWrapDetached) { try { myRenderer.disposeAvsPark(); } catch (e2) { /* bỏ qua */ } }
+          else if (orphanedRenderers.indexOf(myRenderer) < 0) orphanedRenderers.push(myRenderer);
+        }
+        if (audioEngine && audioEngine !== prevSkin.audioEngine && audioEngine.destroy && !audioEngine._ampDestroyed) {
+          try { audioEngine.destroy(); audioEngine._ampDestroyed = true; } catch (e2) { /* bỏ qua */ }
+        }
+      }
+    }
+    if (!isLatestBoot()) return false;
+    /* AUDIT R8-6 (nhẹ): boot lỗi lần đầu (chưa có skin cũ) thì 2 trường
+       hợp: (a) skin mới ĐÃ VẼ xong (renderedNew) — stage đang hiện đúng
+       skin đó, GIỮ LẠI nó (không destroy engine mới, không reset toàn
+       cục, không đẩy renderer mới vào orphanedRenderers) để vẫn phát
+       được tiếng, chỉ báo lỗi; (b) chưa vẽ xong — reset toàn cục về
+       "chưa nạp skin nào" (RES/SKIN/renderer/audioEngine về null,
+       shadeMode về prevSkin) để lần render thường sau đó không vẽ lại
+       skin lỗi qua renderer còn trỏ vào nó. */
+    var _keepNewOnError = renderedNew && !prevSkin.renderer;
+    /* AUDIT B2-V3: lỗi ở loader/renderer (skin mới chưa vẽ xong) thì thu
+       hồi blob URL của skin mới — trước đây catch chỉ khôi phục prevSkin
+       nên URL của lần nạp lỗi rò tới khi đóng tab (hoặc tới lần nạp sau
+       thành công mới thành prevSkin). Resolve mới khác prevSkin.RES nên
+       không đụng URL skin cũ; double-revoke vô hại. renderedNew=true
+       (đã vẽ xong) thì KHÔNG thu hồi — stage đang hiện skin mới đó. */
+    if (!renderedNew && loaded && loaded.resolve && loaded.resolve.revokeSkinUrls) {
+      try { loaded.resolve.revokeSkinUrls(); } catch (e) { /* bỏ qua */ }
+    }
+    /* AUDIT R5-b: loi SAU khi da ve xong (renderedNew) thi doan don dep
+       cuoi try bi bo qua — park AVS + engine cua skin MOI thanh mo coi
+       (global sap tra ve prevSkin, lan boot sau chup prevSkin tu prev
+       nen khong bao gio don dep gium phan moi nay). Don park cua renderer
+       moi KHI AN TOAN: wrap dang hien tren stage (renderedNew + co media
+       + chua park) thi DE YEN — disposeAvsPark rut ca wrap video dang
+       hien ra khoi stage; chi go khi khong co media, media dang park
+       trong div an, hoac chua ve xong (!renderedNew — wrap chi nam trong
+       DOM build da tach, khong phai stage that). Khong co getAvsParkState
+       de xac nhan thi khong dung toi (fail-closed: rot 1 div park an vo
+       hai hon rut nham video dang hien).
+       URL blob cua resolve MOI thi KHONG thu hoi o day du renderedNew:
+       stage van dang hien chinh skin moi do — revokeObjectURL chi chan
+       load moi, anh da load xong thi o yen nhung anh/CSS chua load xong
+       se vo; rot 1 bo URL cua 1 skin (chi xay ra o nhanh loi hiem sau
+       render) re hon lam vo anh dang hien. */
+    /* AUDIT R8-6: _keepNewOnError — skin mới đã vẽ xong + không có skin
+       cũ thì renderer mới ĐANG LÀ renderer hiện tại, không dọn park của
+       nó (dispose/orphan đều sai: dispose rút video đang hiện, orphan
+       thì lần render sau dọn nhầm park đang live). */
+    if (!_keepNewOnError && renderer && renderer !== prevSkin.renderer && renderer.disposeAvsPark) {
+      var _newParkSafe = false;
+      try {
+        if (renderer.getAvsParkState) { var _nps = renderer.getAvsParkState(); _newParkSafe = !_nps.hasMedia || !!_nps.parked || !renderedNew; }
+      } catch (e2) { _newParkSafe = false; }
+      if (_newParkSafe) { try { renderer.disposeAvsPark(); } catch (e2) { /* bỏ qua */ } }
+      /* AUDIT R6-3: park đang live trên stage thì KHÔNG dọn ngay (sẽ rút
+         video đang hiện) — ghi lại để dọn bù sau khi stage đã vẽ lại
+         skin cũ (xem disposeOrphanedParks + lần render/boot sau). */
+      else if (orphanedRenderers.indexOf(renderer) < 0) orphanedRenderers.push(renderer);
+    }
+    /* AUDIT R5-M1 (keo theo): khoi phuc ve prevSkin thi engine MOI cua
+       lan boot nay thanh mo coi — khong ai destroy no nua (lan boot sau
+       chup prevSkin tu prev). Engine moi chua tung phat (boot khong tu
+       phat lai) nen destroy o day la an toan; khong destroy thi rot
+       AudioContext/the audio cua no. Chi destroy khi lan nay that su da
+       tao engine moi (audioEngine khac prev). AUDIT R8-6: _keepNewOnError
+       thi GIỮ engine mới — skin đang hiện trên stage vẫn phát được tiếng. */
+    if (!_keepNewOnError && audioEngine && audioEngine !== prevSkin.audioEngine && audioEngine.destroy && !audioEngine._ampDestroyed) {
+      try { audioEngine.destroy(); audioEngine._ampDestroyed = true; } catch (e2) { /* bỏ qua */ }
+    }
     /* khôi phục skin cũ đang chạy (nếu có). Chưa từng nạp skin nào
        thành công thì không có gì để khôi phục, chỉ báo lỗi như trước. */
     if (prevSkin.renderer) {
@@ -987,10 +1712,50 @@ async function bootSkin(file, name) {
          sẽ phá hết handler onclick + registry trỏ vào node cũ. Chỉ cần
          trả lại biến model/renderer + tính lại zoom theo stage cũ. */
       setZoom(zoom);
+      /* AUDIT R6-2: lỗi SAU lần render đầu (renderedNew) thì stage vẫn
+         hiện DOM của skin mới trong khi toàn cục đã về skin cũ (nút bấm
+         gọi engine mới đã destroy, đồng hồ đứng yên) tới lần render sau.
+         Vẽ lại skin cũ ngay: renderCurrent() xếp hàng sau promise của
+         chính lần boot này trong renderQueue nên không deadlock; bọc
+         try/catch + .catch để lỗi vẽ lại không ném ra ngoài (chỉ báo
+         rõ). Vẽ lại xong thì dọn bù park mồ côi (R6-3) vì wrap lỗi lúc
+         đó đã tách khỏi stage. */
+      if (renderedNew) {
+        try {
+          if (typeof renderCurrent === "function") {
+            var _rr = renderCurrent();
+            /* AUDIT R6-2 (sửa vòng 6, đợt 2): trước đây .then(dispose) và
+               .catch(báo lỗi) gắn RỜI trên cùng _rr — promise mà .then
+               trả về vẫn reject khi _rr reject mà không ai catch nên
+               thành unhandled rejection (Node crash, trình duyệt log
+               lỗi). Nay 1 chuỗi duy nhất: dispose xong mới tới catch. */
+            if (_rr && _rr.then) {
+              var _rr2 = _rr.then(function () { try { disposeOrphanedParks(); } catch (e2) { /* bỏ qua */ } });
+              if (_rr2 && _rr2.catch) {
+                _rr2.catch(function (err) { setStatus("Lỗi khi vẽ lại skin cũ sau lỗi nạp: " + (err && err.message ? err.message : err), true); });
+              } else if (_rr.catch) {
+                _rr.catch(function (err) { setStatus("Lỗi khi vẽ lại skin cũ sau lỗi nạp: " + (err && err.message ? err.message : err), true); });
+              }
+            }
+          }
+        } catch (e2) { setStatus("Lỗi khi vẽ lại skin cũ sau lỗi nạp: " + (e2 && e2.message ? e2.message : e2), true); }
+      }
       setStatus("Lỗi: " + (e.message || e) + " — skin này không dùng được, vẫn giữ skin '" + (prevSkin.SKIN && prevSkin.SKIN.name ? prevSkin.SKIN.name : "cũ") + "'.", true);
+    } else if (_keepNewOnError) {
+      /* AUDIT R8-6 (a): skin mới đã vẽ xong, không có skin cũ để về —
+         giữ nguyên toàn cục (RES/SKIN/renderer/audioEngine đang là của
+         skin mới trên stage), chỉ báo lỗi để người dùng biết bước sau
+         render có lỗi. */
+      setStatus("Lỗi: " + (e.message || e) + " — vẫn giữ skin vừa nạp (đã vẽ xong).", true);
     } else {
+      /* AUDIT R8-6 (b): boot lỗi lần đầu mà skin mới chưa vẽ xong —
+         reset toàn cục về "chưa nạp skin nào" (xem trên). */
+      RES = null; SKIN = null; renderer = null; audioEngine = null;
+      shadeMode = prevSkin.shadeMode;
       setStatus("Lỗi: " + (e.message || e), true);
     }
+    /* v1 (139): boot lỗi — tra false để caller biết (xem bootSkin). */
+    return false;
   }
 }
 /* Nối trang (không còn nút menu ngoài skin — bỏ 04/11): các mục cũ của
@@ -1006,7 +1771,12 @@ function wirePage() {
   if (btnReopen) btnReopen.addEventListener("click", function () {
     try { stageWrap.style.display = ""; } catch (e) { /* bỏ qua */ }
     try { btnReopen.hidden = true; } catch (e) { /* bỏ qua */ }
-    try { renderCurrent(); } catch (e) { /* bỏ qua */ }
+    /* AUDIT V10: renderCurrent là async — try/catch cũ không bắt được
+       rejection (unhandled rejection, không banner). Nay .catch rõ. */
+    try {
+      var _rp = renderCurrent();
+      if (_rp && _rp.catch) _rp.catch(function (err) { setStatus("Lỗi: " + (err && err.message ? err.message : err), true); });
+    } catch (e) { setStatus("Lỗi: " + (e && e.message ? e.message : e), true); }
   });
   /* đóng bảng MAKI: nút ✕, chạm ngoài panel, phím Esc.
      Bỏ qua cú chạm mở panel trong 250ms (cú chạm mở nổi bọt lên document
@@ -1035,7 +1805,20 @@ function wirePage() {
     try { renderer.handleHotkey(e); } catch (err) { /* phím tắt lỗi thì thôi, không vỡ trang */ }
   });
   fileInput.addEventListener("change", function () {
-    if (fileInput.files.length) bootSkin(fileInput.files[0], fileInput.files[0].name);
+    if (fileInput.files.length) {
+      var _f = fileInput.files[0], _n = fileInput.files[0].name;
+      /* AUDIT V6: reset value để chọn cùng 1 file lần 2 vẫn phát sinh
+         event change (không reset thì chọn lại file cũ không nạp lại). */
+      fileInput.value = "";
+      /* AUDIT R7-8 (nhẹ, R6-8 chưa đủ): accept=".wal,.zip,.wsz" chỉ là
+         gợi ý — chọn "All files" rồi pick .mp3 thì trước đây bootSkin
+         vẫn chạy rồi JSZip lỗi với banner đỏ gây nhầm, y hệt đường drop
+         mà R6-8 đã chặn. Áp cùng regex chặn đuôi như drop. */
+      if (!/\.(wal|wsz|zip)$/i.test(_n || "")) { setStatus("Chỉ nhận file skin .wal/.wsz/.zip — đã bỏ qua '" + _n + "'.", true); return; }
+      /* v1 (139): chọn file tay — chỉ nhớ TÊN (trình duyệt không đọc lại
+         file trên máy khi mở lại được), lần sau về mặc định 566. */
+      bootSkin(_f, _n, undefined, { kind: "file", name: _n });
+    }
   });
   window.addEventListener("resize", function () { if (zoom === "fit") setZoom("fit"); });
   /* Kéo-thả file .wal/.wsz/.zip vào trang (giữ nguyên, không chữ hướng dẫn). */
@@ -1043,8 +1826,23 @@ function wirePage() {
     document.addEventListener(ev, function (e) { e.preventDefault(); });
   });
   document.addEventListener("drop", function (e) {
-    var f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) bootSkin(f, f.name);
+    var files = e.dataTransfer.files;
+    var f = files && files[0];
+    if (f) {
+      /* AUDIT R6-8: chỉ nhận file skin — thả file nhạc/văn bản thì trước
+         đây JSZip lỗi rồi banner đỏ "không mở được file zip" gây nhầm
+         (người dùng chỉ thả nhầm). Khớp chặn đuôi của loadSkinFromUrl. */
+      if (!/\.(wal|wsz|zip)$/i.test(f.name || "")) { setStatus("Chỉ nhận file skin .wal/.wsz/.zip khi kéo-thả.", true); return; }
+      /* AUDIT R7-8 (nhẹ): kéo-thả nhiều file thì trước đây các file sau
+         file đầu bị bỏ im lặng — nạp file đầu và báo rõ đã bỏ qua các
+         file còn lại. */
+      if (files.length > 1) setStatus("Đã nhận '" + f.name + "' — bỏ qua " + (files.length - 1) + " file còn lại (chỉ nạp 1 skin mỗi lần).");
+      /* v1 (139): kéo-thả file tay — chỉ nhớ tên như chọn file (xem trên). */
+      bootSkin(f, f.name, undefined, { kind: "file", name: f.name });
+      /* AUDIT V6: như handler change — để kéo-thả rồi chọn tay cùng file
+         vẫn nạp lại được. */
+      try { fileInput.value = ""; } catch (err) { /* bỏ qua */ }
+    }
   });
 }
 wirePage();
@@ -1057,7 +1855,7 @@ wirePage();
    Panel đóng bằng nút ✕ / chạm ngoài / Esc (quy tắc [hidden] đã sửa
    theo bài học panel chọn skin đợt 4 — CSS #maki-panel[hidden] đặt sau
    display nên hidden thật sự ẩn panel). */
-var makiPanel = null, makiBody = null, makiOpenedAt = 0;
+var makiPanel = null, makiBody = null, makiOpenedAt = 0, makiPanelGen = 0; /* AUDIT R6-7: generation guard cho openMakiPanel (xem dưới) */
 function makiPanelEls() {
   if (!makiPanel) makiPanel = document.getElementById("maki-panel");
   if (!makiBody) makiBody = document.getElementById("maki-body");
@@ -1071,24 +1869,48 @@ function makiTextEl(tag, text) {
 }
 async function openMakiPanel() {
   if (!makiPanelEls()) { setStatus("Không tìm thấy bảng MAKI.", true); return; }
+  /* AUDIT R6-7: generation guard — 2 lần mở chồng nhau (mở → đóng → mở
+     lại nhanh, hoặc đổi skin giữa lúc đang đọc) thì lần chạy cũ xong sau
+     không được đè kết quả của lần mới. Tăng counter mỗi lần mở, sau mỗi
+     await kiểm tra lại rồi mới ghi DOM; tên skin + zip chụp lúc mở để
+     tiêu đề không lệch với bảng khi đổi skin giữa chừng. */
+  var myGen = ++makiPanelGen;
   makiPanel.hidden = false;
   makiOpenedAt = Date.now();
   makiBody.textContent = "Đang đọc script MAKI…";
   if (!window.AmpMaki) { makiBody.textContent = "Không nạp được maki.js."; return; }
   var zip = (RES && RES.zip) ? RES.zip : null;
+  var skinNameAtOpen = (SKIN && SKIN.name) ? SKIN.name : "";
   if (!zip) { makiBody.textContent = "Skin đang nạp không giữ file zip (không đọc được .maki)."; return; }
   var names = Object.keys(zip.files || {}).filter(function (n) { return /\.maki$/i.test(n) && !(zip.files[n] && zip.files[n].dir); }).sort();
   if (!names.length) { makiBody.textContent = "Skin này không có file .maki (skin Classic .wsz thường không có script MAKI)."; return; }
   try {
     var files = [];
+    var readErrors = [];
     for (var i = 0; i < names.length; i++) {
-      var data = await zip.files[names[i]].async("uint8array");
-      files.push({ name: names[i].split("/").pop(), data: data });
+      /* AUDIT N16: đọc theo từng file, lỗi 1 file (CRC) chỉ ghi vào
+         bảng, không giết cả panel như trước (đọc hết rồi mới inspect). */
+      try {
+        var data = await zip.files[names[i]].async("uint8array");
+        if (myGen !== makiPanelGen) return;
+        files.push({ name: names[i].split("/").pop(), data: data });
+      } catch (e) {
+        if (myGen !== makiPanelGen) return;
+        readErrors.push({ name: names[i].split("/").pop(), error: (e && e.message ? e.message : String(e)) });
+      }
     }
+    if (myGen !== makiPanelGen) return;
     var skin = window.AmpMaki.inspectSkinFiles(files);
+    /* Gộp lỗi đọc file vào kết quả để bảng vẫn hiện đủ file (dòng lỗi). */
+    for (var ri = 0; ri < readErrors.length; ri++) {
+      skin.results.push({ name: readErrors[ri].name, size: 0, error: "không đọc được file: " + readErrors[ri].error });
+      skin.totals.files++;
+      skin.totals.errors++;
+    }
+    if (myGen !== makiPanelGen) return;
     while (makiBody.firstChild) makiBody.removeChild(makiBody.firstChild);
     var t = skin.totals;
-    makiBody.appendChild(makiTextEl("div", "Skin " + (SKIN && SKIN.name ? SKIN.name : "") + ": " + t.files + " file .maki · "
+    makiBody.appendChild(makiTextEl("div", "Skin " + skinNameAtOpen + ": " + t.files + " file .maki · "
       + t.commands + " lệnh · " + t.calls + " call · " + t.bindings + " binding · "
       + t.visibility + " ẩn/hiện · " + t.textSets + " gán text"
       + (t.errors ? " · LỖI " + t.errors + " file" : "")
@@ -1135,22 +1957,94 @@ async function openMakiPanel() {
   }
 }
 /* openSkinBrowser + panel #skin-panel đã gỡ hẳn (xem
-   ghi chú manifest trên) — nạp skin chỉ còn file tay (menu File của
-   skin "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566).
+   ghi chú manifest trên) — nạp skin: file tay (menu File của
+   skin "Nạp skin .wal/.wsz/.zip…", kéo-thả, hoặc bootSkin mặc định 566),
+   v1 (137) thêm nạp bằng URL + "Chọn skin có sẵn" (skins/).
    Panel MAKI ở trên (#maki-panel) là panel XEM script, không phải panel
    chọn skin — đừng nhầm 2 panel này. */
 if (checkVersions()) {
   logVersion("");
   (async function () {
+    /* v1 (137): nap danh sach skin co san (skins.json + GitHub API)
+       song song voi khoi dong — loi thi danh sach trong, khong chan
+       boot va khong bao loi (menu se hien "Đang tải danh sách skin…"). */
+    loadBundledSkins();
+    /* AUDIT R8-1 (vừa): cap 1 token cho CẢ IIFE ngay từ đầu — trước đây
+       IIFE chỉ gọi bootSkin(566) SAU khi fetch xong nên bootSkin(566)
+       cap token mới nhất sau cùng, ghi đè skin người dùng vừa kéo-thả
+       trong lúc boot đang fetch. Nay mọi lần boot của IIFE (skin đã nhớ
+       bundled/URL + fallback 566) đều dùng chung _bootToken: lần kéo-thả
+       mới hơn cap token mới hơn sẽ làm các lần boot này stale (trả false
+       im lặng, không rơi xuống banner); trước khối 566 + trước banner
+       cuối, token đã đổi thì return im lặng, không hiện banner gây nhầm
+       ("Skin đã nhớ … không nạp được" trong khi nó chỉ bị supersede). */
+    var _bootToken = ++bootToken;
+    /* v1 (139): GHI NHỚ SKIN — thử nạp skin đã nhớ trước; không nạp được
+       thì rơi xuống mặc định 566 bên dưới (KHÔNG ghi đè lựa chọn đã nhớ
+       — boot 566 không truyền choice). */
+    var _savedSkin = loadSkinChoice();
+    if (_savedSkin && _savedSkin.kind === "bundled" && _savedSkin.file) {
+      try {
+        /* AUDIT v1-139b (cache ghi-nhớ-skin): { cache: "reload" } — xem
+           loadSkinFromUrl: file đã nhớ bị xóa/đổi trên host thì fetch
+           phải thấy 404/bản mới, không phục vụ bản cũ trong HTTP cache. */
+        var _rb = await fetchWithTimeout("skins/" + _savedSkin.file.split("/").map(encodeURIComponent).join("/") + "?v=" + (window.AMP_VERSION || "1"), 30000, { cache: "reload" });
+        if (!_rb.ok) throw new Error("HTTP " + _rb.status);
+        checkSkinResponseSize(_rb, "File skin " + _savedSkin.file);
+        var _bb = await readSkinResponseBody(_rb, "File skin " + _savedSkin.file);
+        if (await bootSkin(_bb, _savedSkin.file, _bootToken)) return;
+        if (bootToken !== _bootToken) return; /* R8-1: đã có yêu cầu mới hơn — để nó sở hữu trang */
+        setStatus("Skin đã nhớ '" + _savedSkin.file + "' không nạp được — về mặc định 566.", true);
+      } catch (e) {
+        if (bootToken !== _bootToken) return; /* R8-1: đã có yêu cầu mới hơn trong lúc fetch skin đã nhớ */
+        setStatus("Skin đã nhớ '" + _savedSkin.file + "' không nạp được (" + (e && e.message ? e.message : e) + ") — về mặc định 566.", true);
+      }
+    } else if (_savedSkin && _savedSkin.kind === "url" && _savedSkin.url) {
+      try {
+        if (await loadSkinFromUrl(_savedSkin.url, _bootToken)) return; /* R8-1: dung token cua IIFE */
+        if (bootToken !== _bootToken) return; /* R8-1: đã có yêu cầu mới hơn — để nó sở hữu trang */
+        setStatus("Skin đã nhớ qua URL không nạp được — về mặc định 566.", true);
+      } catch (e) { if (bootToken !== _bootToken) return; /* R8-1 — rơi xuống 566 bên dưới */ }
+    } else if (_savedSkin && _savedSkin.kind === "file" && _savedSkin.name) {
+      setStatus("Skin '" + _savedSkin.name + "' đã chọn bằng file tay không tự nạp lại được khi mở lại (trình duyệt không đọc lại file trên máy) — về mặc định 566.", true);
+    }
+    if (bootToken !== _bootToken) return; /* R8-1: đã có yêu cầu mới hơn trong lúc chờ skin đã nhớ — để nó sở hữu trang */
+    /* AUDIT R7-7 (nhẹ): fetch đầu tiên throw (timeout 30s, lỗi mạng) thì
+       trước đây nhảy thẳng ra catch ngoài, không thử fallback ở gốc; và
+       mọi lỗi đều báo thành "không thấy file", che mất lý do thật (quá
+       lớn/timeout). Bọc mỗi fetch trong try riêng, chỉ fallback khi fetch
+       đầu lỗi/thất bại; giữ lại message lỗi cuối để đưa vào banner. */
+    var _last566Err = null, r = null;
     try {
-      var r = await fetch("winampmodern566.wal");
-      if (r.ok) {
-        var buf = await r.arrayBuffer();
-        await bootSkin(buf, "winampmodern566.wal");
-        return;
+      /* v1 (14:06 — sap xep lai file): skin mac dinh o skins/
+         (skins/winampmodern566.wal). Fallback ve file cung goc
+         (winampmodern566.wal) neu skins/ chua co — de trang van boot
+         duoc ngay sau khi push len kho (file nhi phan skins/ phai do
+         Hai up tay qua web, push_files khong day duoc nhi phan), cho
+         toi khi file goc cu tren kho duoc xoa; luc do chi con skins/. */
+      /* AUDIT R6-5/R6-1/N13: timeout 30s + ?v= chống cache cũ + chặn
+         Content-Length > 64 MB trước khi đọc body. */
+      try {
+        r = await fetchWithTimeout("skins/winampmodern566.wal?v=" + (window.AMP_VERSION || "1"), 30000);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+      } catch (e1) {
+        _last566Err = e1;
+        try {
+          r = await fetchWithTimeout("winampmodern566.wal?v=" + (window.AMP_VERSION || "1"), 30000);
+          if (!r.ok) throw new Error("HTTP " + r.status);
+        } catch (e2) { _last566Err = e2; r = null; }
+      }
+      if (r && r.ok) {
+        try {
+          checkSkinResponseSize(r, "winampmodern566.wal");
+          var buf = await readSkinResponseBody(r, "winampmodern566.wal");
+          await bootSkin(buf, "winampmodern566.wal", _bootToken); /* R8-1: dùng token của IIFE, không cap token mới sau fetch */
+          return;
+        } catch (e3) { _last566Err = e3; }
       }
     } catch (e) { /* không có file cùng thư mục -> chờ kéo thả */ }
-    setStatus("Chưa thấy file winampmodern566.wal cùng thư mục — kéo thả file .wal/.wsz/.zip vào trang, hoặc mở menu File trong skin → “Nạp skin .wal/.wsz/.zip…”.", true);
+    if (bootToken !== _bootToken) return; /* R8-1: đã có yêu cầu mới hơn trong lúc fetch 566 — không hiện banner "Chưa thấy file" gây nhầm */
+    setStatus("Chưa thấy file skins/winampmodern566.wal" + (_last566Err ? " (" + (_last566Err.message || _last566Err) + ")" : "") + " — kéo thả file .wal/.wsz/.zip vào trang, hoặc mở menu Giao diện trong skin → “Nạp skin…”.", true);
   })();
 } else {
   setStatus("Version lệch — dừng lại, xem banner đỏ ở trên.", true);

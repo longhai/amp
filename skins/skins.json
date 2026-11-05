@@ -1,0 +1,12 @@
+{
+  "skins": [
+    { "name": "WinampModern 566 (mặc định)", "file": "winampmodern566.wal" },
+    { "name": "CornerAmp Redux", "file": "CornerAmp_Redux.wal" },
+    { "name": "Default Winamp3 build 499", "file": "Default_winamp3_build499.wal" },
+    { "name": "MMD3", "file": "MMD3.wal" },
+    { "name": "Green Dimension V2", "file": "Green-Dimension-V2.6f88d5c3.wsz" },
+    { "name": "MacOS X Aqua 1.5", "file": "MacOSXAqua1-5.698dd4ab.wsz" },
+    { "name": "Paper Amp", "file": "Paper-Amp.wsz" },
+    { "name": "Classic mặc định (base 2.91)", "file": "base-2.91.wsz" }
+  ]
+}
