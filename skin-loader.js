@@ -5,7 +5,7 @@
    contentH = layoutH - frameOffsetY SAI (đo lại từ Winamp thật:
    display/seek/playbuttons đều thấp hơn Amp đúng 18px; main phải ở
    y=35, đáy 161, cửa sổ đóng cao 164 — không phải y=17/143/156).
-   Version: LOADER_VERSION = "10.30". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
+   Version: LOADER_VERSION = "10.31". MỖI LẦN ĐỔI LOADER PHẢI BUMP VERSION,
    không thì trình duyệt/model cache cũ làm mọi sửa loader vô hiệu.
    Đợt v10.12: layout thiếu w/h đo từ ảnh nền (background) rồi mới tới
    bao nội dung rồi 354×280; lưu background/alphabackground của layout;
@@ -24,8 +24,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var LOADER_VERSION = "10.30";
-  var EXPECTED_LOADER_VERSION = "10.30";
+  var LOADER_VERSION = "10.31";
+  var EXPECTED_LOADER_VERSION = "10.31";
   /* Nhánh Classic (.wsz, không có skin.xml) parse thật bằng AmpClassic
      (classic.js: viscolor/pledit/region/genex + bảng sprite + hình học
      cửa sổ chính 275×116); asset resolver (fileURL/imgSize) dời lên

@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.30";
-  var EXPECTED_RENDERER_VERSION = "10.30";
+  var RENDERER_VERSION = "10.31";
+  var EXPECTED_RENDERER_VERSION = "10.31";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -639,7 +639,21 @@
         return { w: 275 + wSeg * 25, h: 116 + hSeg * 29 };
       }
       var mm = layoutMinMax(container, layoutId);
-      if (!mm) return null;
+      if (!mm) {
+        /* v10.31 — Cửa sổ rời Video/AVS của skin Classic (không có layout
+           trong XML): layoutMinMax null → clampWinSize null → applyResizeMove
+           trả về sớm (tay nắm có mà kéo không ăn) + setWinSize không lưu +
+           restoreWinSizes không khôi. Kẹp min = cỡ mặc định của cửa sổ rời
+           (rộng = rộng main, cao = 164 như minH XML của Video Modern —
+           video-normal.xml minimum_h=164), max = WIN_MAX_W/H như XML. */
+        if (lowerStr(container) === "video" || lowerStr(container) === "avs") {
+          return {
+            w: Math.max(detachedDefaultWidth(), Math.min(WIN_MAX_W, Math.round(w))),
+            h: Math.max(164, Math.min(WIN_MAX_H, Math.round(h)))
+          };
+        }
+        return null;
+      }
       return {
         w: Math.max(mm.minW, Math.min(mm.maxW, Math.round(w))),
         h: Math.max(mm.minH, Math.min(mm.maxH, Math.round(h)))
@@ -825,24 +839,15 @@
       if (isClassicPl30) c = { w: Math.max(275, Math.round(w)), h: Math.max(116, Math.round(h)) };
       else c = clampWinSize(s.container, s.layoutId, w, h);
       if (!c) return;
-      /* v10.30 — Kẹp live cửa sổ rời Video/AVS ở chế độ Fit (như
-         detachedWinSize lúc build): trước đây kéo Video/AVS rộng hơn
-         main thì giữa lúc kéo to ra (466×268), thả ra bị co về rộng
-         main (354×268) mà localStorage vẫn lưu 466 — snap-back bất
-         ngờ, lần mở sau cũng về 354. Nay kẹp ngay lúc kéo nên thả ra
-         giữ đúng cỡ vừa kéo. Chế độ 1x không kẹp (stage mở rộng theo
-         bề rộng thật như playlist). */
-      if ((lowerStr(s.container) === "video" || lowerStr(s.container) === "avs") && isZoomFit) {
-        try {
-          if (isZoomFit()) {
-            var mw30 = detachedDefaultWidth();
-            if (mw30 > 0 && c.w > mw30) {
-              var mm30 = layoutMinMax(s.container, s.layoutId);
-              c.w = Math.max(mw30, mm30 ? mm30.minW : 0);
-            }
-          }
-        } catch (e30) { /* bỏ qua */ }
-      }
+      /* v10.31 — BỎ kẹp live cửa sổ rời Video/AVS ở chế độ Fit (v10.30 đã
+         kẹp rộng = rộng main để tránh snap-back, nhưng Hải 05/11 09:40
+         báo kéo ngang không được: rộng đứng yên 354 dù kéo mép phải/góc.
+         Gốc của snap-back v10.30 là stage chưa bám cửa sổ rộng nhất
+         (đã sửa ở v10.23: stage mở rộng theo cửa sổ rộng nhất, Fit tính
+         lại live qua onLiveFit ở v10.26) — kẹp này giờ thừa, chỉ còn tác
+         dụng đóng băng chiều rộng. Bỏ cả kẹp lúc build trong
+         detachedWinSize (v10.8) để thả ra không co về: Video/AVS kéo
+         rộng như playlist, stage bám theo, Fit thu lại vừa màn hình. */
       s.w = c.w; s.h = c.h;
       try {
         s.live.style.width = c.w + "px";
@@ -1198,7 +1203,16 @@
             var trackH = !!stageEl0 && stageEl0 !== live && baseStageH > 0 && (liveTop0 + startH) >= (baseStageH - 1);
             var preview = [];
             try {
-              var nodes = live.querySelectorAll('[data-stretch="1"], [data-anchor-r], [data-anchor-b], .pl-list, .ml-content, .ml-list, .ml-tree, video, canvas');
+              /* v10.31 — thêm [data-avs-media]: hộp media của cửa sổ Video/
+                 AVS rời. Trước đây selector chỉ có video/canvas bên trong
+                 nên lúc kéo, thẻ video giãn theo khung nhưng hộp bọc (đen,
+                 overflow:hidden, cỡ = khung − lề) đứng yên ở cỡ lúc build:
+                 hình bị cắt theo hộp cũ, không theo khung mới — kéo to ra
+                 thì hộp đen nhỏ, dưới/right lộ nền xám trống; kéo nhỏ lại
+                 thì hộp đen tràn, hình co trong hộp. Nay hộp giãn live
+                 theo khung (khung − lề cố định) như .pl-list/.ml-content,
+                 video/canvas bên trong giãn đồng bộ. */
+              var nodes = live.querySelectorAll('[data-stretch="1"], [data-anchor-r], [data-anchor-b], .pl-list, .ml-content, .ml-list, .ml-tree, video, canvas, [data-avs-media]');
               for (var ni = 0; ni < nodes.length; ni++) {
                 var nd = nodes[ni];
                 var w0 = parseInt(nd.style.width || "0", 10) || 0, h0 = parseInt(nd.style.height || "0", 10) || 0;
@@ -1250,7 +1264,9 @@
                   }
                 } catch (e22d) { /* giữ false */ }
                 var _tag22 = (nd.tagName || "").toUpperCase();
-                var _isLM22 = _tag22 === "VIDEO" || _tag22 === "CANVAS" || (nd.classList && (nd.classList.contains("pl-list") || nd.classList.contains("ml-content") || nd.classList.contains("ml-list") || nd.classList.contains("ml-tree")));
+                /* v10.31: hộp media AVS ([data-avs-media]) giãn cả 2 chiều
+                   như video/canvas (cỡ = khung − lề cố định). */
+                var _isLM22 = _tag22 === "VIDEO" || _tag22 === "CANVAS" || (nd.dataset && nd.dataset.avsMedia === "1") || (nd.classList && (nd.classList.contains("pl-list") || nd.classList.contains("ml-content") || nd.classList.contains("ml-list") || nd.classList.contains("ml-tree")));
                 if (_isLM22) { _sw22 = true; _sh22 = true; }
                 preview.push({ el: nd, w: w0, h: h0, offW: startW - w0, offH: startH - h0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: (_sw22 || _sh22), stretchW: _sw22, stretchH: _sh22, anchorR: (_aR === null || isNaN(_aR)) ? null : _aR, anchorB: (_aB === null || isNaN(_aB)) ? null : _aB, left0: parseInt(nd.style.left || "0", 10) || 0, top0: parseInt(nd.style.top || "0", 10) || 0, pW0: _pW0, pH0: _pH0 });
               }
@@ -9452,21 +9468,13 @@
       if (!ov) return def;
       var c = clampWinSize(layKey, "normal", ov.w, ov.h);
       if (!c) return def;
-      /* v10.8: ở chế độ Fit, cửa sổ rời không rộng hơn cửa sổ chính —
-         chỉ kẹp bề rộng, giữ nguyên chiều cao đã kéo. Nếu minimum của
-         layout Video/AVS trong XML lớn hơn rộng main thì lấy minimum
-         đó (skin không cho hẹp hơn). */
-      if (isZoomFit) {
-        var fit = false;
-        try { fit = !!isZoomFit(); } catch (e) { fit = false; }
-        if (fit) {
-          var mw = detachedDefaultWidth();
-          if (mw > 0 && c.w > mw) {
-            var mm = layoutMinMax(layKey, "normal");
-            c.w = Math.max(mw, mm ? mm.minW : 0);
-          }
-        }
-      }
+      /* v10.31 — BỎ kẹp Fit ở đây (v10.8: cửa sổ rời không rộng hơn cửa
+         sổ chính). Lý do kẹp lúc đó là stage chưa bám cửa sổ rộng nhất
+         (cửa sổ rời rộng hơn main sẽ tràn stage); từ v10.23 stage đã mở
+         rộng theo cửa sổ rộng nhất + Fit tính lại live (v10.26) nên kẹp
+         này thừa — chỉ còn làm kéo ngang không ăn + thả ra snap-back
+         (xem kẹp lúc kéo đã bỏ ở applyResizeMove). Giữ nguyên chiều cao
+         đã kéo như cũ. */
       return c;
     }
     function detachedMediaRect(sz) {
@@ -9516,6 +9524,11 @@
       titleBar.style.font = "bold 11px Arial, sans-serif"; titleBar.style.lineHeight = "18px";
       titleBar.style.padding = "0 4px"; titleBar.style.boxSizing = "border-box";
       titleBar.style.pointerEvents = "auto";
+      /* v10.31 — titlebar giãn rộng theo cửa sổ lúc kéo (preview):
+         data-stretch để lọt selector xem trước, stretchW để giãn rộng
+         (rộng = rộng cửa sổ, offW=0). Nút ✕ bên trong neo phải:2px nên
+         vẫn ở mép phải khung mới. */
+      titleBar.dataset.stretch = "1"; titleBar.dataset.stretchW = "1";
       titleBar.textContent = kind === "video" ? "VIDEO" : "VISUALIZATION";
       setAbs(titleBar, win, 0, 0);
       win.appendChild(titleBar);
@@ -9533,6 +9546,12 @@
       bar.style.position = "absolute"; bar.style.left = "5px"; bar.style.top = (sz.h - 22) + "px";
       bar.style.width = (sz.w - 10) + "px"; bar.style.height = "21px";
       bar.style.pointerEvents = "auto";
+      /* v10.31 — hàng nút bám đáy + giãn rộng theo cửa sổ lúc kéo
+         (preview): stretchW để rộng = rộng cửa sổ − 10, anchorB=22 để
+         top = cao cửa sổ − 22 (luôn ở đáy). Trước đây bar đứng yên ở vị
+         trí lúc build nên kéo cao lên thì bar lơ lửng giữa cửa sổ, kéo
+         rộng ra thì bar hẹp hơn khung. */
+      bar.dataset.stretch = "1"; bar.dataset.stretchW = "1"; bar.dataset.anchorB = "22";
       /* v10.7 (hang nut Classic bi cat mep phai, anh 04/11 07:19 —
          "1920x1080" loi nua ra ngoai): hang nut la flex 1 hang, khong
          xuong dong, khong tran khoi bar; nut khong co lai, nhan WxH
@@ -9541,9 +9560,10 @@
       bar.style.whiteSpace = "nowrap"; bar.style.overflow = "hidden";
       setAbs(bar, win, 5, 178);
       win.appendChild(bar);
-      function mkBtn(label, action) {
+      function mkBtn(label, action, title) {
         var b = document.createElement("button");
         b.textContent = label;
+        if (title) b.title = title;
         b.dataset.avsAction = action;
         b.style.font = "11px Arial, sans-serif";
         b.style.marginRight = "4px"; b.style.cursor = "pointer";
@@ -9568,7 +9588,12 @@
         return b;
       }
       if (kind === "video") {
-        mkBtn("1x", "scale1"); mkBtn("2x", "scale2"); mkBtn("Fullscreen", "fullscreen"); mkBtn(avsState.videoMaximized ? "Restore" : "Max", "max"); mkBtn("Reattach", "reattach");
+        /* v10.31 — nút Fullscreen dùng biểu tượng ⛶ cho gọn (Hải 05/11
+           09:43): chữ "Fullscreen" rộng ~68px làm hàng nút chật, nút cuối
+           (nhãn WxH) bị cắt ở mép phải khi cửa sổ 275 rộng; ⛶ chỉ ~1 ký
+           tự, tiết kiệm ~55px, hàng nút vừa khung. Chức năng giữ nguyên
+           (bấm → toàn màn hình), title="Toàn màn hình" để rõ nghĩa. */
+        mkBtn("1x", "scale1"); mkBtn("2x", "scale2"); mkBtn("⛶", "fullscreen", "Toàn màn hình"); mkBtn(avsState.videoMaximized ? "Restore" : "Max", "max"); mkBtn("Reattach", "reattach");
         var info = document.createElement("span");
         info.dataset.vidInfo = "1";
         info.style.font = "11px Arial, sans-serif"; info.style.color = "#ddd";
