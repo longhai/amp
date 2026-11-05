@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.31";
-  var EXPECTED_RENDERER_VERSION = "10.31";
+  var RENDERER_VERSION = "10.32";
+  var EXPECTED_RENDERER_VERSION = "10.32";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -3035,6 +3035,29 @@
          nhạc đang phát là điều người dùng báo "chưa đầy đủ". */
       if (playlistState.current >= 0 && playlistState.current < playlistState.items.length && demo.t > 0) return fmtTime(demo.t);
       return fmtTime(0);
+    }
+    /* v10.32 — Đồng hồ playlist dạng "đã chọn/TỔNG" (giống Classic v10.30,
+       giống Winamp thật/fork getRunningTimeMessage): Hải 05/11 11:29 —
+       playlist Modern (skin 566 mặc định) vẫn chỉ hiện 1 số (giờ mục đã
+       chọn) nên không thấy tổng thời gian tất cả bài. Ô PLTime Modern
+       (XML pledit-normal.xml: text id PLTime, x=-180 w=55, font
+       player.pe.time.font charwidth=4 → vừa 13 ký tự): "4:11/372:05"
+       = 11 ký tự = 44px, vừa hộp; "120:00/372:05" = 13 ký tự = 52px
+       vừa khít. Chỉ khi tổng ≥ 1000 phút VÀ mục đã chọn ≥ 100 phút
+       (14 ký tự = 56px) mới bị cắt 1px ở mép phải (.stage .txt có
+       overflow:hidden) — như Winamp thật cùng hộp 55px, chấp nhận.
+       - Tổng > 0 → "đã chọn/TỔNG" (không chọn / chọn mục live → "0:00/TỔNG").
+       - Tổng = 0 (toàn live / chưa có len) → về playlistClockText()
+         (thời gian đã phát / 0:00), không bịa "0:00/0:00".
+       Ô giờ SHADE Classic (14px) vẫn dùng playlistClockText() số đơn;
+       ô giờ đáy playlist Classic dùng chung hàm này từ v10.32. */
+    function playlistClockSelTotalText() {
+      var total = playlistTotalTime();
+      if (total > 0) {
+        var sel = playlistSelectedTime();
+        return fmtTime(sel != null ? sel : 0) + "/" + fmtTime(total);
+      }
+      return playlistClockText();
     }
     /* v10.7 (107) — đồng hồ có đang ở chế độ "thời gian đã phát" (phụ
        thuộc demo.t, phải vẽ lại theo từng tick) hay số tĩnh (tổng/đã
@@ -6842,6 +6865,13 @@
            - VID_Misc (v10.5 — Hải 04/11: nút Video CHỈ mở video): chỉ
              mở video (đang mở rồi thì ở yên), KHÔNG mở menu — giữ nguyên
              v10.5 (quyết này về nút VID_Misc, không phải videoavs.open).
+             v10.32 — NGOẠI LỆ CHO CỬA SỔ VIDEO RỜI (Hải 11:22, ảnh
+             1000094933_20_hhp7.jpg): nút ≡ (Options) trong cửa sổ Video
+             rời bấm không thấy gì vì video đã mở sẵn; ở đó nút này mở
+             menu tùy chọn video (videoMenuItems) như Winamp thật, bấm
+             lần 2 thì đóng (togglePopupMenu kind "video"). Dải nút
+             NHÚNG trong cửa sổ chính (ctx.windowKind "player") vẫn giữ
+             quyết v10.5 — chỉ mở video, không mở menu.
            - VIS_MENU (v10.8 — Hải 04/11, ảnh 12): mở menu HIỆU ỨNG
              (visMenuItems — chỉ mục hiệu ứng: Màu hiệu ứng ×3 + Milkdrop;
              menu đóng bằng closer chung: click ngoài/chạm/Esc/chọn mục;
@@ -6855,7 +6885,12 @@
         if (action === "VID_FS" || action === "VIS_FS") { requestVideoFullscreen(); return; }
         if (action === "VIS_PREV") { cycleVisVariant(-1); return; }
         if (action === "VIS_NEXT") { cycleVisVariant(1); return; }
-        if (action === "VID_MISC") { openAvs("video"); return; }
+        if (action === "VID_MISC") {
+          /* v10.32 — xem ghi chú VID_Misc ở trên: cửa sổ Video rời mở menu
+             tùy chọn video; dải nhúng trong cửa sổ chính giữ quyết v10.5. */
+          if (ctx && ctx.windowKind === "video") { togglePopupMenu(div, videoMenuItems(), "video"); return; }
+          openAvs("video"); return;
+        }
         if (action === "VIS_MENU") {
           if (!avsState.open) { openAvs("vis"); return; }
           togglePopupMenu(div, visMenuItems(), "vis");
@@ -8125,11 +8160,13 @@
           return;
         }
         if (disp === "pe_info" || lowId === "pltime") {
-          /* PLTime = TỔNG thời gian các mục có thời lượng (việc 3 đợt A:
-             chuyển sang thời gian ĐÃ CHỌN khi có lựa chọn — xem
-             playlistClockText); kênh radio không có thời lượng nên không
-             tính vào tổng, không bịa số (chỉ có radio thì tổng hiện 0:00). */
-          var pdiv = await makeBitmapText(fontId, playlistClockText(), w, align, color, valign, h);
+          /* PLTime = "đã chọn/TỔNG" thời gian các mục có thời lượng
+             (v10.32: playlistClockSelTotalText, giống Classic v10.30;
+             trước đây chỉ 1 số — việc 3 đợt A: chuyển sang thời gian
+             ĐÃ CHỌN khi có lựa chọn — xem playlistClockText);
+             kênh radio không có thời lượng nên không tính vào tổng,
+             không bịa số (chỉ có radio thì tổng hiện 0:00). */
+          var pdiv = await makeBitmapText(fontId, playlistClockSelTotalText(), w, align, color, valign, h);
           div.appendChild(pdiv);
           infoEls.push({ div: div, fontId: fontId, boxW: w, align: align, color: color, valign: valign, boxH: h, kind: "pltime" });
           inheritAbs(div);
@@ -8370,7 +8407,7 @@
         try {
           /* Đợt B (9.9): bitrate/frequency vẽ lại khi có số mới (đổi bài,
              metadata về, EQ bật làm graph xuất hiện). */
-          var txt = rec.kind === "pltime" ? playlistClockText()
+          var txt = rec.kind === "pltime" ? playlistClockSelTotalText() /* v10.32: PLTime Modern "đã chọn/TỔNG" như Classic v10.30 */
             : rec.kind === "bitrate" ? songInfoText("Bitrate")
             : rec.kind === "frequency" ? songInfoText("Frequency")
             : rec.kind === "songinfo" ? songInfoLineText()
@@ -9493,6 +9530,31 @@
       frameDiv.style.position = "absolute"; frameDiv.style.left = "0px"; frameDiv.style.top = "0px";
       frameDiv.style.width = sz.w + "px"; frameDiv.style.height = sz.h + "px";
       frameDiv.style.pointerEvents = "none";
+      /* v10.32 — KEO VIDEO GIONG HET PLAYLIST (Hai 05/11 11:07 "Sao khong
+         lam giong playlist do ban"): frameDiv + innerDiv phai co mat
+         trong xem truoc luc keo (data-stretch/stretchW/stretchH) nhu
+         moi con cua layout playlist — truoc day ca 2 div khong co dau
+         nao nen applyResizeMove khong doi co chung: frameDiv dung yen
+         sz.w x sz.h, innerDiv dung yen sz.w x (sz.h-18) trong luc keo.
+         He qua do duoc o probe-132 (jsdom) + video that cua Hai
+         (f001/f020): keo lon +60/+60 (khung 414x260) thi nhom nut
+         video.buttons.group (anchorB=22, top 160, day 181) dung yen,
+         trong khi hop media [data-avs-media] (da sua v10.31) gian live
+         toi 402x210 (day 233) — hop la con sau innerDiv nen ve DE LEN
+         nhom nut (nut nam gon trong vung den y23..233) nen mat phan
+         duoi; keo nho ve duoi 200 thi nhom nut nam ngoai khung moi,
+         bi win overflow:hidden cat. Chi tha tay (requestRerender ve
+         lai day du) moi thay lai. Nay frameDiv gian = khung (off 0/0),
+         innerDiv gian = khung tru 18px titlebar (offW 0, offH 18) —
+         dung cong thuc offW/offH nhu playlist — thi cac con da danh dau
+         san ben trong (nhom nut anchorB=22, lop khung relath,
+         titlebar relatw) tu dong doi theo vi preview duyet theo thu tu
+         tai lieu (cha truoc, con sau) va doc style cha moi cap nhat.
+         Cung builder cho ca Video lan Vis (vis.frame.layout) nen ca 2
+         cung duoc sua. Classic khong dung builder nay (fallback co
+         anchorB san, probe-132: keo thu bar bam day dung) nen khong
+         doi ben Classic. */
+      frameDiv.dataset.stretch = "1"; frameDiv.dataset.stretchW = "1"; frameDiv.dataset.stretchH = "1";
       setAbs(frameDiv, win, 0, 0);
       win.appendChild(frameDiv);
       if (RES.groupdefs["wasabi.standard.layout"]) {
@@ -9502,6 +9564,7 @@
       innerDiv.style.position = "absolute"; innerDiv.style.left = "0px"; innerDiv.style.top = "18px";
       innerDiv.style.width = sz.w + "px"; innerDiv.style.height = (sz.h - 18) + "px";
       innerDiv.style.pointerEvents = "none";
+      innerDiv.dataset.stretch = "1"; innerDiv.dataset.stretchW = "1"; innerDiv.dataset.stretchH = "1";
       setAbs(innerDiv, win, 0, 18);
       win.appendChild(innerDiv);
       var frameGid = kind === "video" ? "video.frame.layout" : "vis.frame.layout";
@@ -9568,6 +9631,18 @@
         b.style.font = "11px Arial, sans-serif";
         b.style.marginRight = "4px"; b.style.cursor = "pointer";
         b.style.flexShrink = "0";
+        /* v10.32 — Nut co cao CO DINH 17px (bar cao 21px, can giua thi
+           thua 2px tren/duoi): truoc day nut dung cao mac dinh cua
+           trinh duyet theo font — ky tu ⛶ (U+26F6, roi ve font du phong
+           co metrics lon hon Arial) lam nut Fullscreen cao hon cac nut
+           chu ~5px, day nut thap hon day bar/day cua so ~2.5px layout
+           nen vien duoi cua nut bi cat ngay ca luc nghi (do Chrome that
+           probe-132: ⛶ bottom vuot day win o MOI buoc keo + ca luc mo,
+           trong khi 1x/2x/Max/Reattach deu vua). Cao co dinh + padding
+           0 doc thi moi nut (Video lan Vis, cung mkBtn) deu vua bar,
+           ky tu 11px van vua trong line-height 15px. */
+        b.style.height = "17px"; b.style.lineHeight = "15px";
+        b.style.padding = "0 6px"; b.style.boxSizing = "border-box";
         b.onclick = function () {
           if (action === "scale1") setVideoScale(1);
           else if (action === "scale2") setVideoScale(2);
@@ -10729,16 +10804,14 @@
          nhạc đang phát là điều Hải đã báo "chưa đầy đủ" ở v10.7).
        - fmtTime() = phút-tổng:giây như fork getTimeStr (phút không
          capped 59: tổng 372 phút hiện "372:05", không đổi sang giờ).
-       - Đồng hồ Modern (playlistClockText, ô PLTime) KHÔNG đổi. */
+       - v10.32: ô PLTime Modern dùng chung hàm này
+         (playlistClockSelTotalText) — 2 skin 1 số như v10.7; ô giờ
+         SHADE Classic (14px) vẫn số đơn playlistClockText(). */
     function classicPlTotalTimeText() {
-      try {
-        var total = playlistTotalTime();
-        if (total > 0) {
-          var sel = playlistSelectedTime();
-          return fmtTime(sel != null ? sel : 0) + "/" + fmtTime(total);
-        }
-      } catch (e) { /* rơi xuống đường cũ */ }
-      return classicPlTimeText();
+      /* v10.32: dùng chung playlistClockSelTotalText() với PLTime Modern
+         (logic giữ nguyên v10.30: tổng > 0 → "đã chọn/TỔNG", tổng = 0 →
+         đường cũ v10.7 qua playlistClockText). */
+      try { return playlistClockSelTotalText(); } catch (e) { return classicPlTimeText(); }
     }
     function refreshClassicPlTime() {
       if (!classicPlTimeDiv) return;
@@ -12151,6 +12224,7 @@
       /* Đợt A (9.9): đồng hồ playlist (việc 3), đồng hồ chính (việc 4),
          Media Library (việc 1), resize cửa sổ (việc 6). */
       playlistSelectedTime: playlistSelectedTime, playlistClockText: playlistClockText,
+      playlistClockSelTotalText: playlistClockSelTotalText, /* v10.32: PLTime Modern + ô giờ Classic "đã chọn/TỔNG" */
       playlistClockUsesElapsed: playlistClockUsesElapsed, /* v10.7 (107): test đồng hồ toàn-live */
       clearPlaylistSelection: clearPlaylistSelection,
       getTimerMode: getTimerMode, setTimerMode: setTimerMode, toggleTimerMode: toggleTimerMode,
