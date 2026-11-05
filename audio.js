@@ -54,7 +54,9 @@
                ├─> preamp (Gain, 0..1) -> 10 Biquad peaking
      videoSrc ─┘    (31.5/63/125/250/500/1K/2K/4K/8K/16K Hz, Q~1,
                     gain = frac*24-12 dB) -> master (Gain = volume)
-                    -> analyser (fftSize 64) -> destination.
+                    -> makeup (Gain = EQ_MAKEUP_GAIN, v10.27, chỉ đường
+                    EQ bật) -> [limiter] -> [panner] -> analyser
+                    (fftSize 1024) -> destination.
    Chỉ nguồn đang phát mới có tín hiệu nên không chồng tiếng; nguồn tạm
    dừng ra số 0. EQ tắt: ngắt chuỗi, source -> destination thẳng (bypass
    tuyệt đối); analyser nằm sau master nên không còn tín hiệu -> vis đứng
@@ -82,8 +84,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var AUDIO_VERSION = "10.24";
-  var EXPECTED_AUDIO_VERSION = "10.24";
+  var AUDIO_VERSION = "10.27";
+  var EXPECTED_AUDIO_VERSION = "10.27";
   /* Version manifest duy nhất (như skin-loader.js): index.html đặt
      window.AMP_VERSION TRƯỚC khi nạp file này; khác manifest thì
      MANIFEST_MISMATCH = true để trang báo "bản mix". Không có manifest
@@ -121,6 +123,20 @@
      đỉnh giữ ở +0.44 dB thay vì +6 dB). */
   var LIMITER_THRESHOLD_DB = 0, LIMITER_KNEE_DB = 0, LIMITER_RATIO = 20;
   var LIMITER_ATTACK = 0.002, LIMITER_RELEASE = 0.1;
+  /* Makeup gain cho đường EQ BẬT (v10.27): trên điện thoại thật (Android),
+     đường Web Audio nghe nhỏ hơn NHIỀU so với đường native (EQ tắt = bypass
+     tuyệt đối, tiếng to nhất) dù EQ để mặc định phẳng — đã loại trừ code
+     thụt lùi (dựng lại v10.14 y hệt từ GitHub, test máy thật 05/11: "cũng
+     nhỏ như vậy"; chuỗi EQ đo unity 0,00 dB ở headless Chrome v10.16).
+     Bù +4 dB (gain ≈ 1,585) vào đường EQ bật để nghe to bằng lúc tắt.
+     CHỈ 1 số này để chỉnh: muốn to/nhỏ hơn thì đổi EQ_MAKEUP_GAIN_DB rồi
+     đo lại headless (xem eq-loudness-127-report.md). Đặt TRƯỚC limiter
+     (master -> makeup -> limiter) để limiter ngưỡng 0 dB vẫn chặn quá tải:
+     preset boost + makeup vượt 0 dBFS vẫn bị bóp về ≤ ~0 dB. Không đụng
+     preamp/bands/limiter/volume/crossfade; đường EQ tắt (bypass/native)
+     không qua node này nên không đổi. */
+  var EQ_MAKEUP_GAIN_DB = 4;
+  var EQ_MAKEUP_GAIN = Math.pow(10, EQ_MAKEUP_GAIN_DB / 20);
 
   function clamp01(v) { v = +v; if (isNaN(v)) return 0.5; return v < 0 ? 0 : v > 1 ? 1 : v; }
   function fracToDb(frac) { return clamp01(frac) * 24 - 12; }
@@ -175,8 +191,8 @@
     var ctx = null, preamp = null, bandNodes = [], master = null, analyser = null;
     var graphBuilt = false, graphUnavailable = false;
     /* PAN (cân bằng trái/phải, slider Balance trong ngăn kéo EQ):
-       StereoPannerNode đặt SAU master, TRƯỚC analyser (preamp -> 10
-       biquad -> master -> panner -> analyser -> destination). Pan chỉ có
+       StereoPannerNode đặt SAU makeup/limiter, TRƯỚC analyser (preamp -> 10
+       biquad -> master -> makeup -> limiter -> panner -> analyser -> destination). Pan chỉ có
        tác dụng khi tiếng đi QUA CHUỖI EQ (EQ bật): EQ tắt thì source nối
        thẳng destination, panner không nằm trên đường tiếng nên Pan không
        đổi được gì — cùng giới hạn như vis. Không có createStereoPanner
@@ -223,6 +239,7 @@
     var eqValues = { preamp: 0.5, bands: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] };
     var destroyed = false;
     var limiter = null; /* DynamicsCompressor chống clip (xem hằng LIMITER_*). */
+    var makeup = null; /* GainNode bù gain đường EQ bật (v10.27, xem EQ_MAKEUP_GAIN_DB). */
     /* Fallback CORS khi bật EQ: đài không trả Access-Control-Allow-Origin
        thì nạp với crossOrigin=anonymous lỗi ngay (không metadata, không
        tạo được source) — tự rơi về phát native (tắt EQ) + báo rõ lý do
@@ -288,8 +305,12 @@
         }
         master = ctx.createGain();
         master.gain.value = volume;
+        /* Makeup gain đường EQ bật (v10.27): GainNode hằng số, chỉ nằm
+           trên đường EQ bật, TRƯỚC limiter (xem EQ_MAKEUP_GAIN_DB). */
+        makeup = ctx.createGain();
+        makeup.gain.value = EQ_MAKEUP_GAIN;
         /* Limiter chống clip (lựa chọn của Amp, KHÔNG phải từ Webamp):
-           DynamicsCompressor sau master, trước panner/analyser. Ngưỡng
+           DynamicsCompressor sau makeup, trước panner/analyser. Ngưỡng
            0 dB, knee 0, tỉ lệ 20:1 (v10.14: ngưỡng về 0 để chuỗi là
            unity — xem ghi chú ở LIMITER_THRESHOLD_DB): chỉ bóp các
            đỉnh vượt 0 dBFS khi preset boost + đài to; tín hiệu thường
@@ -316,11 +337,12 @@
           }
         } catch (e) { panner = null; }
         /* Nối chuỗi (chưa có nguồn vào): preamp -> 10 biquad -> master
-           -> [limiter] -> [panner] -> analyser -> destination. */
+           -> makeup (v10.27) -> [limiter] -> [panner] -> analyser -> destination. */
         var head = preamp;
         for (var j = 0; j < bandNodes.length; j++) { head.connect(bandNodes[j]); head = bandNodes[j]; }
         head.connect(master);
-        if (limiter) { master.connect(limiter); head = limiter; } else head = master;
+        master.connect(makeup);
+        if (limiter) { makeup.connect(limiter); head = limiter; } else head = makeup;
         if (panner) { head.connect(panner); panner.connect(analyser); }
         else head.connect(analyser);
         analyser.connect(ctx.destination);
@@ -1375,7 +1397,7 @@
       ensureGraph: ensureGraph,
       /* test/debug: trạng thái graph (stub ghi lại connect/disconnect) */
       _graph: function () {
-        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, limiter: limiter, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB };
+        return { ctx: ctx, preamp: preamp, bands: bandNodes, master: master, makeup: makeup, limiter: limiter, analyser: analyser, panner: panner, audioSrc: audioSrc, videoSrc: videoSrc, audioElB: audioElB, audioSrcB: audioSrcB };
       },
       /* test/debug: trạng thái crossfade */
       _crossfade: function () {
@@ -1394,6 +1416,7 @@
     MANIFEST_VERSION: MANIFEST_VERSION,
     MANIFEST_MISMATCH: MANIFEST_MISMATCH,
     EQ_FREQS: EQ_FREQS, EQ_Q: EQ_Q,
+    EQ_MAKEUP_GAIN_DB: EQ_MAKEUP_GAIN_DB, EQ_MAKEUP_GAIN: EQ_MAKEUP_GAIN, /* v10.27: bù gain đường EQ bật */
     HLS_CDN_URL: HLS_CDN_URL,
     NATIVE_TIMEOUT_MS: NATIVE_TIMEOUT_MS,
     ERROR_RECHECK_MS: ERROR_RECHECK_MS,

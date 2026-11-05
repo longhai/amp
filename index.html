@@ -13,7 +13,7 @@
      skin vẽ đúng màu gốc. Đã kiểm chứng bằng headless Chrome + force-dark:
      có meta này thì menubar sáng (210,212,218) như bản thường. -->
 <meta name="color-scheme" content="dark">
-<title>Amp v10.24 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
+<title>Amp v10.27 — Winamp Modern (cửa sổ chính + ngăn kéo + playlist + AVS/Video)</title>
 <link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -123,7 +123,7 @@
 <input type="file" id="skinpick" accept=".wal,.zip,.wsz" hidden>
 
 <script>
-/* VERSION MANIFEST DUY NHẤT: "10.24" là nguồn sự thật, đặt TRƯỚC mọi
+/* VERSION MANIFEST DUY NHẤT: "10.27" là nguồn sự thật, đặt TRƯỚC mọi
    file JS. 8 file (classic/skin-loader/audio/eqf/milkdrop/metadata/maki/
    renderer) đọc window.AMP_VERSION lúc nạp để tự kiểm
    (MANIFEST_MISMATCH); index.html kiểm lại ở checkVersions() và DỪNG +
@@ -132,26 +132,26 @@
    Thứ tự nạp có ý nghĩa: metadata.js nạp TRƯỚC renderer.js để renderer
    tiêm qua opts.metadata lúc tạo. Chọn skin từ kho (skin-browser.js)
    đã GỠ hẳn — chỉ còn "Nạp skin .wal/.wsz/.zip…" chọn file tay. */
-window.AMP_VERSION = "10.24";
+window.AMP_VERSION = "10.27";
 </script>
-<script src="classic.js?v=10.24"></script>
-<script src="skin-loader.js?v=10.24"></script>
-<script src="audio.js?v=10.24"></script>
-<script src="eqf.js?v=10.24"></script>
+<script src="classic.js?v=10.27"></script>
+<script src="skin-loader.js?v=10.27"></script>
+<script src="audio.js?v=10.27"></script>
+<script src="eqf.js?v=10.27"></script>
 <!-- milkdrop.js: CHỈ nạp loader (file này). Thư viện butterchurn ĐÃ ĐÓNG
      GÓI LOCAL trong zip (butterchurn.min.js + butterchurnPresets.min.js,
      cùng thư mục): loader nạp ĐỘNG file local khi bật Milkdrop lần đầu
      (lazy), lỗi thì fallback CDN jsDelivr -> unpkg — xem các link ở ĐẦU
      milkdrop.js (BUTTERCHURN_LOCAL / BUTTERCHURN_CDN / BUTTERCHURN_UNPKG
      / PRESETS_* / DEFAULT_PRESET_URL). -->
-<script src="milkdrop.js?v=10.24"></script>
-<script src="metadata.js?v=10.24"></script>
-<script src="maki.js?v=10.24"></script>
-<script src="renderer.js?v=10.24"></script>
+<script src="milkdrop.js?v=10.27"></script>
+<script src="metadata.js?v=10.27"></script>
+<script src="maki.js?v=10.27"></script>
+<script src="renderer.js?v=10.27"></script>
 <script>
 "use strict";
 /* Amp v9 — vỏ trang (cửa sổ chính + ngăn kéo + playlist + AVS/Video + tiếng).
-   VERSION = "10.24" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
+   VERSION = "10.27" ở mọi file; lệch version thì dừng và báo rõ, không vẽ
    sai trong im lặng (bài học bản mix v7.4/v8). Nguồn sự thật duy nhất là
    window.AMP_VERSION (đặt ở thẻ script ngay trước 8 file JS); mỗi file
    tự đối chiếu manifest lúc nạp (MANIFEST_MISMATCH) để file cũ trên
@@ -163,7 +163,7 @@ var stage = $("#stage"), stageWrap = $("#stage-wrap"), statusEl = $("#status"),
     btnReopen = $("#btn-reopen"),
     fileInput = $("#skinpick");
 
-var VERSION = "10.24";
+var VERSION = "10.27";
 var zoom = "fit"; /* mặc định "fit" để thấy hết các góc (trước đây "1" làm playlist 436px bị cắt góc phải trên viewport 360px). */
 var RES = null, SKIN = null, renderer = null, audioEngine = null;
 /* crossfade + Milkdrop — chỉnh từ menu trong giao diện skin (File/
@@ -205,7 +205,7 @@ function setStatus(msg, isErr) {
    Đúng version thì im lặng; lệch thì checkVersions() báo đỏ qua
    setStatus(..., true) và dừng boot. */
 function logVersion(extra) {
-  var line = "Amp v10.24 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
+  var line = "Amp v10.27 · loader v" + (window.AmpSkinLoader ? window.AmpSkinLoader.LOADER_VERSION : "?")
     + " · audio v" + (window.AmpAudio ? window.AmpAudio.AUDIO_VERSION : "?")
     + " · renderer v" + (window.AmpRenderer ? window.AmpRenderer.RENDERER_VERSION : "?")
     + " · eqf v" + (window.AmpEqf ? window.AmpEqf.EQF_VERSION : "?")
@@ -215,7 +215,7 @@ function logVersion(extra) {
     + " · maki v" + (window.AmpMaki ? window.AmpMaki.MAKI_VERSION : "?")
     + " · model fromCache: " + (RES ? String(RES.fromCache) : "?") + (extra ? " · " + extra : "");
   if (window.console && console.info) console.info("[Amp] " + line);
-  try { document.title = "Amp v10.24 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
+  try { document.title = "Amp v10.27 — Winamp Modern"; } catch (e) { /* bỏ qua */ }
 }
 function checkVersions() {
   var bad = [];
@@ -719,6 +719,12 @@ async function bootSkin(file, name) {
          {animateZoom:true} khi thả tay sau khi kéo) chuyển tiếp xuống
          renderCurrent -> setZoom. */
       onRerender: function (hint) { return renderCurrent(hint).catch(function (e) { setStatus("Lỗi: " + (e.message || e), true); }); },
+      /* v10.26 (1) — Live-fit trong lúc kéo: mỗi khung hình của lần kéo
+         (renderer gọi sau khi áp cỡ mới), tính lại tỉ lệ Fit theo cỡ
+         mới để cửa sổ luôn vừa màn hình — kéo to ra hàng nút vẫn thấy
+         đủ trong màn hình, kéo nhỏ lại không còn khoảng đen bên dưới.
+         Chỉ khi zoom === "fit"; chế độ 1x giữ nguyên tỉ lệ. */
+      onLiveFit: function () { if (zoom === "fit") setZoom("fit"); },
       onDrawerToggle: function (open) { toggleDrawer(open); },
       /* nút winshade trong skin (SWITCH param=shade/normal) /
          bấm đúp nền shade: chuyển chế độ + lưu localStorage. */
@@ -858,7 +864,33 @@ async function bootSkin(file, name) {
        lại theo minimum/maximum trong XML, hỏng thì về mặc định). */
     try {
       var savedSizes = loadWinSizes();
-      if (savedSizes) renderer.restoreWinSizes(savedSizes);
+      if (savedSizes) {
+        /* v10.25 — migration 1 LAN: bo size ML da luu ma HEP HON be
+           rong thiet ke XML (790px voi skin 566): size hep la di chung
+           cua che do ML gon v10.3 (da huy o v10.4, nhung size da luu
+           con) / keo thu resize — lam ML mo ra chi 354px, bang 480px
+           khong vua khung list 222px nen cot Nghe si/Album/Thoi luong
+           bi cat o mep phai (anh Hai 05/11 05:37). Chi chay 1 lan (co
+           amp9-ml1025-reset); sau do keo ML hep van luu/khoi binh
+           thuong (min XML 354), mo lai ML dung 790px mac dinh XML. */
+        try {
+          if (!localStorage.getItem("amp9-ml1025-reset") && renderer.layoutMinMax) {
+            var mlMM1025 = renderer.layoutMinMax("MLibrary", "normal");
+            if (mlMM1025 && mlMM1025.w > 0) {
+              var mlDropped1025 = false;
+              Object.keys(savedSizes).forEach(function (k) {
+                var p1025 = String(k).split("|");
+                if (p1025[0] && p1025[0].toLowerCase() === "mlibrary" && savedSizes[k] && savedSizes[k].w < mlMM1025.w) {
+                  delete savedSizes[k]; mlDropped1025 = true;
+                }
+              });
+              if (mlDropped1025) { try { localStorage.setItem("amp9-winsize-v9", JSON.stringify(savedSizes)); } catch (e1025a) {} }
+            }
+            try { localStorage.setItem("amp9-ml1025-reset", "1"); } catch (e1025b) {}
+          }
+        } catch (e1025c) { /* bo qua */ }
+        renderer.restoreWinSizes(savedSizes);
+      }
     } catch (e) { /* state lưu hỏng thì dùng kích thước mặc định */ }
     /* khôi phục shadeMode đã lưu TRƯỚC lần render đầu (mặc định
        normal). Shade vẽ layout main|shade 354×25, không ngăn kéo/AVS. */

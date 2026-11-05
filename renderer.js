@@ -44,8 +44,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  var RENDERER_VERSION = "10.24";
-  var EXPECTED_RENDERER_VERSION = "10.24";
+  var RENDERER_VERSION = "10.27";
+  var EXPECTED_RENDERER_VERSION = "10.27";
   /* ĐỢT F — version manifest duy nhất (như skin-loader.js): index.html
      đặt window.AMP_VERSION = "10.0" TRƯỚC khi nạp file này; khác manifest
      thì MANIFEST_MISMATCH = true để trang báo "bản mix". Không có
@@ -772,10 +772,47 @@
        tay — requestRerender ngay sau do se ve lai day du, tranh 2 lan
        rebuild Classic chong nhau lam do main thread sau khi tha). */
     function applyResizeMove(s, p, skipLive) {
-      var dx = (p.x - s.startX) / (s.scaleX || 1), dy = (p.y - s.startY) / (s.scaleY || 1);
-      var w = s.startW, h = s.startH;
-      if (s.edge === "right" || s.edge === "corner") w = s.startW + dx;
-      if (s.edge === "bottom" || s.edge === "corner") h = s.startH + dy;
+      var w = s.w, h = s.h;
+      /* v10.26 (1) — Delta TĂNG DẦN theo tỉ lệ HIỆN TẠI từng khung: mỗi
+         lần áp dụng chỉ cộng lượng ngón tay vừa di chuyển kể từ vị trí
+         đã áp dụng trước (lastX/lastY), chia cho tỉ lệ hiện tại lấy từ
+         rect thật của stage (khung trước) — lệch tối đa ~1 khung hình.
+         Vì sao KHÔNG tính tuyệt đối (p.x/tỉ lệ + độ lệch nắm): khi Fit
+         giới hạn theo rộng thì tỉ lệ = availW/w, công thức tuyệt đối
+         thành vòng lặp hồi tiếp hàm mũ — w tăng ~33%/khung, phình tới
+         max 1600 chỉ sau 1 cái kéo góc +120/+60 (đo probe-127, E).
+         Delta tăng dần thì ổn định: mỗi khung chỉ cộng đúng lượng di
+         chuyển của khung đó; tỉ lệ nhỏ dần cũng chỉ làm lượng cộng to
+         dần theo đúng tay, không tích lũy lệch như delta chia tỉ lệ lúc
+         bắt đầu kéo (v10.22) vì tỉ lệ dùng là tỉ lệ lúc di chuyển chứ
+         không phải lúc bắt đầu. Ngón tay nắm giữa tay nắm 48×48 cũng
+         không cần độ lệch nắm nữa (chỉ dùng lượng DI CHUYỂN, không dùng
+         vị trí tuyệt đối). jsdom không có layout (rect 0) thì tỉ lệ rơi
+         về scaleX/scaleY lúc bắt đầu (thường = 1) và lastX/lastY cộng
+         dồn thành đúng delta cũ nên test cũ vẫn chạy. */
+      var _sCurX = s.scaleX || 1, _sCurY = s.scaleY || 1;
+      try {
+        var _st = s.live;
+        if (_st && _st.id !== "stage") _st = _st.parentElement;
+        if (_st) {
+          var _sr = _st.getBoundingClientRect ? _st.getBoundingClientRect() : null;
+          var _sLW = parseInt(_st.style.width || "0", 10) || 0;
+          var _sLH = parseInt(_st.style.height || "0", 10) || 0;
+          if (_sr && _sr.width > 0 && _sLW > 0) {
+            var _cx = _sr.width / _sLW;
+            if (isFinite(_cx) && _cx > 0) _sCurX = _cx;
+          }
+          if (_sr && _sr.height > 0 && _sLH > 0) {
+            var _cy = _sr.height / _sLH;
+            if (isFinite(_cy) && _cy > 0) _sCurY = _cy;
+          }
+        }
+      } catch (eAbs) {}
+      var _lx = (typeof s.lastX === "number") ? s.lastX : s.startX;
+      var _ly = (typeof s.lastY === "number") ? s.lastY : s.startY;
+      if (s.edge === "right" || s.edge === "corner") w = s.w + (p.x - _lx) / _sCurX;
+      if (s.edge === "bottom" || s.edge === "corner") h = s.h + (p.y - _ly) / _sCurY;
+      s.lastX = p.x; s.lastY = p.y;
       var c = clampWinSize(s.container, s.layoutId, w, h);
       if (!c) return;
       s.w = c.w; s.h = c.h;
@@ -869,6 +906,22 @@
          dời theo cỡ mới). Callback tự bỏ qua khi cỡ lượng tử hoá không
          đổi, nên chỉ chạy mỗi lần qua mốc đoạn. */
       if (!skipLive && s.onLiveSize) { try { s.onLiveSize(s.w, s.h); } catch (eL) { /* bỏ qua */ } }
+      /* v10.26 (1) — Fit/stage theo kịp NGAY lúc kéo + giữ transition tắt:
+         (a) khẳng định lại transition "none" cho stage/wrap mỗi khung
+         (timeout glide 250ms của lần thả trước có thể bật lại giữa lúc
+         kéo mới); (b) móc live-fit (index.html: setZoom("fit") khi
+         zoom==="fit") tính lại tỉ lệ theo cỡ mới ngay trong khung này —
+         cửa sổ luôn vừa màn hình (kéo to ra hàng nút vẫn thấy đủ trong
+         màn hình, kéo nhỏ lại không còn khoảng đen bên dưới). Bỏ qua khi
+         skipLive (flush lúc thả tay — requestRerender ngay sau đó tự
+         re-fit + glide, không cần setZoom thừa). */
+      if (!skipLive) {
+        try {
+          if (s.stageEl && s.stageEl.style.transition !== "none") s.stageEl.style.transition = "none";
+          if (s.wrapEl && s.wrapEl.style.transition !== "none") s.wrapEl.style.transition = "none";
+        } catch (eT26b) { /* bỏ qua */ }
+        try { if (opts && opts.onLiveFit) opts.onLiveFit(); } catch (eLF) { /* bỏ qua */ }
+      }
       /* preventDefault da lam o resizeMove (dong bo, khong cho rAF). */
     }
     /* v10.19 (2), v10.20 (1) — CHẠM XUYÊN TAY NẮM (tap-through): tay nắm
@@ -912,6 +965,14 @@
       }
       resizeSession = null;
       if (!s) return;
+      /* v10.26 (1) — Hoàn lại transition height 250ms của stage/wrap
+         (đã tắt lúc bắt đầu kéo): mọi đường ra (bấm xuyên, kéo thật,
+         hủy) đều hoàn lại để glide thả tay + trượt ngăn kéo sau đó vẫn
+         mượt như cũ. */
+      try {
+        if (s.stageEl) s.stageEl.style.transition = s.prevStageTrans || "";
+        if (s.wrapEl) s.wrapEl.style.transition = s.prevWrapTrans || "";
+      } catch (eRT26) { /* bỏ qua */ }
       var cancelled = !!(e && e.type === "pointercancel");
       var p = null, moved = 0;
       try { if (e) p = resizeClientPos(e); } catch (err) { p = null; }
@@ -1040,7 +1101,12 @@
             try {
               var sprs = live.querySelectorAll("[data-bitmap]");
               for (var si = 0; si < sprs.length; si++) {
-                if (/resizer/i.test(sprs[si].getAttribute("data-bitmap") || "")) { hasSkinGrip = true; break; }
+                /* v10.26 (3) — Gờ kéo ML theo XML: ngoài ảnh tên chứa
+                   "resizer" (playlist 566), lớp nào XML khai
+                   resize="bottomright" (ML 566: player.ml.bottomright)
+                   cũng là ảnh gờ của chính skin → tay nắm trong suốt,
+                   không vẽ gờ chéo. */
+                if (/resizer/i.test(sprs[si].getAttribute("data-bitmap") || "") || sprs[si].getAttribute("data-resize")) { hasSkinGrip = true; break; }
               }
             } catch (e2) { hasSkinGrip = false; }
             if (hasSkinGrip) {
@@ -1142,13 +1208,32 @@
                 preview.push({ el: nd, w: w0, h: h0, offW: startW - w0, offH: startH - h0, bgSize: nd.style.backgroundSize || "", bgPos: nd.style.backgroundPosition || "", stretch: (_sw22 || _sh22), stretchW: _sw22, stretchH: _sh22, anchorR: (_aR === null || isNaN(_aR)) ? null : _aR, anchorB: (_aB === null || isNaN(_aB)) ? null : _aB, left0: parseInt(nd.style.left || "0", 10) || 0, top0: parseInt(nd.style.top || "0", 10) || 0, pW0: _pW0, pH0: _pH0 });
               }
             } catch (err2) { preview = []; }
+            /* v10.26 (1) — TẮT transition height 250ms của .stage +
+               #stage-wrap TRONG LÚC KÉO: CSS transition làm chiều cao
+               render chạy sau style ~250ms → kéo to ra thì wrap/stage
+               cắt mất hàng nút đáy (phải chờ tới lúc thả mới thấy hết),
+               kéo nhỏ lại thì stage còn cao → khoảng đen bên dưới cửa sổ
+               (nền #000 của stage lộ ra), hàng nút xé đôi lúc kéo. Tắt
+               để chiều cao bám ngay từng khung hình; resizeEnd hoàn lại
+               (mọi đường ra) để glide thả tay + trượt ngăn kéo vẫn mượt.
+               lastX/lastY = vị trí ngón tay đã áp dụng trước (delta tăng
+               dần dùng để tính lượng di chuyển từng khung — xem
+               applyResizeMove). */
+            var prevStageTrans = "", prevWrapTrans = "";
+            try {
+              if (stageEl0) { prevStageTrans = stageEl0.style.transition || ""; stageEl0.style.transition = "none"; }
+              if (wrap0 && wrap0.id === "stage-wrap") { prevWrapTrans = wrap0.style.transition || ""; wrap0.style.transition = "none"; }
+            } catch (eT26) { /* bỏ qua */ }
             resizeSession = {
               live: live, container: container, layoutId: layoutId, edge: spec.edge,
               hd: hd, /* v10.19 (2): giữ tay nắm để tap-through ẩn nó lúc elementFromPoint */
               startX: p.x, startY: p.y, startW: startW, startH: startH,
+              lastX: p.x, lastY: p.y, /* v10.26 (1): vị trí đã áp dụng trước (delta tăng dần) */
               px: p.x, py: p.y, rafPending: false, /* v10.24: vi tri moi nhat + co rAF cho (gop move) */
               scaleX: scaleX || 1, scaleY: scaleY || 1, w: startW, h: startH,
               baseStageH: baseStageH, baseWrapH: baseWrapH, preview: preview,
+              stageEl: stageEl0, wrapEl: (wrap0 && wrap0.id === "stage-wrap") ? wrap0 : null,
+              prevStageTrans: prevStageTrans, prevWrapTrans: prevWrapTrans,
               stageW0: stageW0, trackW: trackW, trackH: trackH, /* v10.20 (1): stage bám 2 chiều */
               onLiveSize: opts.onLiveSize || null /* v10.23: móc vẽ lại live (playlist Classic) */
             };
@@ -4357,6 +4442,12 @@
       var div = document.createElement("div");
       div.className = "spr";
       div.dataset.bitmap = bitmapId;
+      /* v10.26 (3) — Gờ kéo ML theo XML: ghi thuộc tính resize của XML
+         (vd <layer resize="bottomright" .../>) lên sprite để tay nắm góc
+         nhận ra ảnh gờ của chính skin (như playlist v10.21 nhận
+         "resizer" trong data-bitmap); skin không có ảnh gờ thì tay nắm
+         vẫn vẽ miếng nhỏ 24×24 như cũ. */
+      if (o.resize) div.dataset.resize = o.resize;
       if (o.tile) div.dataset.tile = "1";
       div.style.width = w + "px"; div.style.height = h + "px";
       div.style.backgroundImage = 'url("' + url + '")';
@@ -5531,7 +5622,7 @@
         /* v9.6 (Điểm 1): overlay của chữ title (w=1, x=100 trong XML)
            dời theo mép trái chữ đã căn giữa. */
         if (id === "window.titlebar.title.overlay" && ctx.titleCenter) x = ctx.titleCenter.left;
-        var spr = await spriteDiv(image, lw, lh, { tile: el.getAttribute("tile") === "1", opacity: alphaOf(el) });
+        var spr = await spriteDiv(image, lw, lh, { tile: el.getAttribute("tile") === "1", opacity: alphaOf(el), resize: el.getAttribute("resize") });
         if (!spr) return;
         spr.style.left = x + "px"; spr.style.top = y + "px";
         if (el.getAttribute("ghost") === "1") spr.style.pointerEvents = "none";
@@ -5752,15 +5843,18 @@
        SUALAI: 1 dinh nghia cot DUY NHAT (ML_COL_DEFS / PL_COL_DEFS) dung
        chung cho header ML, hang ML va hang playlist, qua helper
        listColSpan — cot so rieng co dinh 30px can phai, cot thoi luong
-       co dinh 48px can phai (du cho "1:23:45"), cac cot con lai giu
-       nguyen do rong cu. Header co o so trong (cung rong 30px) de cac
-       cot sau thang nhau. */
+       ML co dinh 64px can phai (v10.25: 48px cu khong du tieu de
+       "Thời lượng" (~55px) + nhan "Trực tiếp" (~48px) nen tieu de hien
+       "Thời lư..." ngay ca khi cua so ML dung 790px XML; playlist giu
+       48px vi chi hien gio "1:23:45"/"Trực tiếp" vua du), cac cot con
+       lai giu nguyen do rong cu. Header co o so trong (cung rong 30px)
+       de cac cot sau thang nhau. */
     var ML_COL_DEFS = [
       { key: "num", cls: "pl-num", label: "", flex: "0 0 30px", align: "right" },
       { key: "name", cls: "pl-name", label: "Tên bài", flex: "1 1 auto", align: "" },
       { key: "artist", cls: "ml-artist", label: "Nghệ sĩ", flex: "0 0 110px", align: "" },
       { key: "album", cls: "ml-album", label: "Album", flex: "0 0 120px", align: "" },
-      { key: "len", cls: "pl-len", label: "Thời lượng", flex: "0 0 48px", align: "right" }
+      { key: "len", cls: "pl-len", label: "Thời lượng", flex: "0 0 64px", align: "right" }
     ];
     var PL_COL_DEFS = [
       { key: "num", cls: "pl-num", label: "", flex: "0 0 30px", align: "right" },
@@ -5791,7 +5885,7 @@
        Ten/Nghe si/Album/Thoi luong o moi co man hinh; tren dien thoai
        thi BANG cuon ngang (hang min-width ML_MIN_TABLE_W, list
        overflow-x auto) thay vi giau cot. */
-    var ML_MIN_TABLE_W = 480; /* 30 (So) + ~150 (Ten) + 110 (Nghe si) + 120 (Album) + 48 (Thoi luong) + khe 6px */
+    var ML_MIN_TABLE_W = 496; /* v10.25: 480 cu + 16 (cot Thoi luong 48 -> 64px) = 30 (So) + ~150 (Ten) + 110 (Nghe si) + 120 (Album) + 64 (Thoi luong) + khe 6px */
     function mlColDefs() { return ML_COL_DEFS; }
     function listColSpan(def, text, isFirst) {
       var sp = document.createElement("span");
@@ -6229,6 +6323,14 @@
       var div = document.createElement("div");
       div.className = "ml-content";
       div.dataset.mlContent = "1";
+      /* v10.25 — .ml-content PHAI position:absolute: truoc day thieu
+         (chi co left/top/width/height) nen div static, left/top x=6/y=5
+         theo XML bi trinh duyet bo qua — ruot ML lech 6px trai + 5px len
+         so voi XML, vien trai khung (6px, ve sau = de len) che mat ~3px
+         dau chu cay ("Local Media" -> ".ocal Media", "Video" -> "/ideo",
+         anh Hai 05/11 05:37). Dat absolute thi ruot dung (6,5) nhu XML,
+         chu cay bat dau 9px (6+padding 3px), vuot mep vien trai 6px. */
+      div.style.position = "absolute";
       div.style.left = x + "px"; div.style.top = y + "px";
       div.style.width = w + "px"; div.style.height = h + "px";
       div.style.display = "flex";
